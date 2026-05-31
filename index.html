@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>CRM Real Estate Premium</title>
+<style>
+:root{
+  --black:#08080a;--graphite:#171717;--gold:#d4a017;--gold2:#f5d76e;
+  --bg:#f5f5f4;--card:#fff;--muted:#71717a;--line:#e4e4e7;
+  --blue:#dbeafe;--green:#dcfce7;--red:#fee2e2;--purple:#f3e8ff;--amber:#fef3c7;
+}
+*{box-sizing:border-box}
+html,body{min-height:100%;margin:0}
+body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at top left,#fff7d6,#e7e5e4 42%,#d4d4d8);color:#111827}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+.app{min-height:100vh}
+.layout{min-height:100vh}
+.sidebar{display:none}
+.main{width:100%;max-width:430px;margin:0 auto;min-height:100vh;background:var(--bg);box-shadow:0 0 55px #0002;padding-bottom:92px}
+.top{position:sticky;top:0;z-index:20;background:linear-gradient(135deg,#08080a,#1f1f23);color:white;padding:18px 16px 14px;border-bottom-left-radius:28px;border-bottom-right-radius:28px}
+.toprow{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.brand{display:flex;gap:6px;align-items:center;color:var(--gold2);font-size:11px;font-weight:950;letter-spacing:.04em}
+.title{font-size:28px;font-weight:950;margin-top:5px}
+.avatar{width:46px;height:46px;border:0;border-radius:18px;background:#ffffff18;color:white;font-weight:950}
+.search{margin-top:14px;display:flex;gap:8px;align-items:center;border-radius:20px;background:#ffffff18;padding:0 12px}
+.search input{width:100%;border:0;outline:0;background:transparent;color:white;padding:13px 0}
+.role{padding:12px 14px 0}
+.role select,.input,.field input,.field textarea,.field select{width:100%;border:0;outline:0;border-radius:18px;background:white;padding:13px}
+.screen{padding:14px;display:grid;gap:14px}
+.card{background:rgba(255,255,255,.96);border:1px solid #ffffffa8;border-radius:28px;padding:16px;box-shadow:0 12px 30px #0000000a}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stack{display:grid;gap:12px}
+.btn{border:0;border-radius:18px;padding:12px 13px;font-weight:900;display:flex;justify-content:center;align-items:center;gap:6px;text-decoration:none}
+.primary{background:var(--gold);color:#111827}
+.darkbtn{background:var(--black);color:white}
+.soft{background:#f4f4f5;color:#111827}
+.green{background:var(--green);color:#047857}
+.purple{background:var(--purple);color:#7e22ce}
+.danger{background:var(--red);color:#b91c1c}
+.full{width:100%}
+.muted{color:var(--muted);font-size:13px}
+.badge{display:inline-flex;border-radius:999px;background:#f4f4f5;padding:7px 10px;font-size:11px;font-weight:950;white-space:nowrap}
+.badge.gold{background:#fef3c7;color:#92400e}
+.badge.dark{background:#08080a;color:white}
+.badge.green{background:#dcfce7;color:#047857}
+.badge.red{background:#fee2e2;color:#b91c1c}
+.badge.blue{background:#dbeafe;color:#1d4ed8}
+.chips{display:flex;gap:8px;overflow:auto;padding-bottom:2px}
+.chip{border:0;border-radius:999px;background:white;padding:10px 14px;font-size:12px;font-weight:950;white-space:nowrap}
+.chip.active{background:var(--gold);color:#111827}
+.media{height:335px;border-radius:26px;background:linear-gradient(135deg,#111827,#737373,var(--gold));display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;color:white;font-weight:950;margin-top:10px;overflow:hidden;text-align:center;padding:12px}
+.media.small{height:140px}
+.upload{border:1.5px dashed var(--gold);background:#fff7d6;border-radius:20px;padding:16px;text-align:center;font-weight:950;display:block;margin-top:8px}
+.upload input{display:none}
+.nav{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:30;width:100%;max-width:430px;background:#fffffff2;backdrop-filter:blur(16px);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px 8px calc(10px + env(safe-area-inset-bottom))}
+.nav button{border:0;background:transparent;border-radius:18px;padding:9px 4px;font-size:10px;font-weight:950;color:#71717a;display:flex;flex-direction:column;align-items:center;gap:4px}
+.nav button.active{background:var(--black);color:white}
+.feed-list{max-width:720px;margin:0 auto;display:grid;gap:14px}
+.post-head{display:flex;gap:12px;align-items:center}
+.avatar.small{width:44px;height:44px;display:grid;place-items:center;background:#08080a;color:#f5d76e;border-radius:18px}
+.post-actions{display:flex;gap:14px;margin-top:12px;font-weight:900;align-items:center}
+.comments{background:#f4f4f5;border-radius:18px;padding:11px;margin-top:10px;font-size:13px}
+.kanban{display:flex;gap:12px;overflow:auto;align-items:flex-start}
+.kanban-col{min-width:330px;background:#fff7d6;border:1px solid #facc15;border-radius:28px;padding:12px;box-shadow:0 8px 20px #0000000a}
+.kanban-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:white;border-radius:18px;padding:10px}
+.lead-card{overflow:hidden;border-radius:24px;background:white;border:1px solid #fde68a;box-shadow:0 2px 10px #00000008;margin-bottom:10px}
+.lead-head{background:linear-gradient(90deg,#facc15,#fde68a);padding:12px}
+.lead-body{padding:12px}
+.phonebox{background:#fffbeb;border-left:4px solid var(--gold);border-radius:18px;padding:11px;margin-top:10px;font-size:13px;display:grid;gap:4px}
+.modal{position:fixed;inset:0;background:#0008;z-index:60;display:flex;align-items:flex-end}
+.sheet{width:100%;max-width:430px;max-height:92vh;overflow:auto;background:white;border-radius:30px 30px 0 0;margin:0 auto;padding:16px}
+.sheet-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.icon{border:0;border-radius:50%;width:38px;height:38px;display:grid;place-items:center;background:#f4f4f5}
+.field{display:grid;gap:6px;margin-top:12px}
+.field label{font-size:11px;font-weight:950;color:#71717a;text-transform:uppercase;letter-spacing:.04em}
+.field input,.field textarea,.field select{width:100%;border:0;outline:0;border-radius:18px;background:#f4f4f5;padding:13px}
+.field textarea{min-height:95px;resize:vertical}
+.title-input{border:0;outline:0;font-size:24px;font-weight:950;width:100%;background:transparent}
+.dark-field textarea{background:#08080a;color:white}
+.amber{background:#fef3c7}
+.inner{background:#f4f4f5}
+.next,.help-item{background:white;border-radius:18px;padding:11px;margin-top:10px}
+.reply{background:var(--black);color:white;border-radius:16px;padding:10px}
+.history{font-size:13px;color:#71717a;padding:3px 0}
+.sticky{position:sticky;bottom:4px}
+.week,.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.week{text-align:center;font-size:12px;color:#71717a;margin:10px 0}
+.day{min-height:58px;border:0;background:#f4f4f5;border-radius:13px;text-align:left;padding:6px;font-size:11px}
+.day:hover{background:#fff7d6}
+.muted-day{opacity:.45}
+.mini{display:block;margin-top:4px;background:#fef3c7;color:#92400e;border-radius:6px;padding:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prop-cover{height:240px;border-radius:26px;background:linear-gradient(135deg,#111827,#71717a,var(--gold));color:white;padding:16px;display:flex;flex-direction:column;justify-content:space-between;margin:-16px -16px 14px}
+.prop-hero{height:280px;background:linear-gradient(135deg,#111827,#71717a,var(--gold));color:white;border-radius:0 0 28px 28px;margin:-16px -16px 14px;padding:145px 16px 16px;position:relative}
+.prop-hero input{background:transparent;border:0;color:white;outline:0;font-size:25px;font-weight:950;width:100%}
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:white;border-radius:24px;padding:18px;box-shadow:0 2px 13px #0000000a}
+.stat span{font-size:12px;color:#71717a}
+.stat b{display:block;font-size:30px;margin-top:4px}
+.dark{background:var(--black);color:white}
+.dark p{color:#d4d4d8}
+.stage-row{display:flex;justify-content:space-between;border-bottom:1px solid #f4f4f5;padding:9px 0}
+.question{background:#fef3c7;border-radius:18px;padding:12px;color:#92400e}
+.link-pill{display:block;background:#fff7d6;color:#111827;border-radius:16px;padding:10px;text-decoration:none;font-weight:800;margin:8px 0}
+@media(min-width:900px){
+  .layout{display:grid;grid-template-columns:270px 1fr}
+  .sidebar{display:block;background:#08080a;color:white;padding:22px;position:sticky;top:0;height:100vh}
+  .side-logo{display:flex;gap:10px;align-items:center;margin-bottom:18px}
+  .side-logo span{display:block;color:#a1a1aa;font-size:12px}
+  .side-role{background:#ffffff12;border-radius:18px;padding:12px;margin-bottom:18px;color:#f5d76e;font-weight:900;font-size:12px}
+  .side-btn{width:100%;border:0;background:transparent;color:#d4d4d8;border-radius:18px;padding:13px 12px;display:flex;align-items:center;gap:10px;font-weight:900;text-align:left;margin-bottom:6px}
+  .side-btn.active{background:white;color:#08080a}
+  .main-wrap{padding:24px}
+  .main{max-width:none;min-height:calc(100vh - 48px);border-radius:32px;box-shadow:none;padding-bottom:24px}
+  .top{position:relative;border-radius:32px}
+  .nav{display:none}
+  .screen{padding:18px}
+  .feed-list{max-width:720px}
+  .kanban-col{min-width:370px}
+  .props-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .statgrid{grid-template-columns:repeat(4,1fr)}
+  .calendar-layout{display:grid;grid-template-columns:1.4fr .8fr;gap:14px}
+  .sheet{max-width:760px;border-radius:30px}
+  .modal{align-items:center}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const ST=["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
+const SRC=["Повторный клиент","Рекомендации","ОЛХ","Лид руководство","Инстаграм личный","Тик-Ток личный","Фейсбук личный","Тик-Ток рабочий","Инстаграм рабочий","Фейсбук рабочий","Телеграмм-канал рабочий","Рекомендации клиентов"];
+const TYPES=["1-комнатные","2-комнатные","3-комнатные","Таунхаус","Дом","Участок","Коммерция"];
+const DIST=["Киевский","Приморский","Пересыпский","Хаджибейский","Аркадия"];
+const PSTAT=["Актуален","В работе","Показ","Задаток","Продан","Архив"];
+const EVT=["Звонок","Встреча","Показ","Задача"];
+const MON=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+const WEEK=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+let page=localStorage.page||"feed",role=localStorage.role||"Администратор директор",stage="Все",ptype="Все",pdist="Все",calView="month",eventType="Звонок",postKind="Фото";
+function load(k,v){try{return JSON.parse(localStorage[k])||v}catch{return v}}
+function save(){localStorage.leads=JSON.stringify(leads);localStorage.events=JSON.stringify(events);localStorage.props=JSON.stringify(props);localStorage.posts=JSON.stringify(posts);localStorage.managers=JSON.stringify(managers);localStorage.agencies=JSON.stringify(agencies);localStorage.help=JSON.stringify(help);localStorage.role=role;localStorage.page=page}
+let leads=load("leads",[
+{id:"L-1024",name:"Анна Коваленко",phone:"+380671234567",source:"Тик-Ток рабочий",status:"Новый Лид",notes:"Хочет видовую квартиру, рассрочку и реальные фото дома.",agentId:"AG-001",nextContact:"2026-05-24 19:30",directorQuestion:"Можно ли предложить дороже бюджета?",directorComment:"Да, если закрываем платежом в месяц.",history:["Клиент создан","Уточнен бюджет","Назначен звонок"]},
+{id:"L-1025",name:"Игорь Мельник",phone:"+48500111222",source:"Инстаграм личный",status:"Первый контакт",notes:"Сравнивает Одессу и Киев. Нужны цифры по аренде.",agentId:"AG-002",nextContact:"2026-05-25 11:00",directorQuestion:"Кинуть подборку или созвон?",directorComment:"Сначала короткий созвон.",history:["Лид пришел из Instagram","Добавлена заметка"]},
+{id:"L-1026",name:"Марина Соколова",phone:"+971501112233",source:"Рекомендации клиентов",status:"Назначена встреча",notes:"VIP клиент. Только сильные объекты.",agentId:"AG-001",nextContact:"2026-05-27 12:00",directorQuestion:"Нужен ли директор на показе?",directorComment:"Да, подключиться в финале.",history:["Клиент создан","Назначена встреча"]},
+{id:"L-1027",name:"Дмитрий Орлов",phone:"+380931234567",source:"Фейсбук рабочий",status:"В работе",notes:"Ищет офис в Аркадии до 90 000$.",agentId:"AG-002",nextContact:"2026-05-28 16:30",directorQuestion:"Можно предложить дороже?",directorComment:"Да, с аргументом рассрочки.",history:["Клиент создан","Отправлена подборка"]}
+]);
+let events=load("events",[
+{id:"EV-1",leadId:"L-1024",clientName:"Анна Коваленко",type:"Звонок",title:"Первичный звонок",date:"2026-05-24",startTime:"19:30",endTime:"20:00",description:"Уточнить бюджет.",reminderBefore:60},
+{id:"EV-2",leadId:"L-1026",clientName:"Марина Соколова",type:"Встреча",title:"VIP встреча",date:"2026-05-27",startTime:"12:00",endTime:"13:00",description:"Показать премиум.",reminderBefore:120}
+]);
+let props=load("props",[
+{id:"P-301",title:"Видовая квартира у моря",type:"2-комнатные",district:"Аркадия",status:"Актуален",price:118000,area:72,floor:"12/24",rooms:"2",renovation:"Дизайнерский ремонт",address:"Аркадия, Одесса",ownerName:"Собственник Анна",ownerPhone:"+380671010101",description:"Новый ремонт, вид на море, паркинг.",hot:true,media:[{kind:"Фото",name:"Фасад и вид на море"}],history:["Объект добавлен","Обновлена цена"]},
+{id:"P-302",title:"Таунхаус для семьи",type:"Таунхаус",district:"Киевский",status:"В работе",price:185000,area:145,floor:"2 этажа",rooms:"4",renovation:"Под чистовую",address:"Киевский район, Одесса",ownerName:"Собственник Сергей",ownerPhone:"+380672020202",description:"Закрытая территория, место под авто.",hot:false,media:[],history:["Объект добавлен"]}
+]);
+let posts=load("posts",[
+{id:"N-1",author:"Администратор",createdAt:"24.05.2026 10:30",items:[{kind:"Фото",text:"Обновили подборку по объектам у моря",fileName:"sea-view.jpg",link:""}],likes:24,comments:["Принято","Добавила клиентам"]},
+{id:"N-2",author:"CRM",createdAt:"24.05.2026 09:00",items:[{kind:"Файл",text:"Чек-лист по вторичке обновлен",fileName:"checklist.pdf",link:""}],likes:12,comments:["Скачали"]}
+]);
+let managers=load("managers",[
+{id:"AG-001",agencyId:"A-001",name:"Елена",email:"manager1@agency.com",role:"Менеджер по продажам",access:true},
+{id:"AG-002",agencyId:"A-001",name:"Андрей",email:"manager2@agency.com",role:"Менеджер по продажам",access:true},
+{id:"ADM-001",agencyId:"A-001",name:"Директор",email:"director@agency.com",role:"Администратор директор",access:true}
+]);
+let agencies=load("agencies",[{id:"A-001",name:"PRIDE Real Estate",plan:"Agency Pro"},{id:"A-002",name:"Demo Agency Odessa",plan:"Trial"}]);
+let help=load("help",[
+{id:"H-001",leadId:"L-1024",managerName:"Елена",text:"Нужна помощь директора по цене и аргументации.",directorReply:"",createdAt:"24.05.2026 12:30",status:"open"},
+{id:"H-002",leadId:"L-1026",managerName:"Елена",text:"Клиент VIP, нужен комментарий директора перед встречей.",directorReply:"Подключусь перед показом.",createdAt:"24.05.2026 13:15",status:"answered"}
+]);
+function $(id){return document.getElementById(id)}
+function badge(t,c=""){return `<span class="badge ${c}">${t}</span>`}
+function money(n){return "$"+Number(n||0).toLocaleString()}
+function setPage(p){page=p;save();render()}
+function closeModal(){document.querySelector(".modal")?.remove()}
+function modal(h){document.body.insertAdjacentHTML("beforeend",`<div class="modal" onclick="this.remove()"><div class="sheet" onclick="event.stopPropagation()">${h}</div></div>`)}
+function media(i,small=""){return `<div class="media ${small}">${i.fileName||i.name||i.kind||"Фото"}<div class="muted" style="color:#fff">предпросмотр</div></div>`}
+function top(t){return `<div class="top"><div class="toprow"><div><div class="brand">♛ CRM Real Estate</div><div class="title">${t}</div></div><button class="avatar" onclick="setPage('more')">EK</button></div><div class="search">🔎<input placeholder="Поиск по CRM..."></div></div><div class="role"><select onchange="role=this.value;save();render()"><option ${role==="Менеджер по продажам"?"selected":""}>Менеджер по продажам</option><option ${role==="Администратор директор"?"selected":""}>Администратор директор</option><option ${role==="Администратор тех отдел"?"selected":""}>Администратор тех отдел</option></select></div>`}
+function nav(){return `<nav class="nav">${[["feed","Лента","⌂"],["clients","Клиенты","👥"],["calendar","Календарь","📅"],["props","Объекты","🏢"],["more","Ещё","☰"]].map(i=>`<button class="${page===i[0]?"active":""}" onclick="setPage('${i[0]}')"><span>${i[2]}</span>${i[1]}</button>`).join("")}</nav>`}
+function side(){return `<aside class="sidebar"><div class="side-logo">♛ <div><b>CRM Real Estate</b><span>Premium SaaS</span></div></div><div class="side-role">${role}</div>${[["feed","Лента"],["clients","Канбан и клиенты"],["calendar","Календарь"],["props","Вторичка"],["analytics","Аналитика"],["help","Помощь менеджерам"],["access","Доступы"],["more","Ещё"]].map(i=>`<button class="side-btn ${page===i[0]?"active":""}" onclick="setPage('${i[0]}')">${i[1]}</button>`).join("")}</aside>`}
+function render(){let titles={feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",props:"Вторичка",analytics:"Аналитика",help:"Помощь менеджерам",access:"Доступы",more:"Еще"};document.getElementById("app").innerHTML=`<div class="layout">${side()}<div class="main-wrap"><main class="main">${top(titles[page]||"CRM")}${screens[page]()}${nav()}</main></div></div>`}
+const screens={
+feed(){return `<section class="screen"><div class="feed-list"><div class="card dark"><h2>Лента новостей</h2><p>Внутренняя соцсеть агентства: фото, видео, файлы, ссылки, лайки и комментарии.</p><button class="btn primary" onclick="composer()">+ Новая публикация</button></div>${posts.map(p=>`<div class="card"><div class="post-head"><div class="avatar small">A</div><div><b>${p.author}</b><div class="muted">${p.createdAt}</div></div></div>${p.items.map(i=>`<p style="line-height:1.5">${i.text}</p>${i.link?`<a class="link-pill" target="_blank" href="${i.link}">${i.link}</a>`:""}${media(i)}`).join("")}<div class="post-actions"><span class="badge gold">♡ ${p.likes}</span><span class="badge">💬 ${p.comments.length}</span><span>↗</span></div><div class="comments">${p.comments.map(c=>`<div><b>Комментарий:</b> ${c}</div>`).join("")}</div></div>`).join("")}</div></section>`},
+clients(){let shown=stage==="Все"?ST:[stage];return `<section class="screen"><button class="btn primary" onclick="newLead()">+ Создать клиента</button><div class="chips"><button class="chip ${stage==="Все"?"active":""}" onclick="stage='Все';render()">Все</button>${ST.map(s=>`<button class="chip ${stage===s?"active":""}" onclick="stage='${s}';render()">${s}</button>`).join("")}</div><div class="kanban">${shown.map(s=>`<section class="kanban-col"><div class="kanban-head"><b>${s}</b>${badge(leads.filter(l=>l.status===s).length,"gold")}</div>${leads.filter(l=>l.status===s).map(leadCard).join("")}</section>`).join("")}</div></section>`},
+calendar(){let cells=monthGrid(2026,4);return `<section class="screen calendar-layout"><div><div class="grid4">${[["year","Год"],["month","Месяц"],["week","Неделя"],["day","День"]].map(v=>`<button class="btn ${calView===v[0]?"primary":"soft"}" onclick="calView='${v[0]}';render()">${v[1]}</button>`).join("")}</div>${calendarView(cells)}</div><div>${events.map(e=>`<div class="card" style="margin-bottom:10px"><div class="row"><div><b>${e.title}</b><div class="muted">${e.type} · ${e.date} · ${e.startTime}</div></div>${badge(e.reminderBefore+" мин","gold")}</div><div class="muted">${e.clientName}</div></div>`).join("")}</div></section>`},
+props(){let f=props.filter(p=>(ptype==="Все"||p.type===ptype)&&(pdist==="Все"||p.district===pdist));return `<section class="screen"><button class="btn primary" onclick="newProp()">+ Добавить объект</button><div class="chips"><button class="chip ${ptype==="Все"?"active":""}" onclick="ptype='Все';render()">Все</button>${TYPES.map(t=>`<button class="chip ${ptype===t?"active":""}" onclick="ptype='${t}';render()">${t}</button>`).join("")}</div><div class="chips"><button class="chip ${pdist==="Все"?"active":""}" onclick="pdist='Все';render()">Все районы</button>${DIST.map(d=>`<button class="chip ${pdist===d?"active":""}" onclick="pdist='${d}';render()">${d}</button>`).join("")}</div><div class="props-grid">${f.map(propCard).join("")}</div></section>`},
+analytics(){let scoped=role==="Менеджер по продажам"?leads.filter(l=>l.agentId==="AG-001"):leads;return `<section class="screen"><div class="card dark"><h2>Аналитика CRM</h2><p>${role==="Менеджер по продажам"?"Только личная аналитика":"Общая аналитика и фильтры"}</p></div><div class="statgrid">${[["Лиды",scoped.length],["Сделки",scoped.filter(l=>l.status==="Сделка").length],["В работе",scoped.filter(l=>!["Сделка","Отказ"].includes(l.status)).length],["События",events.length]].map(x=>`<div class="stat"><span>${x[0]}</span><b>${x[1]}</b></div>`).join("")}</div><div class="card">${ST.map(s=>`<div class="stage-row"><span>${s}</span><b>${scoped.filter(l=>l.status===s).length}</b></div>`).join("")}</div></section>`},
+help(){return `<section class="screen"><div class="card dark"><h2>Помощь менеджерам</h2><p>Вопросы из карточек клиентов</p><button class="btn primary" onclick="beep()">Звук</button></div>${help.map(h=>`<div class="card">${badge(h.status==="open"?"Ожидает":"Отвечено",h.status==="open"?"red":"green")}<h3>${leads.find(l=>l.id===h.leadId)?.name||h.leadId}</h3><div class="question"><b>Вопрос:</b><p>${h.text}</p></div>${h.directorReply?`<div class="reply"><b>Директор:</b> ${h.directorReply}</div>`:""}<textarea class="input" id="rep_${h.id}" placeholder="Ответить менеджеру"></textarea><div class="grid2"><button class="btn primary" onclick="replyHelp('${h.id}')">Ответить</button><button class="btn soft" onclick="editLead('${h.leadId}')">Открыть клиента</button></div></div>`).join("")}</section>`},
+access(){return `<section class="screen"><div class="card"><h2>CRM Real Estate · Агентства</h2><p class="muted">Одна платформа, внутри отдельные агентства.</p><input class="input" id="agencyName" placeholder="Название агентства"><button class="btn primary full" onclick="addAgency()">Добавить агентство</button></div><div class="card"><h2>Добавить менеджера</h2><input class="input" id="mName" placeholder="ФИО"><input class="input" id="mEmail" placeholder="Email / логин"><select class="input" id="mRole"><option>Менеджер по продажам</option><option>Администратор тех отдел</option><option>Администратор директор</option></select><button class="btn primary full" onclick="addManager()">Создать доступ</button></div>${managers.map(m=>`<div class="card"><div class="row"><div><h3>${m.name}</h3><div class="muted">${m.email}<br>${m.role}</div></div>${badge(m.access?"Доступ активен":"Доступ закрыт",m.access?"green":"red")}</div><div class="grid2"><button class="btn soft" onclick="toggleAccess('${m.id}')">${m.access?"Забрать доступ":"Вернуть доступ"}</button><button class="btn danger" onclick="deleteManager('${m.id}')">Удалить</button></div></div>`).join("")}</section>`},
+more(){let dir=role==="Администратор директор",tech=role==="Администратор тех отдел",man=role==="Менеджер по продажам";return `<section class="screen"><div class="card"><h3>Язык интерфейса</h3><div class="grid3"><button class="btn primary">Русский</button><button class="btn soft">Українська</button><button class="btn soft">English</button></div></div><div class="card"><button class="btn primary full" onclick="setPage('analytics')">Аналитика</button></div>${dir?`<div class="card"><button class="btn primary full" onclick="setPage('help')">Помощь менеджерам</button></div>`:""}${tech?`<div class="card"><button class="btn primary full" onclick="setPage('access')">Доступы и агентства</button></div><div class="card"><h3>Настройки системы</h3><div class="muted">Только тех администратор</div></div>`:""}${man?`<div class="card amber">Менеджеру доступны только язык и личная аналитика.</div>`:""}</section>`}
+};
+function leadCard(l){return `<div class="lead-card"><div class="lead-head"><div class="row"><div><b>${l.name}</b><div class="muted">${l.id} · ${l.source}</div></div>${badge(l.status,"dark")}</div></div><div class="lead-body"><div class="phonebox"><b>☎ ${l.phone}</b><span>${l.notes}</span></div><div class="grid4" style="margin-top:10px"><button class="btn soft" onclick="contact('${l.phone}')">☎</button><button class="btn purple" onclick="contact('${l.phone}')">V</button><button class="btn green" onclick="contact('${l.phone}')">W</button><button class="btn primary" onclick="editLead('${l.id}')">✎</button></div><button class="btn primary full" style="margin-top:10px" onclick="moveLead('${l.id}')">Следующий этап →</button></div></div>`}
+function propCard(p){return `<div class="card"><div class="prop-cover">${badge(p.hot?"Горячий":p.status,p.hot?"red":"dark")}<div><h3>${p.title}</h3><span>${p.district} · ${p.area} м² · ${p.floor}</span></div></div><div class="row"><h2>${money(p.price)}</h2>${badge(p.type)}</div><p class="muted">${p.description}</p>${(p.media||[]).slice(0,1).map(m=>media({name:m.kind+": "+m.name},"small")).join("")}<div class="grid2" style="margin-top:10px"><button class="btn primary" onclick="editProp('${p.id}')">Смотреть</button><button class="btn soft" onclick="editProp('${p.id}')">Редактировать</button></div></div>`}
+function monthGrid(y,m){let f=new Date(y,m,1),off=(f.getDay()+6)%7,s=new Date(y,m,1-off);return Array.from({length:42},(_,i)=>{let d=new Date(s);d.setDate(s.getDate()+i);return{iso:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,day:d.getDate(),current:d.getMonth()===m}})}
+function calendarView(cells){if(calView==="year")return `<div class="card"><h3>2026 год</h3><div class="grid3">${MON.map((m,i)=>`<button class="btn soft" onclick="calView='month';render()"><b>${m}</b><br>${events.filter(e=>e.date.startsWith("2026-"+String(i+1).padStart(2,"0"))).length} событий</button>`).join("")}</div></div>`;if(calView==="week")return `<div class="card"><h3>Неделя</h3>${cells.slice(0,7).map(d=>`<button class="btn soft full" style="margin:5px 0" onclick="newEvent('${d.iso}')">${d.iso} · ${events.filter(e=>e.date===d.iso).length} событий</button>`).join("")}</div>`;if(calView==="day")return `<div class="card"><h3>День</h3>${["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"].map(t=>`<button class="btn soft full" style="margin:5px 0" onclick="newEvent('2026-05-24')">${t} · добавить событие</button>`).join("")}</div>`;return `<div class="card"><div class="row"><h3>Май 2026</h3>${badge(events.length+" событий","gold")}</div><div class="week">${WEEK.map(w=>`<b>${w}</b>`).join("")}</div><div class="calgrid">${cells.map(c=>{let es=events.filter(e=>e.date===c.iso);return `<button class="day ${!c.current?"muted-day":""}" onclick="newEvent('${c.iso}')"><b>${c.day}</b>${es.slice(0,2).map(e=>`<span class="mini">${e.startTime} ${e.title}</span>`).join("")}</button>`}).join("")}</div></div>`}
+function composer(){modal(`<div class="sheet-head"><h2>Новая публикация</h2><button class="icon" onclick="closeModal()">×</button></div><textarea class="input" id="postText" placeholder="Текст публикации"></textarea><div class="grid4" style="margin-top:10px">${["Фото","Видео","Файл","Ссылка"].map(k=>`<button class="btn primary" onclick="postKind='${k}';document.querySelectorAll('.kindBtn').forEach(b=>b.classList.remove('darkbtn'));this.classList.add('darkbtn')">${k}</button>`).join("")}</div><input class="input" id="postFile" placeholder="Название файла или ссылка" style="margin-top:10px"><button class="btn primary full" style="margin-top:10px" onclick="publishPost()">Опубликовать</button>`)}
+function publishPost(){posts.unshift({id:"N"+Date.now(),author:"Администратор",createdAt:new Date().toLocaleString(),items:[{kind:postKind,text:$("postText").value,fileName:$("postFile").value,link:postKind==="Ссылка"?$("postFile").value:""}],likes:0,comments:[]});save();closeModal();render()}
+function contact(phone){let d=phone.replace(/[^0-9]/g,"");modal(`<div class="sheet-head"><h2>Связь</h2><button class="icon" onclick="closeModal()">×</button></div><a class="btn primary full" href="tel:${phone}">Позвонить</a><a class="btn soft full" href="sms:${phone}">SMS</a><a class="btn purple full" href="viber://chat?number=%2B${d}">Viber</a><a class="btn green full" href="https://wa.me/${d}" target="_blank">WhatsApp</a><div class="card amber">На компьютере мессенджеры могут не открываться. На телефоне откроется приложение.</div>`)}
+function newLead(){let l={id:"L"+Date.now(),name:"Новый клиент",phone:"+380",source:SRC[0],status:ST[0],notes:"",agentId:"AG-001",nextContact:"",directorQuestion:"",directorComment:"",history:["Клиент создан вручную"]};leads.unshift(l);save();editLead(l.id)}
+function moveLead(id){let l=leads.find(x=>x.id===id),n=ST[Math.min(ST.indexOf(l.status)+1,ST.length-1)];l.status=n;l.history.push("Перемещен в стадию: "+n);save();render()}
+function editLead(id){let l=leads.find(x=>x.id===id);modal(`<div class="sheet-head"><div><label>Имя клиента</label><input class="title-input" id="ln" value="${l.name}"><div class="muted">${l.id}</div></div><button class="icon" onclick="closeModal()">×</button></div><div class="field"><label>Телефон клиента</label><input id="lp" value="${l.phone}"></div><div class="field"><label>Источник клиента</label><select id="ls">${SRC.map(s=>`<option ${s===l.source?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Статус клиента</label><select id="lst">${ST.map(s=>`<option ${s===l.status?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Заметки менеджера</label><textarea id="lno">${l.notes||""}</textarea></div><div class="field"><label>Вопрос директору</label><textarea id="ldq">${l.directorQuestion||""}</textarea></div><div class="field dark-field"><label>Комментарий директора</label><textarea id="ldc">${l.directorComment||""}</textarea></div><div class="card inner"><h3>Календарь клиента</h3><div class="grid4">${EVT.map(e=>`<button class="btn primary" onclick="eventType='${e}'">${e}</button>`).join("")}</div><input class="input" type="date" id="ed" value="2026-05-24"><input class="input" type="time" id="et" value="12:00"><select class="input" id="er"><option value="15">За 15 минут</option><option value="60">За 1 час</option><option value="120">За 2 часа</option></select><button class="btn primary full" onclick="saveLeadEvent('${id}')">Сохранить событие</button></div><div class="card amber"><h3>Помощь директора</h3><textarea class="input" id="helpText" placeholder="Вопрос директору"></textarea><button class="btn primary full" onclick="sendHelp('${id}')">Помощь менеджеру</button>${help.filter(h=>h.leadId===id).map(h=>`<div class="help-item"><b>${h.managerName}</b><p>${h.text}</p>${h.directorReply?`<div class="reply">${h.directorReply}</div>`:""}</div>`).join("")}</div><div class="card"><h3>История</h3>${(l.history||[]).map(h=>`<div class="history">• ${h}</div>`).join("")}</div><button class="btn primary full sticky" onclick="saveLead('${id}')">Сохранить клиента</button>`)}
+function saveLead(id){let l=leads.find(x=>x.id===id);l.name=$("ln").value;l.phone=$("lp").value;l.source=$("ls").value;l.status=$("lst").value;l.notes=$("lno").value;l.directorQuestion=$("ldq").value;l.directorComment=$("ldc").value;l.history.push("Карточка обновлена");save();closeModal();render()}
+function saveLeadEvent(id){let l=leads.find(x=>x.id===id),e={id:"EV"+Date.now(),leadId:id,clientName:l.name,type:eventType,title:eventType+" — "+l.name,date:$("ed").value,startTime:$("et").value,description:"",reminderBefore:Number($("er").value)};events.unshift(e);l.nextContact=e.date+" "+e.startTime;l.history.push("Добавлено событие: "+e.title);save();alert("Событие сохранено")}
+function sendHelp(id){let txt=$("helpText").value;if(!txt)return;help.unshift({id:"H"+Date.now(),leadId:id,managerName:"AG-001",text:txt,directorReply:"",createdAt:new Date().toLocaleString(),status:"open"});save();alert("Вопрос отправлен директору")}
+function newEvent(date){modal(`<div class="sheet-head"><h2>Событие</h2><button class="icon" onclick="closeModal()">×</button></div><input class="input" id="evtTitle" placeholder="Название"><select class="input" id="evtLead">${leads.map(l=>`<option value="${l.id}">${l.name}</option>`).join("")}</select><div class="grid4">${EVT.map(e=>`<button class="btn primary" onclick="eventType='${e}'">${e}</button>`).join("")}</div><input class="input" type="date" id="evtDate" value="${date}"><input class="input" type="time" id="evtTime" value="12:00"><textarea class="input" id="evtDesc" placeholder="Комментарий"></textarea><button class="btn primary full" onclick="saveEvent()">Сохранить</button>`)}
+function saveEvent(){let l=leads.find(x=>x.id===$("evtLead").value),e={id:"EV"+Date.now(),leadId:l.id,clientName:l.name,type:eventType,title:$("evtTitle").value||eventType+" — "+l.name,date:$("evtDate").value,startTime:$("evtTime").value,description:$("evtDesc").value,reminderBefore:60};events.unshift(e);save();closeModal();render()}
+function newProp(){let p={id:"P"+Date.now(),title:"Новый объект",type:TYPES[0],district:DIST[0],status:"Актуален",price:70000,area:45,floor:"1/1",rooms:"1",renovation:"Без ремонта",address:"Одесса",ownerName:"",ownerPhone:"+380",description:"Описание объекта",hot:false,media:[],history:["Объект создан"]};props.unshift(p);save();editProp(p.id)}
+function editProp(id){let p=props.find(x=>x.id===id);modal(`<div class="prop-hero"><button class="icon" onclick="closeModal()">×</button><label>Объект</label><input id="pt" value="${p.title}"><span>${p.address||""}</span></div><div class="field"><label>Цена объекта, $</label><input id="pp" value="${p.price}"></div><div class="field"><label>Тип объекта</label><select id="pty">${TYPES.map(t=>`<option ${t===p.type?"selected":""}>${t}</option>`).join("")}</select></div><div class="field"><label>Район</label><select id="pd">${DIST.map(d=>`<option ${d===p.district?"selected":""}>${d}</option>`).join("")}</select></div><div class="field"><label>Площадь</label><input id="pa" value="${p.area}"></div><div class="field"><label>Этаж</label><input id="pf" value="${p.floor||""}"></div><div class="field"><label>Собственник</label><input id="po" value="${p.ownerName||""}"></div><div class="field"><label>Телефон собственника</label><input id="poh" value="${p.ownerPhone||""}"></div><div class="field"><label>Описание</label><textarea id="pdesc">${p.description||""}</textarea></div><div class="card amber"><h3>Фото / видео объекта</h3><input class="input" id="mediaName" placeholder="Название фото или видео"><div class="grid2"><button class="btn primary" onclick="addPropMedia('${id}','Фото')">Добавить фото</button><button class="btn primary" onclick="addPropMedia('${id}','Видео')">Добавить видео</button></div>${(p.media||[]).map((m,i)=>`<div class="media small">${m.kind}: ${m.name}<button class="btn danger" onclick="deletePropMedia('${id}',${i})">Удалить</button></div>`).join("")}</div><div class="card"><h3>История</h3>${(p.history||[]).map(h=>`<div class="history">• ${h}</div>`).join("")}</div><button class="btn primary full sticky" onclick="saveProp('${id}')">Сохранить объект</button>`)}
+function addPropMedia(id,kind){let p=props.find(x=>x.id===id);p.media=p.media||[];p.media.push({kind,name:$("mediaName").value||kind});save();closeModal();editProp(id)}
+function deletePropMedia(id,index){let p=props.find(x=>x.id===id);p.media.splice(index,1);save();closeModal();editProp(id)}
+function saveProp(id){let p=props.find(x=>x.id===id);p.title=$("pt").value;p.price=$("pp").value;p.type=$("pty").value;p.district=$("pd").value;p.area=$("pa").value;p.floor=$("pf").value;p.ownerName=$("po").value;p.ownerPhone=$("poh").value;p.description=$("pdesc").value;p.history.push("Объект сохранен");save();closeModal();render()}
+function beep(){try{let c=new AudioContext(),o=c.createOscillator(),g=c.createGain();o.frequency.value=1040;g.gain.value=.06;o.connect(g);g.connect(c.destination);o.start();setTimeout(()=>{o.stop();c.close()},450)}catch{}}
+function replyHelp(id){let h=help.find(x=>x.id===id);h.directorReply=$("rep_"+id).value;h.status="answered";save();render()}
+function addAgency(){let v=$("agencyName").value;if(!v)return;agencies.unshift({id:"A"+Date.now(),name:v,plan:"Trial"});save();render()}
+function addManager(){let n=$("mName").value,e=$("mEmail").value;if(!n)return;managers.unshift({id:"AG"+Date.now(),agencyId:"A-001",name:n,email:e,role:$("mRole").value,access:true});save();render()}
+function toggleAccess(id){let m=managers.find(x=>x.id===id);m.access=!m.access;save();render()}
+function deleteManager(id){managers=managers.filter(x=>x.id!==id);save();render()}
+render();
+</script>
+</body>
+</html>
