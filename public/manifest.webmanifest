@@ -1,0 +1,15 @@
+{
+  "name": "CRM Real Estate Premium",
+  "short_name": "CRM Estate",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f5f4",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
