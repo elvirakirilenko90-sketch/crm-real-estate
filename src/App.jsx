@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from "react";
 import { supabase } from "./supabaseClient";
 const stages = ["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
@@ -227,14 +226,184 @@ function More({role,setPage}) {
 export default function App(){
   const [page,setPage] = useStorage("page","feed");
   const [role,setRole] = useStorage("role","Администратор директор");
-  const [leads,setLeads] = useStorage("leads",initialLeads);
-  const [posts,setPosts] = useStorage("posts",initialPosts);
-  const [properties,setProperties] = useStorage("properties",initialProperties);
+
+  const [leads,setLeadsRaw] = useState(initialLeads);
+  const [posts,setPostsRaw] = useState(initialPosts);
+  const [properties,setPropertiesRaw] = useState(initialProperties);
+
   const [events,setEvents] = useStorage("events",initialEvents);
   const [help,setHelp] = useStorage("help",initialHelp);
   const [managers,setManagers] = useStorage("managers",initialManagers);
+
   const [lead,setLead] = useState(null);
   const [property,setProperty] = useState(null);
+
+  function leadFromDb(row){
+    return {
+      id: String(row.id),
+      name: row.name || "Без имени",
+      phone: row.phone || "",
+      source: row.source || sources[0],
+      status: row.stage || "Новый Лид",
+      notes: row.notes || "",
+      nextContact: row.next_contact_at || "",
+      manager: "Елена",
+      history: ["Загружено из Supabase"]
+    };
+  }
+
+  function propertyFromDb(row){
+    return {
+      id: String(row.id),
+      title: row.title || "Без названия",
+      type: row.property_type || types[0],
+      district: row.district || districts[0],
+      status: row.status || "Актуален",
+      price: row.price || 0,
+      area: row.area || 0,
+      floor: row.floor ? String(row.floor) : "",
+      owner: row.owner_name || "",
+      ownerPhone: row.owner_phone || "",
+      description: row.description || "",
+      media: [],
+      hot: false,
+      history: ["Загружено из Supabase"]
+    };
+  }
+
+  function postFromDb(row){
+    return {
+      id: String(row.id),
+      author: "Администратор",
+      date: row.created_at ? new Date(row.created_at).toLocaleString() : new Date().toLocaleString(),
+      text: row.content || row.title || "",
+      kind: "Фото",
+      file: "",
+      likes: row.likes_count || 0,
+      comments: []
+    };
+  }
+
+  async function loadFromSupabase(){
+    const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending:false });
+    const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending:false });
+    const postsRes = await supabase.from("news").select("*").order("created_at", { ascending:false });
+
+    if (!leadsRes.error && leadsRes.data && leadsRes.data.length > 0) {
+      setLeadsRaw(leadsRes.data.map(leadFromDb));
+    }
+
+    if (!propsRes.error && propsRes.data && propsRes.data.length > 0) {
+      setPropertiesRaw(propsRes.data.map(propertyFromDb));
+    }
+
+    if (!postsRes.error && postsRes.data && postsRes.data.length > 0) {
+      setPostsRaw(postsRes.data.map(postFromDb));
+    }
+  }
+
+  useEffect(() => {
+    loadFromSupabase();
+  }, []);
+
+  async function syncLeadToSupabase(item){
+    const payload = {
+      name: item.name,
+      phone: item.phone,
+      source: item.source,
+      stage: item.status,
+      notes: item.notes,
+      next_contact_at: item.nextContact || null
+    };
+
+    if (!String(item.id).startsWith("L-")) {
+      await supabase.from("leads").update(payload).eq("id", item.id);
+    } else {
+      const { data, error } = await supabase.from("leads").insert(payload).select().single();
+      if (!error && data) {
+        setLeadsRaw(prev => prev.map(x => x.id === item.id ? leadFromDb(data) : x));
+      }
+    }
+  }
+
+  async function syncPropertyToSupabase(item){
+    const payload = {
+      title: item.title,
+      property_type: item.type,
+      district: item.district,
+      status: item.status,
+      price: Number(item.price) || 0,
+      area: Number(item.area) || 0,
+      floor: parseInt(item.floor) || null,
+      owner_name: item.owner,
+      owner_phone: item.ownerPhone,
+      description: item.description
+    };
+
+    if (!String(item.id).startsWith("P-")) {
+      await supabase.from("properties").update(payload).eq("id", item.id);
+    } else {
+      const { data, error } = await supabase.from("properties").insert(payload).select().single();
+      if (!error && data) {
+        setPropertiesRaw(prev => prev.map(x => x.id === item.id ? propertyFromDb(data) : x));
+      }
+    }
+  }
+
+  async function syncPostToSupabase(item){
+    if (!String(item.id).startsWith("N-")) return;
+
+    const payload = {
+      title: item.text ? item.text.slice(0,80) : "Публикация",
+      content: item.text || "",
+      likes_count: item.likes || 0,
+      comments_count: item.comments ? item.comments.length : 0
+    };
+
+    const { data, error } = await supabase.from("news").insert(payload).select().single();
+    if (!error && data) {
+      setPostsRaw(prev => prev.map(x => x.id === item.id ? postFromDb(data) : x));
+    }
+  }
+
+  function setLeads(next){
+    setLeadsRaw(prev => {
+      const value = typeof next === "function" ? next(prev) : next;
+
+      const changed = value.filter(v => {
+        const old = prev.find(p => p.id === v.id);
+        return !old || JSON.stringify(old) !== JSON.stringify(v);
+      });
+
+      changed.forEach(syncLeadToSupabase);
+      return value;
+    });
+  }
+
+  function setProperties(next){
+    setPropertiesRaw(prev => {
+      const value = typeof next === "function" ? next(prev) : next;
+
+      const changed = value.filter(v => {
+        const old = prev.find(p => p.id === v.id);
+        return !old || JSON.stringify(old) !== JSON.stringify(v);
+      });
+
+      changed.forEach(syncPropertyToSupabase);
+      return value;
+    });
+  }
+
+  function setPosts(next){
+    setPostsRaw(prev => {
+      const value = typeof next === "function" ? next(prev) : next;
+
+      const changed = value.filter(v => !prev.find(p => p.id === v.id));
+      changed.forEach(syncPostToSupabase);
+
+      return value;
+    });
+  }
 
   return <div className="layout"><Sidebar page={page} setPage={setPage} role={role}/><div className="mainWrap"><main className="main"><Top page={page} setPage={setPage}/><div className="roleSelect"><select value={role} onChange={e=>setRole(e.target.value)}><option>Менеджер по продажам</option><option>Администратор директор</option><option>Администратор тех отдел</option></select></div>{page==="feed"&&<Feed posts={posts} setPosts={setPosts}/>} {page==="clients"&&<Clients leads={leads} setLeads={setLeads} onOpen={setLead}/>} {page==="calendar"&&<Calendar events={events} setEvents={setEvents} leads={leads} setLeads={setLeads}/>} {page==="properties"&&<Properties properties={properties} setProperties={setProperties} onOpen={setProperty}/>} {page==="analytics"&&<Analytics leads={leads} properties={properties} events={events} role={role}/>} {page==="help"&&<Help help={help} setHelp={setHelp} leads={leads} onOpen={setLead}/>} {page==="access"&&<Access managers={managers} setManagers={setManagers}/>} {page==="more"&&<More role={role} setPage={setPage}/>}<Bottom page={page} setPage={setPage}/>{lead&&<LeadModal lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} onClose={()=>setLead(null)}/>} {property&&<PropertyModal property={property} setProperties={setProperties} onClose={()=>setProperty(null)}/>}</main></div></div>
 }
