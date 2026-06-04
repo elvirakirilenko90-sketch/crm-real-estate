@@ -152,8 +152,11 @@ function Feed({posts,setPosts}) {
 
     if (!fileObj) return null;
 
-    const safeName = `${Date.now()}-${fileObj.name}`.replaceAll(" ", "-");
-    const path = `${newsId}/${safeName}`;
+const originalName = fileObj.name || "upload";
+const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
+const ext = rawExt.toLowerCase().replace(/[^a-z0-9]/g, "") || "file";
+const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+const path = `${newsId}/${safeName}`;
 
     const upload = await supabase
       .storage
@@ -400,31 +403,35 @@ export default function App(){
     };
   }
 
-  function postFromDb(row){
-    return {
-      id: String(row.id),
-      author: "Администратор",
-      date: row.created_at ? new Date(row.created_at).toLocaleString() : new Date().toLocaleString(),
-      text: row.content || row.title || "",
-      kind: "Фото",
-      file: "",
-      likes: row.likes_count || 0,
-      comments: []
-    };
-  }
+  function postFromDb(row, mediaRows = []){
+  const media = mediaRows.find(m => String(m.news_id) === String(row.id));
+
+  return {
+    id: String(row.id),
+    author: "Администратор",
+    date: row.created_at ? new Date(row.created_at).toLocaleString() : new Date().toLocaleString(),
+    text: row.content || row.title || "",
+    kind: media?.media_type || "Фото",
+    file: media?.link_url || media?.media_url || "",
+    likes: row.likes_count || 0,
+    comments: []
+  };
+}
 
   async function loadFromSupabase(){
     const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending:false });
     const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending:false });
     const postsRes = await supabase.from("news").select("*").order("created_at", { ascending:false });
+    const mediaRes = await supabase.from("news_media").select("*").order("created_at", { ascending:false });
 
     if (!leadsRes.error && leadsRes.data && leadsRes.data.length > 0) {
       setLeadsRaw(leadsRes.data.map(leadFromDb));
     }
 
-    if (!propsRes.error && propsRes.data && propsRes.data.length > 0) {
-      setPropertiesRaw(propsRes.data.map(propertyFromDb));
-    }
+    if (!postsRes.error && postsRes.data && postsRes.data.length > 0) {
+  const mediaRows = !mediaRes.error && mediaRes.data ? mediaRes.data : [];
+  setPostsRaw(postsRes.data.map(row => postFromDb(row, mediaRows)));
+}
 
     if (!postsRes.error && postsRes.data && postsRes.data.length > 0) {
       setPostsRaw(postsRes.data.map(postFromDb));
