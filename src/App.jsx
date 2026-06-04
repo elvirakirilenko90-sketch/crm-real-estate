@@ -84,6 +84,22 @@ function Button({children, variant="primary", className="", ...props}) {
 }
 
 function Media({kind="Фото", name="", small=false}) {
+  if (!name) {
+    return <div className={cn("media", small && "small")}><div>{kind === "Видео" ? "▶" : kind === "Файл" ? "📄" : kind === "Ссылка" ? "🔗" : "📷"}</div><b>{kind}</b><span>предпросмотр</span></div>;
+  }
+
+  if (kind === "Фото" && name.startsWith("http")) {
+    return <div className={cn("media", small && "small")}><img src={name} alt="Фото" style={{width:"100%",borderRadius:16}} /></div>;
+  }
+
+  if (kind === "Видео" && name.startsWith("http")) {
+    return <div className={cn("media", small && "small")}><video src={name} controls style={{width:"100%",borderRadius:16}} /></div>;
+  }
+
+  if ((kind === "Файл" || kind === "Ссылка") && name.startsWith("http")) {
+    return <a className="link" href={name} target="_blank" rel="noreferrer">{name}</a>;
+  }
+
   return <div className={cn("media", small && "small")}><div>{kind === "Видео" ? "▶" : kind === "Файл" ? "📄" : kind === "Ссылка" ? "🔗" : "📷"}</div><b>{name || kind}</b><span>предпросмотр</span></div>;
 }
 
@@ -113,16 +129,129 @@ function Bottom({page,setPage}) {
 function Feed({posts,setPosts}) {
   const [open,setOpen] = useState(false);
   const [draft,setDraft] = useState({text:"",kind:"Фото",file:""});
-  const publish = () => {
-    if(!draft.text && !draft.file) return;
-    setPosts(prev => [{id:"N-"+Date.now(), author:"Администратор", date:new Date().toLocaleString(), text:draft.text, kind:draft.kind, file:draft.file, likes:0, comments:[]}, ...prev]);
+  const [fileObj,setFileObj] = useState(null);
+
+  async function uploadToNewsMedia(newsId) {
+    if (draft.kind === "Ссылка") {
+      if (!draft.file) return null;
+
+      const { data } = await supabase
+        .from("news_media")
+        .insert({
+          news_id: newsId,
+          media_type: "Ссылка",
+          media_url: null,
+          file_name: null,
+          link_url: draft.file
+        })
+        .select()
+        .single();
+
+      return data;
+    }
+
+    if (!fileObj) return null;
+
+    const safeName = `${Date.now()}-${fileObj.name}`.replaceAll(" ", "-");
+    const path = `${newsId}/${safeName}`;
+
+    const upload = await supabase
+      .storage
+      .from("news-media")
+      .upload(path, fileObj, { upsert: true });
+
+    if (upload.error) {
+      alert("Ошибка загрузки файла: " + upload.error.message);
+      return null;
+    }
+
+    const publicUrl = supabase
+      .storage
+      .from("news-media")
+      .getPublicUrl(path).data.publicUrl;
+
+    const { data } = await supabase
+      .from("news_media")
+      .insert({
+        news_id: newsId,
+        media_type: draft.kind,
+        media_url: publicUrl,
+        file_name: fileObj.name,
+        link_url: null
+      })
+      .select()
+      .single();
+
+    return data;
+  }
+
+  const publish = async () => {
+    if(!draft.text && !draft.file && !fileObj) return;
+
+    const { data: news, error } = await supabase
+      .from("news")
+      .insert({
+        title: draft.text ? draft.text.slice(0,80) : "Публикация",
+        content: draft.text || "",
+        likes_count: 0,
+        comments_count: 0
+      })
+      .select()
+      .single();
+
+    if (error) {
+      alert("Ошибка сохранения публикации: " + error.message);
+      return;
+    }
+
+    const media = await uploadToNewsMedia(news.id);
+    const mediaUrl = media?.link_url || media?.media_url || "";
+    const kind = media?.media_type || draft.kind;
+
+    setPosts(prev => [{
+      id: String(news.id),
+      author: "Администратор",
+      date: news.created_at ? new Date(news.created_at).toLocaleString() : new Date().toLocaleString(),
+      text: news.content || "",
+      kind,
+      file: mediaUrl,
+      likes: 0,
+      comments: []
+    }, ...prev]);
+
     setDraft({text:"",kind:"Фото",file:""});
+    setFileObj(null);
     setOpen(false);
   };
+
   return <main className="screen"><div className="feedList">
     <div className="card dark hero"><div><h2>Лента новостей</h2><p>Внутренняя соцсеть агентства: фото, видео, файлы, ссылки, лайки и комментарии.</p></div><Button onClick={()=>setOpen(true)}>+ Новая публикация</Button></div>
-    {open && <div className="card composer"><div className="row"><h2>Новая публикация</h2><button className="icon" onClick={()=>setOpen(false)}>×</button></div><textarea className="input" placeholder="Текст публикации..." value={draft.text} onChange={e=>setDraft({...draft,text:e.target.value})}/><div className="grid4">{["Фото","Видео","Файл","Ссылка"].map(k=><Button key={k} variant={draft.kind===k?"primary":"soft"} onClick={()=>setDraft({...draft,kind:k})}>{k}</Button>)}</div><input className="input" placeholder="Название файла или ссылка" value={draft.file} onChange={e=>setDraft({...draft,file:e.target.value})}/><Media kind={draft.kind} name={draft.file}/><Button className="full" onClick={publish}>Опубликовать</Button></div>}
-    {posts.map(post=><article className="card post" key={post.id}><div className="postHead"><div>A</div><section><b>{post.author}</b><span>{post.date}</span></section></div><p>{post.text}</p>{post.kind==="Ссылка" && post.file && <a className="link" href={post.file} target="_blank">{post.file}</a>}<Media kind={post.kind} name={post.file}/><div className="actions"><span>♡ {post.likes}</span><span>💬 {post.comments.length}</span><span>↗</span></div>{post.comments.length > 0 && <div className="comments">{post.comments.map((c,i)=><p key={i}><b>Комментарий:</b> {c}</p>)}</div>}</article>)}
+
+    {open && <div className="card composer">
+      <div className="row"><h2>Новая публикация</h2><button className="icon" onClick={()=>setOpen(false)}>×</button></div>
+
+      <textarea className="input" placeholder="Текст публикации..." value={draft.text} onChange={e=>setDraft({...draft,text:e.target.value})}/>
+
+      <div className="grid4">{["Фото","Видео","Файл","Ссылка"].map(k=><Button key={k} variant={draft.kind===k?"primary":"soft"} onClick={()=>{setDraft({...draft,kind:k,file:""});setFileObj(null);}}>{k}</Button>)}</div>
+
+      {draft.kind === "Ссылка" ? (
+        <input className="input" placeholder="Вставьте ссылку" value={draft.file} onChange={e=>setDraft({...draft,file:e.target.value})}/>
+      ) : (
+        <input className="input" type="file" onChange={e=>setFileObj(e.target.files?.[0] || null)}/>
+      )}
+
+      <Media kind={draft.kind} name={draft.kind === "Ссылка" ? draft.file : fileObj?.name || ""}/>
+
+      <Button className="full" onClick={publish}>Опубликовать</Button>
+    </div>}
+
+    {posts.map(post=><article className="card post" key={post.id}>
+      <div className="postHead"><div>A</div><section><b>{post.author}</b><span>{post.date}</span></section></div>
+      <p>{post.text}</p>
+      <Media kind={post.kind} name={post.file}/>
+      <div className="actions"><span>♡ {post.likes}</span><span>💬 {post.comments.length}</span><span>↗</span></div>
+      {post.comments.length > 0 && <div className="comments">{post.comments.map((c,i)=><p key={i}><b>Комментарий:</b> {c}</p>)}</div>}
+    </article>)}
   </div></main>;
 }
 
