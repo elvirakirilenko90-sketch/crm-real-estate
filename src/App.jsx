@@ -83,26 +83,36 @@ function Button({children, variant="primary", className="", ...props}) {
   return <button className={cn("btn", variant, className)} {...props}>{children}</button>;
 }
 
-function Media({kind="Фото", name="", small=false}) {
+function normalizeUrl(url="") {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return "https://" + url;
+}
+
+function Media({kind="Фото", name="", small=false, onOpen=null}) {
   if (!name) {
     return <div className={cn("media", small && "small")}><div>{kind === "Видео" ? "▶" : kind === "Файл" ? "📄" : kind === "Ссылка" ? "🔗" : "📷"}</div><b>{kind}</b><span>предпросмотр</span></div>;
   }
 
   if (kind === "Фото" && name.startsWith("http")) {
-    return <div className={cn("media", small && "small")}><img src={name} alt="Фото" style={{width:"100%",borderRadius:16}} /></div>;
+    return <div className={cn("media", small && "small")} onClick={()=>onOpen&&onOpen({kind,name})} style={{cursor:"pointer"}}><img src={name} alt="Фото" style={{width:"100%",borderRadius:16}} /></div>;
   }
 
   if (kind === "Видео" && name.startsWith("http")) {
-    return <div className={cn("media", small && "small")}><video src={name} controls style={{width:"100%",borderRadius:16}} /></div>;
+    return <div className={cn("media", small && "small")} onClick={()=>onOpen&&onOpen({kind,name})} style={{cursor:"pointer"}}><video src={name} controls style={{width:"100%",borderRadius:16}} /></div>;
   }
 
-  if ((kind === "Файл" || kind === "Ссылка") && name.startsWith("http")) {
-    return <a className="link" href={name} target="_blank" rel="noreferrer">{name}</a>;
+  if (kind === "Файл" && name.startsWith("http")) {
+    return <a className="link" href={name} target="_blank" rel="noreferrer">📄 Открыть файл</a>;
+  }
+
+  if (kind === "Ссылка") {
+    const url = normalizeUrl(name);
+    return <a className="link" href={url} target="_blank" rel="noreferrer">🔗 Открыть ссылку</a>;
   }
 
   return <div className={cn("media", small && "small")}><div>{kind === "Видео" ? "▶" : kind === "Файл" ? "📄" : kind === "Ссылка" ? "🔗" : "📷"}</div><b>{name || kind}</b><span>предпросмотр</span></div>;
 }
-
 function Modal({children, onClose, wide=false}) {
   return <div className="modal" onMouseDown={onClose}><div className={cn("sheet", wide && "wide")} onMouseDown={(e)=>e.stopPropagation()}>{children}</div></div>;
 }
@@ -130,6 +140,7 @@ function Feed({posts,setPosts}) {
   const [open,setOpen] = useState(false);
   const [draft,setDraft] = useState({text:"",kind:"Фото",file:""});
   const [fileObj,setFileObj] = useState(null);
+  const [viewer,setViewer] = useState(null);
 
   async function uploadToNewsMedia(newsId) {
     if (draft.kind === "Ссылка") {
@@ -251,10 +262,18 @@ const path = `${newsId}/${safeName}`;
     {posts.map(post=><article className="card post" key={post.id}>
       <div className="postHead"><div>A</div><section><b>{post.author}</b><span>{post.date}</span></section></div>
       <p>{post.text}</p>
-      <Media kind={post.kind} name={post.file}/>
+     <Media kind={post.kind} name={post.file} onOpen={setViewer}/>
       <div className="actions"><span>♡ {post.likes}</span><span>💬 {post.comments.length}</span><span>↗</span></div>
       {post.comments.length > 0 && <div className="comments">{post.comments.map((c,i)=><p key={i}><b>Комментарий:</b> {c}</p>)}</div>}
     </article>)}
+ {viewer && <Modal onClose={()=>setViewer(null)} wide>
+  <div className="row">
+    <h2>{viewer.kind}</h2>
+    <button className="icon" onClick={()=>setViewer(null)}>×</button>
+  </div>
+  {viewer.kind === "Фото" && <img src={viewer.name} alt="Фото" style={{width:"100%",borderRadius:20}} />}
+  {viewer.kind === "Видео" && <video src={viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />}
+</Modal>}
   </div></main>;
 }
 
