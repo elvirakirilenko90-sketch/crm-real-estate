@@ -368,17 +368,46 @@ function PropertyModal({property,setProperties,onClose}) {
   };
 
   async function addMedia() {
-    if (!mediaFile) {
-      alert("Выбери файл");
-      return;
-    }
+    
+let propertyId = Number(local.id);
 
-    const propertyId = Number(local.id);
+if (!propertyId) {
+  const payload = {
+    title: local.title,
+    property_type: local.type,
+    district: local.district,
+    status: local.status || "Актуален",
+    price: Number(local.price) || 0,
+    area: Number(local.area) || 0,
+    floor: parseInt(local.floor) || null,
+    owner_name: local.owner,
+    owner_phone: local.ownerPhone,
+    description: local.description || ""
+  };
 
-    if (!propertyId) {
-      alert("Сначала сохрани объект, закрой карточку и открой его снова. Потом добавляй фото/видео.");
-      return;
-    }
+  const { data: savedProperty, error: propertyError } = await supabase
+    .from("properties")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (propertyError) {
+    alert("Ошибка сохранения объекта: " + propertyError.message);
+    return;
+  }
+
+  propertyId = savedProperty.id;
+
+  setLocal(prev => ({
+    ...prev,
+    id: String(savedProperty.id)
+  }));
+
+  setProperties(prev => prev.map(p => p.id === local.id ? {
+    ...p,
+    id: String(savedProperty.id)
+  } : p));
+}   
 
     const originalName = mediaFile.name || "upload";
     const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
