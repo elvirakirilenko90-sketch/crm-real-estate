@@ -106,10 +106,12 @@ function Media({kind="Фото", name="", small=false, onOpen=null}) {
     return <a className="link" href={name} target="_blank" rel="noreferrer">📄 Открыть файл</a>;
   }
 
-  if (kind === "Ссылка") {
-    const url = normalizeUrl(name);
-    return <a className="link" href={url} target="_blank" rel="noreferrer">🔗 Открыть ссылку</a>;
-  }
+  if (String(kind).toLowerCase().includes("ссылка")) {
+  const url = normalizeUrl(name);
+  return <a className="link" href={url} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()}>
+    🔗 Открыть ссылку
+  </a>;
+}
 
   return <div className={cn("media", small && "small")}><div>{kind === "Видео" ? "▶" : kind === "Файл" ? "📄" : kind === "Ссылка" ? "🔗" : "📷"}</div><b>{name || kind}</b><span>предпросмотр</span></div>;
 }
@@ -262,7 +264,18 @@ const path = `${newsId}/${safeName}`;
     {posts.map(post=><article className="card post" key={post.id}>
       <div className="postHead"><div>A</div><section><b>{post.author}</b><span>{post.date}</span></section></div>
       <p>{post.text}</p>
-     <Media kind={post.kind} name={post.file} onOpen={setViewer}/>
+{String(post.kind).toLowerCase().includes("ссылка") ? (
+  <a
+    className="link"
+    href={normalizeUrl(post.file)}
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    🔗 Открыть ссылку
+  </a>
+) : (
+  <Media kind={post.kind} name={post.file} onOpen={setViewer}/>
+)}
       <div className="actions"><span>♡ {post.likes}</span><span>💬 {post.comments.length}</span><span>↗</span></div>
       {post.comments.length > 0 && <div className="comments">{post.comments.map((c,i)=><p key={i}><b>Комментарий:</b> {c}</p>)}</div>}
     </article>)}
