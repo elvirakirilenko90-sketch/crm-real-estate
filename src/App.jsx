@@ -358,10 +358,166 @@ function Properties({properties,setProperties,onOpen}) {
 
 function PropertyModal({property,setProperties,onClose}) {
   const [local,setLocal] = useState(property);
-  const [media,setMedia] = useState("");
-  const save = () => { setProperties(prev=>prev.map(p=>p.id===local.id?local:p)); onClose(); };
-  const addMedia = (kind) => { if(!media) return; setLocal({...local,media:[...local.media,`${kind}: ${media}`],history:[...local.history,`Добавлено ${kind}`]}); setMedia(""); };
-  return <Modal onClose={onClose} wide><div className="propHero"><button className="icon heroClose" onClick={onClose}>×</button><label>Объект</label><input value={local.title} onChange={e=>setLocal({...local,title:e.target.value})}/><span>{local.district}</span></div><div className="formGrid"><Field label="Цена"><input value={local.price} onChange={e=>setLocal({...local,price:e.target.value})}/></Field><Field label="Тип"><select value={local.type} onChange={e=>setLocal({...local,type:e.target.value})}>{types.map(t=><option key={t}>{t}</option>)}</select></Field><Field label="Район"><select value={local.district} onChange={e=>setLocal({...local,district:e.target.value})}>{districts.map(d=><option key={d}>{d}</option>)}</select></Field><Field label="Площадь"><input value={local.area} onChange={e=>setLocal({...local,area:e.target.value})}/></Field><Field label="Этаж"><input value={local.floor} onChange={e=>setLocal({...local,floor:e.target.value})}/></Field><Field label="Собственник"><input value={local.owner} onChange={e=>setLocal({...local,owner:e.target.value})}/></Field><Field label="Телефон собственника"><input value={local.ownerPhone} onChange={e=>setLocal({...local,ownerPhone:e.target.value})}/></Field></div><Field label="Описание"><textarea value={local.description} onChange={e=>setLocal({...local,description:e.target.value})}/></Field><div className="card amber"><h3>Фото / видео объекта</h3><input className="input" placeholder="Название фото или видео" value={media} onChange={e=>setMedia(e.target.value)}/><div className="grid2"><Button onClick={()=>addMedia("Фото")}>Добавить фото</Button><Button onClick={()=>addMedia("Видео")}>Добавить видео</Button></div><div className="mediaGrid">{local.media.map((m,i)=><div key={i} className="mediaTile"><Media kind={m.split(":")[0]} name={m} small/><Button variant="danger" className="full" onClick={()=>setLocal({...local,media:local.media.filter((_,idx)=>idx!==i)})}>Удалить</Button></div>)}</div></div><div className="card"><h3>История</h3>{local.history.map((h,i)=><p className="muted" key={i}>• {h}</p>)}</div><Button className="full sticky" onClick={save}>Сохранить объект</Button></Modal>;
+  const [mediaKind,setMediaKind] = useState("Фото");
+  const [mediaFile,setMediaFile] = useState(null);
+  const [viewer,setViewer] = useState(null);
+
+  const save = () => {
+    setProperties(prev=>prev.map(p=>p.id===local.id ? local : p));
+    onClose();
+  };
+
+  async function addMedia() {
+    if (!mediaFile) {
+      alert("Выбери файл");
+      return;
+    }
+
+    const propertyId = Number(local.id);
+
+    if (!propertyId) {
+      alert("Сначала сохрани объект, закрой карточку и открой его снова. Потом добавляй фото/видео.");
+      return;
+    }
+
+    const originalName = mediaFile.name || "upload";
+    const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
+    const ext = rawExt.toLowerCase().replace(/[^a-z0-9]/g, "") || "file";
+    const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const path = `${propertyId}/${safeName}`;
+
+    const upload = await supabase
+      .storage
+      .from("property-media")
+      .upload(path, mediaFile, { upsert: true });
+
+    if (upload.error) {
+      alert("Ошибка загрузки файла: " + upload.error.message);
+      return;
+    }
+
+    const publicUrl = supabase
+      .storage
+      .from("property-media")
+      .getPublicUrl(path).data.publicUrl;
+
+    const { data, error } = await supabase
+      .from("property_media")
+      .insert({
+        property_id: propertyId,
+        media_type: mediaKind,
+        media_url: publicUrl,
+        file_name: originalName
+      })
+      .select()
+      .single();
+
+    if (error) {
+      alert("Ошибка сохранения медиа: " + error.message);
+      return;
+    }
+
+    const item = {
+      kind: data.media_type,
+      url: data.media_url,
+      name: data.file_name
+    };
+
+    setLocal(prev => ({
+      ...prev,
+      media: [...(prev.media || []), item],
+      history: [...(prev.history || []), `Добавлено ${mediaKind}`]
+    }));
+
+    setProperties(prev => prev.map(p => p.id === local.id ? {
+      ...p,
+      media: [...(p.media || []), item]
+    } : p));
+
+    setMediaFile(null);
+  }
+
+  return <Modal onClose={onClose} wide>
+    <div className="propHero">
+      <button className="icon heroClose" onClick={onClose}>×</button>
+      <h2>{local.title}</h2>
+      <p>{local.type} · {local.district} · {money(local.price)}</p>
+    </div>
+
+    <div className="grid2">
+      <Field label="Название объекта">
+        <input className="input" value={local.title} onChange={e=>setLocal({...local,title:e.target.value})}/>
+      </Field>
+
+      <Field label="Тип">
+        <select className="input" value={local.type} onChange={e=>setLocal({...local,type:e.target.value})}>
+          {types.map(t=><option key={t}>{t}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Район">
+        <select className="input" value={local.district} onChange={e=>setLocal({...local,district:e.target.value})}>
+          {districts.map(d=><option key={d}>{d}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Цена">
+        <input className="input" value={local.price} onChange={e=>setLocal({...local,price:e.target.value})}/>
+      </Field>
+
+      <Field label="Площадь">
+        <input className="input" value={local.area} onChange={e=>setLocal({...local,area:e.target.value})}/>
+      </Field>
+
+      <Field label="Этаж">
+        <input className="input" value={local.floor} onChange={e=>setLocal({...local,floor:e.target.value})}/>
+      </Field>
+
+      <Field label="Собственник">
+        <input className="input" value={local.owner} onChange={e=>setLocal({...local,owner:e.target.value})}/>
+      </Field>
+
+      <Field label="Телефон собственника">
+        <input className="input" value={local.ownerPhone} onChange={e=>setLocal({...local,ownerPhone:e.target.value})}/>
+      </Field>
+    </div>
+
+    <Field label="Описание">
+      <textarea className="input" value={local.description || ""} onChange={e=>setLocal({...local,description:e.target.value})}/>
+    </Field>
+
+    <div className="card">
+      <h3>Фото / видео объекта</h3>
+
+      <div className="grid4">
+        <Button variant={mediaKind==="Фото" ? "primary" : "soft"} onClick={()=>setMediaKind("Фото")}>Фото</Button>
+        <Button variant={mediaKind==="Видео" ? "primary" : "soft"} onClick={()=>setMediaKind("Видео")}>Видео</Button>
+      </div>
+
+      <input className="input" type="file" onChange={e=>setMediaFile(e.target.files?.[0] || null)}/>
+
+      <Button className="full" onClick={addMedia}>Добавить медиа</Button>
+
+      <div className="grid2">
+        {(local.media || []).map((m,i)=>{
+          const kind = m.kind || "Фото";
+          const url = m.url || m;
+          return <Media key={i} kind={kind} name={url} small onOpen={setViewer}/>;
+        })}
+      </div>
+    </div>
+
+    <Button className="full" onClick={save}>Сохранить объект</Button>
+
+    {viewer && <Modal onClose={()=>setViewer(null)} wide>
+      <div className="row">
+        <h2>{viewer.kind}</h2>
+        <button className="icon" onClick={()=>setViewer(null)}>×</button>
+      </div>
+      {viewer.kind === "Фото" && <img src={viewer.name} alt="Фото" style={{width:"100%",borderRadius:20}} />}
+      {viewer.kind === "Видео" && <video src={viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />}
+    </Modal>}
+  </Modal>;
 }
 
 function Analytics({leads,properties,events,role}) {
