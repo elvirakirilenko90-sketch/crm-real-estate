@@ -175,7 +175,9 @@ const path = `${newsId}/${safeName}`;
       .storage
       .from("news-media")
       .upload(path, fileObj, { upsert: true });
-
+    
+console.log("UPLOAD RESULT", upload);
+    
     if (upload.error) {
       alert("Ошибка загрузки файла: " + upload.error.message);
       return null;
