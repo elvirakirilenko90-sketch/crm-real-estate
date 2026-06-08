@@ -595,6 +595,198 @@ function PropertyModal({property,setProperties,onClose}) {
       {viewer.kind === "Видео" && <video src={viewer.url || viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />}
     </Modal>}
   </Modal>;
+} 
+function PropertyModal({property,setProperties,onClose}) {
+  const [local,setLocal] = useState(property);
+  const [mediaKind,setMediaKind] = useState("Фото");
+  const [mediaFile,setMediaFile] = useState(null);
+  const [viewer,setViewer] = useState(null);
+
+  async function addMedia() {
+    if (!mediaFile) {
+      alert("Сначала выбери фото или видео");
+      return;
+    }
+
+    const propertyId = Number(local.id);
+
+    if (!propertyId) {
+      alert("Сначала сохрани объект и открой его снова");
+      return;
+    }
+
+    const detectedKind = mediaFile.type?.startsWith("video") ? "Видео" : "Фото";
+    const originalName = mediaFile.name || "upload";
+    const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
+    const ext = rawExt.toLowerCase().replace(/[^a-z0-9]/g, "") || "file";
+    const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const path = `${propertyId}/${safeName}`;
+
+    const { error: uploadError } = await supabase
+      .storage
+      .from("property-media")
+      .upload(path, mediaFile, {
+        upsert: true,
+        contentType: mediaFile.type || undefined
+      });
+
+    if (uploadError) {
+      alert("Ошибка загрузки файла: " + uploadError.message);
+      return;
+    }
+
+    const publicUrl = supabase
+      .storage
+      .from("property-media")
+      .getPublicUrl(path).data.publicUrl;
+
+    const { data, error } = await supabase
+      .from("property_media")
+      .insert({
+        property_id: propertyId,
+        media_type: detectedKind,
+        media_url: publicUrl,
+        file_name: originalName
+      })
+      .select()
+      .single();
+
+    if (error) {
+      alert("Файл загрузился, но не записался: " + error.message);
+      return;
+    }
+
+    const item = {
+      kind: data.media_type,
+      url: data.media_url,
+      name: data.file_name
+    };
+
+    setLocal(prev => ({
+      ...prev,
+      media: [...(prev.media || []), item]
+    }));
+
+    setProperties(prev => prev.map(p =>
+      String(p.id) === String(propertyId)
+        ? { ...p, media: [...(p.media || []), item] }
+        : p
+    ));
+
+    setMediaFile(null);
+    alert("Медиа сохранено");
+  }
+
+  const save = () => {
+    setProperties(prev => prev.map(p =>
+      String(p.id) === String(local.id)
+        ? { ...p, ...local, media: local.media || p.media || [] }
+        : p
+    ));
+    onClose();
+  };
+
+  const mediaList = local.media || [];
+
+  const openViewer = (index) => {
+    setViewer({ index });
+  };
+
+  const nextMedia = () => {
+    setViewer(v => ({ index: (v.index + 1) % mediaList.length }));
+  };
+
+  const prevMedia = () => {
+    setViewer(v => ({ index: (v.index - 1 + mediaList.length) % mediaList.length }));
+  };
+
+  const currentMedia = viewer ? mediaList[viewer.index] : null;
+
+  return <Modal onClose={onClose} wide>
+    <div className="propHero">
+      <button className="icon heroClose" onClick={onClose}>×</button>
+      <h2>{local.title}</h2>
+      <p>{local.type} · {local.district} · {money(local.price)}</p>
+    </div>
+
+    <div className="grid2">
+      <Field label="Название объекта">
+        <input className="input" value={local.title || ""} onChange={e=>setLocal({...local,title:e.target.value})}/>
+      </Field>
+
+      <Field label="Тип">
+        <select className="input" value={local.type || types[0]} onChange={e=>setLocal({...local,type:e.target.value})}>
+          {types.map(t=><option key={t}>{t}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Район">
+        <select className="input" value={local.district || districts[0]} onChange={e=>setLocal({...local,district:e.target.value})}>
+          {districts.map(d=><option key={d}>{d}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Цена">
+        <input className="input" value={local.price || ""} onChange={e=>setLocal({...local,price:e.target.value})}/>
+      </Field>
+
+      <Field label="Площадь">
+        <input className="input" value={local.area || ""} onChange={e=>setLocal({...local,area:e.target.value})}/>
+      </Field>
+
+      <Field label="Этаж">
+        <input className="input" value={local.floor || ""} onChange={e=>setLocal({...local,floor:e.target.value})}/>
+      </Field>
+
+      <Field label="Собственник">
+        <input className="input" value={local.owner || ""} onChange={e=>setLocal({...local,owner:e.target.value})}/>
+      </Field>
+
+      <Field label="Телефон собственника">
+        <input className="input" value={local.ownerPhone || ""} onChange={e=>setLocal({...local,ownerPhone:e.target.value})}/>
+      </Field>
+    </div>
+
+    <Field label="Описание">
+      <textarea className="input" value={local.description || ""} onChange={e=>setLocal({...local,description:e.target.value})}/>
+    </Field>
+
+    <div className="card">
+      <h3>Фото / видео объекта</h3>
+
+      <div className="grid4">
+        <Button variant={mediaKind==="Фото" ? "primary" : "soft"} onClick={()=>setMediaKind("Фото")}>Фото</Button>
+        <Button variant={mediaKind==="Видео" ? "primary" : "soft"} onClick={()=>setMediaKind("Видео")}>Видео</Button>
+      </div>
+
+      <input className="input" type="file" accept="image/*,video/*" onChange={e=>setMediaFile(e.target.files?.[0] || null)}/>
+
+      <Button className="full" onClick={addMedia}>Добавить фото/видео</Button>
+
+      <div className="grid2">
+        {mediaList.map((m,i)=>
+          <div key={i} onClick={()=>openViewer(i)} style={{cursor:"pointer"}}>
+            <Media kind={m.kind} name={m.url} small/>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <Button className="full" onClick={save}>Сохранить объект</Button>
+
+    {currentMedia && <Modal onClose={()=>setViewer(null)} wide>
+      <div className="row">
+        <button className="icon" onClick={prevMedia}>‹</button>
+        <h2>{currentMedia.kind} {viewer.index + 1}/{mediaList.length}</h2>
+        <button className="icon" onClick={nextMedia}>›</button>
+        <button className="icon" onClick={()=>setViewer(null)}>×</button>
+      </div>
+
+      {currentMedia.kind === "Фото" && <img src={currentMedia.url} alt="Фото" style={{width:"100%",borderRadius:20}} />}
+
+      {currentMedia.kind === "Видео" && <video src={currentMedia.url} controls autoPlay style={{width:"100%",borderRadius:20}} />}
+    </Modal>}
+  </Modal>;
 }
 function Analytics({leads,properties,events,role}) {
   const scoped = role==="Менеджер по продажам" ? leads.filter(l=>l.manager==="Елена") : leads;
