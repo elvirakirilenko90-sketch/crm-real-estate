@@ -366,7 +366,6 @@ function PropertyModal({property,setProperties,onClose}) {
 
   async function ensurePropertySaved() {
     const numericId = Number(local.id);
-
     if (numericId) return numericId;
 
     const payload = {
@@ -394,12 +393,8 @@ function PropertyModal({property,setProperties,onClose}) {
     }
 
     const newId = String(data.id);
-
     setLocal(prev => ({ ...prev, id: newId }));
-
-    setProperties(prev => prev.map(p =>
-      p.id === local.id ? { ...p, id: newId } : p
-    ));
+    setProperties(prev => prev.map(p => p.id === local.id ? { ...p, id: newId } : p));
 
     return data.id;
   }
@@ -412,6 +407,8 @@ function PropertyModal({property,setProperties,onClose}) {
 
     const propertyId = await ensurePropertySaved();
     if (!propertyId) return;
+
+    const detectedKind = mediaFile.type?.startsWith("video") ? "Видео" : mediaKind;
 
     const originalName = mediaFile.name || "upload";
     const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
@@ -438,47 +435,78 @@ function PropertyModal({property,setProperties,onClose}) {
       .from("property-media")
       .getPublicUrl(path).data.publicUrl;
 
-    const { data: mediaRow, error: insertError } = await supabase
+    const { data, error } = await supabase
       .from("property_media")
       .insert({
         property_id: propertyId,
-        media_type: mediaKind,
+        media_type: detectedKind,
         media_url: publicUrl,
         file_name: originalName
       })
       .select()
       .single();
 
-    if (insertError) {
-      alert("Файл загрузился, но не записался в таблицу: " + insertError.message);
+    if (error) {
+      alert("Файл загрузился, но не записался в таблицу: " + error.message);
       return;
     }
 
     const item = {
-      kind: mediaRow.media_type,
-      url: mediaRow.media_url,
-      name: mediaRow.file_name
+      kind: data.media_type,
+      url: data.media_url,
+      name: data.file_name
     };
 
     setLocal(prev => ({
       ...prev,
-      media: [...(prev.media || []), item],
-      history: [...(prev.history || []), `Добавлено ${mediaKind}`]
+      id: String(propertyId),
+      media: [...(prev.media || []), item]
     }));
 
     setProperties(prev => prev.map(p =>
       String(p.id) === String(local.id) || String(p.id) === String(propertyId)
-        ? { ...p, id: String(propertyId), media: [...(p.media || []), item] }
+        ? {
+            ...p,
+            id: String(propertyId),
+            media: [...(p.media || []), item]
+          }
         : p
     ));
 
     setMediaFile(null);
-    alert("Медиа добавлено");
+    alert("Медиа добавлено и сохранено");
   }
 
   const save = () => {
-    setProperties(prev => prev.map(p => p.id === local.id ? local : p));
+    setProperties(prev => prev.map(p => {
+      if (String(p.id) !== String(local.id)) return p;
+      return {
+        ...p,
+        ...local,
+        media: p.media || local.media || []
+      };
+    }));
     onClose();
+  };
+
+  const mediaList = local.media || [];
+
+  const openViewer = (item, index) => {
+    setViewer({ ...item, index });
+  };
+
+  const nextMedia = () => {
+    setViewer(v => {
+      const next = (v.index + 1) % mediaList.length;
+      return { ...mediaList[next], index: next };
+    });
+  };
+
+  const prevMedia = () => {
+    setViewer(v => {
+      const prev = (v.index - 1 + mediaList.length) % mediaList.length;
+      return { ...mediaList[prev], index: prev };
+    });
   };
 
   return <Modal onClose={onClose} wide>
@@ -538,15 +566,17 @@ function PropertyModal({property,setProperties,onClose}) {
         <Button variant={mediaKind==="Видео" ? "primary" : "soft"} onClick={()=>setMediaKind("Видео")}>Видео</Button>
       </div>
 
-      <input className="input" type="file" onChange={e=>setMediaFile(e.target.files?.[0] || null)}/>
+      <input className="input" type="file" accept="image/*,video/*" onChange={e=>setMediaFile(e.target.files?.[0] || null)}/>
 
       <Button className="full" onClick={addMedia}>Добавить фото/видео</Button>
 
       <div className="grid2">
-        {(local.media || []).map((m,i)=>{
+        {mediaList.map((m,i)=>{
           const kind = m.kind || "Фото";
           const url = m.url || m.media_url || m;
-          return <Media key={i} kind={kind} name={url} small onOpen={setViewer}/>;
+          return <div key={i} onClick={()=>openViewer({kind,url,name:m.name}, i)}>
+            <Media kind={kind} name={url} small/>
+          </div>;
         })}
       </div>
     </div>
@@ -555,11 +585,14 @@ function PropertyModal({property,setProperties,onClose}) {
 
     {viewer && <Modal onClose={()=>setViewer(null)} wide>
       <div className="row">
-        <h2>{viewer.kind}</h2>
+        <button className="icon" onClick={prevMedia}>‹</button>
+        <h2>{viewer.kind} {mediaList.length > 1 ? `${viewer.index + 1}/${mediaList.length}` : ""}</h2>
+        <button className="icon" onClick={nextMedia}>›</button>
         <button className="icon" onClick={()=>setViewer(null)}>×</button>
       </div>
-      {viewer.kind === "Фото" && <img src={viewer.name} alt="Фото" style={{width:"100%",borderRadius:20}} />}
-      {viewer.kind === "Видео" && <video src={viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />}
+
+      {viewer.kind === "Фото" && <img src={viewer.url || viewer.name} alt="Фото" style={{width:"100%",borderRadius:20}} />}
+      {viewer.kind === "Видео" && <video src={viewer.url || viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />}
     </Modal>}
   </Modal>;
 }
