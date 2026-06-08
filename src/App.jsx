@@ -615,7 +615,7 @@ export default function App(){
     };
   }
 
-  function propertyFromDb(row){
+  function propertyFromDb(row, mediaRows = []){
     return {
       id: String(row.id),
       title: row.title || "Без названия",
@@ -628,7 +628,13 @@ export default function App(){
       owner: row.owner_name || "",
       ownerPhone: row.owner_phone || "",
       description: row.description || "",
-      media: [],
+      media: mediaRows
+  .filter(m => String(m.property_id) === String(row.id))
+  .map(m => ({
+    kind: m.media_type,
+    url: m.media_url,
+    name: m.file_name
+  })),
       hot: false,
       history: ["Загружено из Supabase"]
     };
@@ -652,21 +658,23 @@ export default function App(){
   async function loadFromSupabase(){
     const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending:false });
     const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending:false });
+    const propertyMediaRes = await supabase
+  .from("property_media")
+  .select("*");
     const postsRes = await supabase.from("news").select("*").order("created_at", { ascending:false });
     const mediaRes = await supabase.from("news_media").select("*").order("created_at", { ascending:false });
 
     if (!leadsRes.error && leadsRes.data && leadsRes.data.length > 0) {
       setLeadsRaw(leadsRes.data.map(leadFromDb));
     }
-
+if (!propsRes.error && propsRes.data && propsRes.data.length > 0) {
+  const propertyMediaRows = !propertyMediaRes.error && propertyMediaRes.data ? propertyMediaRes.data : [];
+  setPropertiesRaw(propsRes.data.map(row => propertyFromDb(row, propertyMediaRows)));
+} 
     if (!postsRes.error && postsRes.data && postsRes.data.length > 0) {
   const mediaRows = !mediaRes.error && mediaRes.data ? mediaRes.data : [];
   setPostsRaw(postsRes.data.map(row => postFromDb(row, mediaRows)));
-}
 
-    if (!postsRes.error && postsRes.data && postsRes.data.length > 0) {
-      setPostsRaw(postsRes.data.map(postFromDb));
-    }
   }
 
   useEffect(() => {
