@@ -677,14 +677,68 @@ function PropertyModal({property,setProperties,onClose}) {
     alert("Медиа сохранено");
   }
 
-  const save = () => {
+  const save = async () => {
+  const payload = {
+    title: local.title || "Новый объект",
+    property_type: local.type || types[0],
+    district: local.district || districts[0],
+    status: local.status || "Актуален",
+    price: Number(local.price) || 0,
+    area: Number(local.area) || 0,
+    floor: parseInt(local.floor) || null,
+    owner_name: local.owner || "",
+    owner_phone: local.ownerPhone || "",
+    description: local.description || ""
+  };
+
+  const id = Number(local.id);
+
+  if (id) {
+    const { error } = await supabase
+      .from("properties")
+      .update(payload)
+      .eq("id", id);
+
+    if (error) {
+      alert("Ошибка обновления объекта: " + error.message);
+      return;
+    }
+
     setProperties(prev => prev.map(p =>
       String(p.id) === String(local.id)
         ? { ...p, ...local, media: local.media || p.media || [] }
         : p
     ));
+
+    alert("Объект сохранён");
     onClose();
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("properties")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    alert("Ошибка создания объекта: " + error.message);
+    return;
+  }
+
+  const saved = {
+    ...local,
+    id: String(data.id),
+    media: local.media || []
   };
+
+  setProperties(prev => prev.map(p =>
+    String(p.id) === String(local.id) ? saved : p
+  ));
+
+  alert("Объект создан и сохранён");
+  onClose();
+};
 
   const mediaList = local.media || [];
 
