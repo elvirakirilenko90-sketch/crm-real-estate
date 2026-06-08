@@ -364,52 +364,54 @@ function PropertyModal({property,setProperties,onClose}) {
   const [mediaFile,setMediaFile] = useState(null);
   const [viewer,setViewer] = useState(null);
 
-  const save = () => {
-    setProperties(prev=>prev.map(p=>p.id===local.id ? local : p));
-    onClose();
-  };
+  async function ensurePropertySaved() {
+    const numericId = Number(local.id);
 
-  async function addMedia() {
-    
-let propertyId = Number(local.id);
+    if (numericId) return numericId;
 
-if (!propertyId) {
-  const payload = {
-    title: local.title,
-    property_type: local.type,
-    district: local.district,
-    status: local.status || "Актуален",
-    price: Number(local.price) || 0,
-    area: Number(local.area) || 0,
-    floor: parseInt(local.floor) || null,
-    owner_name: local.owner,
-    owner_phone: local.ownerPhone,
-    description: local.description || ""
-  };
+    const payload = {
+      title: local.title || "Новый объект",
+      property_type: local.type || types[0],
+      district: local.district || districts[0],
+      status: local.status || "Актуален",
+      price: Number(local.price) || 0,
+      area: Number(local.area) || 0,
+      floor: parseInt(local.floor) || null,
+      owner_name: local.owner || "",
+      owner_phone: local.ownerPhone || "",
+      description: local.description || ""
+    };
 
-  const { data: savedProperty, error: propertyError } = await supabase
-    .from("properties")
-    .insert(payload)
-    .select()
-    .single();
+    const { data, error } = await supabase
+      .from("properties")
+      .insert(payload)
+      .select()
+      .single();
 
-  if (propertyError) {
-    alert("Ошибка сохранения объекта: " + propertyError.message);
-    return;
+    if (error) {
+      alert("Ошибка сохранения объекта: " + error.message);
+      return null;
+    }
+
+    const newId = String(data.id);
+
+    setLocal(prev => ({ ...prev, id: newId }));
+
+    setProperties(prev => prev.map(p =>
+      p.id === local.id ? { ...p, id: newId } : p
+    ));
+
+    return data.id;
   }
 
-  propertyId = savedProperty.id;
+  async function addMedia() {
+    if (!mediaFile) {
+      alert("Сначала выбери фото или видео");
+      return;
+    }
 
-  setLocal(prev => ({
-    ...prev,
-    id: String(savedProperty.id)
-  }));
-
-  setProperties(prev => prev.map(p => p.id === local.id ? {
-    ...p,
-    id: String(savedProperty.id)
-  } : p));
-}   
+    const propertyId = await ensurePropertySaved();
+    if (!propertyId) return;
 
     const originalName = mediaFile.name || "upload";
     const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
@@ -417,13 +419,17 @@ if (!propertyId) {
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const path = `${propertyId}/${safeName}`;
 
-    const upload = await supabase
+    const { error: uploadError } = await supabase
       .storage
       .from("property-media")
-      .upload(path, mediaFile, { upsert: true });
+      .upload(path, mediaFile, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: mediaFile.type || undefined
+      });
 
-    if (upload.error) {
-      alert("Ошибка загрузки файла: " + upload.error.message);
+    if (uploadError) {
+      alert("Ошибка загрузки файла: " + uploadError.message);
       return;
     }
 
@@ -432,7 +438,7 @@ if (!propertyId) {
       .from("property-media")
       .getPublicUrl(path).data.publicUrl;
 
-    const { data, error } = await supabase
+    const { data: mediaRow, error: insertError } = await supabase
       .from("property_media")
       .insert({
         property_id: propertyId,
@@ -443,15 +449,15 @@ if (!propertyId) {
       .select()
       .single();
 
-    if (error) {
-      alert("Ошибка сохранения медиа: " + error.message);
+    if (insertError) {
+      alert("Файл загрузился, но не записался в таблицу: " + insertError.message);
       return;
     }
 
     const item = {
-      kind: data.media_type,
-      url: data.media_url,
-      name: data.file_name
+      kind: mediaRow.media_type,
+      url: mediaRow.media_url,
+      name: mediaRow.file_name
     };
 
     setLocal(prev => ({
@@ -460,13 +466,20 @@ if (!propertyId) {
       history: [...(prev.history || []), `Добавлено ${mediaKind}`]
     }));
 
-    setProperties(prev => prev.map(p => p.id === local.id ? {
-      ...p,
-      media: [...(p.media || []), item]
-    } : p));
+    setProperties(prev => prev.map(p =>
+      String(p.id) === String(local.id) || String(p.id) === String(propertyId)
+        ? { ...p, id: String(propertyId), media: [...(p.media || []), item] }
+        : p
+    ));
 
     setMediaFile(null);
+    alert("Медиа добавлено");
   }
+
+  const save = () => {
+    setProperties(prev => prev.map(p => p.id === local.id ? local : p));
+    onClose();
+  };
 
   return <Modal onClose={onClose} wide>
     <div className="propHero">
@@ -477,39 +490,39 @@ if (!propertyId) {
 
     <div className="grid2">
       <Field label="Название объекта">
-        <input className="input" value={local.title} onChange={e=>setLocal({...local,title:e.target.value})}/>
+        <input className="input" value={local.title || ""} onChange={e=>setLocal({...local,title:e.target.value})}/>
       </Field>
 
       <Field label="Тип">
-        <select className="input" value={local.type} onChange={e=>setLocal({...local,type:e.target.value})}>
+        <select className="input" value={local.type || types[0]} onChange={e=>setLocal({...local,type:e.target.value})}>
           {types.map(t=><option key={t}>{t}</option>)}
         </select>
       </Field>
 
       <Field label="Район">
-        <select className="input" value={local.district} onChange={e=>setLocal({...local,district:e.target.value})}>
+        <select className="input" value={local.district || districts[0]} onChange={e=>setLocal({...local,district:e.target.value})}>
           {districts.map(d=><option key={d}>{d}</option>)}
         </select>
       </Field>
 
       <Field label="Цена">
-        <input className="input" value={local.price} onChange={e=>setLocal({...local,price:e.target.value})}/>
+        <input className="input" value={local.price || ""} onChange={e=>setLocal({...local,price:e.target.value})}/>
       </Field>
 
       <Field label="Площадь">
-        <input className="input" value={local.area} onChange={e=>setLocal({...local,area:e.target.value})}/>
+        <input className="input" value={local.area || ""} onChange={e=>setLocal({...local,area:e.target.value})}/>
       </Field>
 
       <Field label="Этаж">
-        <input className="input" value={local.floor} onChange={e=>setLocal({...local,floor:e.target.value})}/>
+        <input className="input" value={local.floor || ""} onChange={e=>setLocal({...local,floor:e.target.value})}/>
       </Field>
 
       <Field label="Собственник">
-        <input className="input" value={local.owner} onChange={e=>setLocal({...local,owner:e.target.value})}/>
+        <input className="input" value={local.owner || ""} onChange={e=>setLocal({...local,owner:e.target.value})}/>
       </Field>
 
       <Field label="Телефон собственника">
-        <input className="input" value={local.ownerPhone} onChange={e=>setLocal({...local,ownerPhone:e.target.value})}/>
+        <input className="input" value={local.ownerPhone || ""} onChange={e=>setLocal({...local,ownerPhone:e.target.value})}/>
       </Field>
     </div>
 
@@ -527,12 +540,12 @@ if (!propertyId) {
 
       <input className="input" type="file" onChange={e=>setMediaFile(e.target.files?.[0] || null)}/>
 
-      <Button className="full" onClick={addMedia}>Добавить медиа</Button>
+      <Button className="full" onClick={addMedia}>Добавить фото/видео</Button>
 
       <div className="grid2">
         {(local.media || []).map((m,i)=>{
           const kind = m.kind || "Фото";
-          const url = m.url || m;
+          const url = m.url || m.media_url || m;
           return <Media key={i} kind={kind} name={url} small onOpen={setViewer}/>;
         })}
       </div>
@@ -550,7 +563,6 @@ if (!propertyId) {
     </Modal>}
   </Modal>;
 }
-
 function Analytics({leads,properties,events,role}) {
   const scoped = role==="Менеджер по продажам" ? leads.filter(l=>l.manager==="Елена") : leads;
   const deals = scoped.filter(l=>l.status==="Сделка").length;
