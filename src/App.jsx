@@ -926,29 +926,54 @@ if (!propsRes.error && propsRes.data && propsRes.data.length > 0) {
     }
   }
 
-  async function syncPropertyToSupabase(item){
-    const payload = {
-      title: item.title,
-      property_type: item.type,
-      district: item.district,
-      status: item.status,
-      price: Number(item.price) || 0,
-      area: Number(item.area) || 0,
-      floor: parseInt(item.floor) || null,
-      owner_name: item.owner,
-      owner_phone: item.ownerPhone,
-      description: item.description
-    };
+ async function syncPropertyToSupabase(item){
+  const payload = {
+    title: item.title || "Новый объект",
+    property_type: item.type || types[0],
+    district: item.district || districts[0],
+    status: item.status || "Актуален",
+    price: Number(item.price) || 0,
+    area: Number(item.area) || 0,
+    floor: parseInt(item.floor) || null,
+    owner_name: item.owner || "",
+    owner_phone: item.ownerPhone || "",
+    description: item.description || ""
+  };
 
-    if (!String(item.id).startsWith("P-")) {
-      await supabase.from("properties").update(payload).eq("id", item.id);
-    } else {
-      const { data, error } = await supabase.from("properties").insert(payload).select().single();
-      if (!error && data) {
-        setPropertiesRaw(prev => prev.map(x => x.id === item.id ? propertyFromDb(data) : x));
-      }
+  const isRealId = Number(item.id) && !String(item.id).startsWith("P-");
+
+  if (isRealId) {
+    const { error } = await supabase
+      .from("properties")
+      .update(payload)
+      .eq("id", Number(item.id));
+
+    if (error) {
+      alert("Ошибка обновления объекта: " + error.message);
     }
+
+    return;
   }
+
+  const { data, error } = await supabase
+    .from("properties")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    alert("Ошибка создания объекта: " + error.message);
+    return;
+  }
+
+  setPropertiesRaw(prev =>
+    prev.map(p =>
+      String(p.id) === String(item.id)
+        ? { ...item, id: String(data.id) }
+        : p
+    )
+  );
+}
 
   async function syncPostToSupabase(item){
     if (!String(item.id).startsWith("N-")) return;
