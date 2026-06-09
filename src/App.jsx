@@ -345,17 +345,64 @@ function Calendar({events,setEvents,leads,setLeads}) {
   const create = (date) => setOpen({leadId:leads[0]?.id,type:"Звонок",title:"",date,time:"12:00",reminder:60});
   return <main className="screen calendarLayout"><div className="stack"><div className="grid2"><select className="input" value={year} onChange={e=>setYear(Number(e.target.value))}>{Array.from({length:20},(_,i)=>2026+i).map(y=><option key={y}>{y}</option>)}</select><select className="input" value={month} onChange={e=>setMonth(Number(e.target.value))}>{months.map((m,i)=><option key={m} value={i}>{m}</option>)}</select></div><div className="grid4">{[["year","Год"],["month","Месяц"],["week","Неделя"],["day","День"]].map(([id,label])=><Button key={id} variant={view===id?"primary":"soft"} onClick={()=>setView(id)}>{label}</Button>)}</div>{view==="year" && <div className="card"><h3>{year} год</h3><div className="yearGrid">{months.map((m,i)=><button className="monthBox" key={m} onClick={()=>{setMonth(i);setView("month")}}><b>{m}</b><span>{events.filter(e=>e.date.startsWith(`${year}-${String(i+1).padStart(2,"0")}`)).length} событий</span></button>)}</div></div>}{view==="month" && <div className="card"><div className="row"><h3>{months[month]} {year}</h3>{badge(events.length+" событий","gold")}</div><div className="week">{week.map(w=><b key={w}>{w}</b>)}</div><div className="calgrid">{days.map(d=>{const evs=events.filter(e=>e.date===d.iso);return <button key={d.iso} className={cn("day",!d.current&&"mutedDay")} onClick={()=>create(d.iso)}><b>{d.day}</b>{evs.slice(0,2).map(e=><span className="mini" key={e.id}>{e.time} {e.title}</span>)}</button>})}</div></div>}{view==="week" && <div className="card"><h3>Неделя</h3>{days.slice(0,7).map(d=><button className="weekRow" key={d.iso} onClick={()=>create(d.iso)}><b>{d.iso}</b><span>{events.filter(e=>e.date===d.iso).length} событий</span></button>)}</div>}{view==="day" && <div className="card"><h3>День</h3>{["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"].map(t=><button className="weekRow" key={t} onClick={()=>create(`2026-${String(month+1).padStart(2,"0")}-24`)}><b>{t}</b><span>добавить событие</span></button>)}</div>}</div><div className="stack">{events.map(e=><div className="card event" key={e.id} onClick={()=>setOpen(e)}><div className="row"><section><b>{e.title}</b><p className="muted">{e.type} · {e.date} · {e.time}</p></section>{badge(e.reminder+" мин","gold")}</div><p className="muted">{e.client}</p></div>)}</div>{open && <Modal onClose={()=>setOpen(null)}><div className="row"><h2>Событие</h2><button className="icon" onClick={()=>setOpen(null)}>×</button></div><input className="input" placeholder="Название" value={open.title} onChange={e=>setOpen({...open,title:e.target.value})}/><div className="grid4">{eventTypes.map(t=><Button key={t} variant={open.type===t?"primary":"soft"} onClick={()=>setOpen({...open,type:t})}>{t}</Button>)}</div><select className="input" value={open.leadId} onChange={e=>setOpen({...open,leadId:e.target.value})}>{leads.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select><div className="grid2"><input className="input" type="date" value={open.date} onChange={e=>setOpen({...open,date:e.target.value})}/><input className="input" type="time" value={open.time} onChange={e=>setOpen({...open,time:e.target.value})}/></div><Button className="full" onClick={saveEvent}>Сохранить событие</Button></Modal>}</main>;
 }
-
 function Properties({properties,setProperties,onOpen}) {
   const [type,setType] = useState("Все");
   const [district,setDistrict] = useState("Все");
-  const filtered = properties.filter(p=>(type==="Все"||p.type===type)&&(district==="Все"||p.district===district));
+
+  const filtered = properties.filter(p =>
+    (type === "Все" || p.type === type) &&
+    (district === "Все" || p.district === district)
+  );
+
   const create = () => {
-    const p = {id:"P-"+Date.now(),title:"Новый объект",type:types[0],district:districts[0],status:"Актуален",price:70000,area:45,floor:"1/1",owner:"",ownerPhone:"+380",description:"Описание объекта",media:[],hot:false,history:["Объект создан"]};
-    setProperties(prev=>[p,...prev]);
+    const p = {
+      id: "P-" + Date.now(),
+      title: "Новый объект",
+      type: types[0],
+      district: districts[0],
+      status: "Актуален",
+      price: 70000,
+      area: 45,
+      floor: "",
+      owner: "",
+      ownerPhone: "+380",
+      description: "",
+      media: [],
+      history: []
+    };
+
     onOpen(p);
   };
-  return <main className="screen"><Button onClick={create}>+ Добавить объект</Button><div className="chips"><button className={cn("chip",type==="Все"&&"active")} onClick={()=>setType("Все")}>Все</button>{types.map(t=><button key={t} className={cn("chip",type===t&&"active")} onClick={()=>setType(t)}>{t}</button>)}</div><div className="chips"><button className={cn("chip",district==="Все"&&"active")} onClick={()=>setDistrict("Все")}>Все районы</button>{districts.map(d=><button key={d} className={cn("chip",district===d&&"active")} onClick={()=>setDistrict(d)}>{d}</button>)}</div><div className="propsGrid">{filtered.map(p=><div className="card property" key={p.id}><div className="propCover">{badge(p.hot?"Горячий":p.status,p.hot?"red":"dark")}<section><h3>{p.title}</h3><span>{p.district} · {p.area} м² · {p.floor}</span></section></div><div className="row"><h2>{money(p.price)}</h2>{badge(p.type)}</div><p className="muted">{p.description}</p>{p.media[0] && <Media kind={p.media[0].split(":")[0]} name={p.media[0]} small/>}<div className="grid2"><Button onClick={()=>onOpen(p)}>Смотреть</Button><Button variant="soft" onClick={()=>onOpen(p)}>Редактировать</Button></div></div>)}</div></main>;
+
+  return <main className="screen">
+    <Button onClick={create}>+ Добавить объект</Button>
+
+    <div className="chips">
+      {["Все", ...types].map(t =>
+        <button key={t} className={cn("chip", type===t && "active")} onClick={()=>setType(t)}>{t}</button>
+      )}
+    </div>
+
+    <div className="chips">
+      {["Все", ...districts].map(d =>
+        <button key={d} className={cn("chip", district===d && "active")} onClick={()=>setDistrict(d)}>{d}</button>
+      )}
+    </div>
+
+    <div className="grid2">
+      {filtered.map(p => {
+        const firstMedia = (p.media || [])[0];
+
+        return <div className="card" key={p.id} onClick={()=>onOpen(p)}>
+          {firstMedia ? <Media kind={firstMedia.kind} name={firstMedia.url} small /> : <Media kind="Фото" name="" small />}
+          <h3>{p.title}</h3>
+          <p>{p.type} · {p.district}</p>
+          <p><b>{money(p.price)}</b> · {p.area} м²</p>
+          <span className="badge">{(p.media || []).length} медиа</span>
+        </div>;
+      })}
+    </div>
+  </main>;
 }
 
 function PropertyModal({property,setProperties,onClose}) {
@@ -364,40 +411,77 @@ function PropertyModal({property,setProperties,onClose}) {
   const [mediaFile,setMediaFile] = useState(null);
   const [viewer,setViewer] = useState(null);
 
-  async function ensurePropertySaved() {
-    const numericId = Number(local.id);
-    if (numericId) return numericId;
+  const payloadFromLocal = () => ({
+    title: local.title || "Новый объект",
+    property_type: local.type || types[0],
+    district: local.district || districts[0],
+    status: local.status || "Актуален",
+    price: Number(local.price) || 0,
+    area: Number(local.area) || 0,
+    floor: parseInt(local.floor) || null,
+    owner_name: local.owner || "",
+    owner_phone: local.ownerPhone || "",
+    description: local.description || ""
+  });
 
-    const payload = {
-      title: local.title || "Новый объект",
-      property_type: local.type || types[0],
-      district: local.district || districts[0],
-      status: local.status || "Актуален",
-      price: Number(local.price) || 0,
-      area: Number(local.area) || 0,
-      floor: parseInt(local.floor) || null,
-      owner_name: local.owner || "",
-      owner_phone: local.ownerPhone || "",
-      description: local.description || ""
-    };
+  async function saveObject(closeAfter = false) {
+    const payload = payloadFromLocal();
+    let savedId = Number(local.id);
 
-    const { data, error } = await supabase
-      .from("properties")
-      .insert(payload)
-      .select()
-      .single();
+    if (savedId) {
+      const { error } = await supabase
+        .from("properties")
+        .update(payload)
+        .eq("id", savedId);
 
-    if (error) {
-      alert("Ошибка сохранения объекта: " + error.message);
-      return null;
+      if (error) {
+        alert("Ошибка сохранения объекта: " + error.message);
+        return null;
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("properties")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        alert("Ошибка создания объекта: " + error.message);
+        return null;
+      }
+
+      savedId = data.id;
     }
 
-    const newId = String(data.id);
-    setLocal(prev => ({ ...prev, id: newId }));
-    setProperties(prev => prev.map(p => p.id === local.id ? { ...p, id: newId } : p));
+    const saved = {
+      ...local,
+      id: String(savedId),
+      media: local.media || []
+    };
 
-    return data.id;
+    setLocal(saved);
+
+    setProperties(prev => {
+      const exists = prev.some(p => String(p.id) === String(local.id) || String(p.id) === String(savedId));
+
+      if (!exists) return [saved, ...prev];
+
+      return prev.map(p =>
+        String(p.id) === String(local.id) || String(p.id) === String(savedId)
+          ? saved
+          : p
+      );
+    });
+
+    if (closeAfter) onClose();
+
+    return savedId;
   }
+
+  const save = async () => {
+    const id = await saveObject(false);
+    if (id) alert("Объект сохранён");
+  };
 
   async function addMedia() {
     if (!mediaFile) {
@@ -405,7 +489,7 @@ function PropertyModal({property,setProperties,onClose}) {
       return;
     }
 
-    const propertyId = await ensurePropertySaved();
+    const propertyId = await saveObject(false);
     if (!propertyId) return;
 
     const detectedKind = mediaFile.type?.startsWith("video") ? "Видео" : mediaKind;
@@ -420,7 +504,6 @@ function PropertyModal({property,setProperties,onClose}) {
       .storage
       .from("property-media")
       .upload(path, mediaFile, {
-        cacheControl: "3600",
         upsert: true,
         contentType: mediaFile.type || undefined
       });
@@ -452,90 +535,44 @@ function PropertyModal({property,setProperties,onClose}) {
     }
 
     const item = {
-      kind: data.media_type,
-      url: data.media_url,
-      name: data.file_name
+      kind: data.media_type || detectedKind,
+      url: data.media_url || publicUrl,
+      name: data.file_name || originalName
     };
 
-    setLocal(prev => ({
-      ...prev,
+    const updated = {
+      ...local,
       id: String(propertyId),
-      media: [...(prev.media || []), item]
-    }));
+      media: [...(local.media || []), item]
+    };
 
-    setProperties(prev => prev.map(p =>
-      String(p.id) === String(local.id) || String(p.id) === String(propertyId)
-        ? {
-            ...p,
-            id: String(propertyId),
-            media: [...(p.media || []), item]
-          }
-        : p
-    ));
+    setLocal(updated);
+
+    setProperties(prev => {
+      const exists = prev.some(p => String(p.id) === String(propertyId));
+
+      if (!exists) return [updated, ...prev];
+
+      return prev.map(p =>
+        String(p.id) === String(propertyId)
+          ? { ...p, ...updated }
+          : p
+      );
+    });
 
     setMediaFile(null);
-    alert("Медиа добавлено и сохранено");
+    alert("Фото/видео сохранено");
   }
-
-  const save = async () => {
-  const payload = {
-    title: local.title || "Новый объект",
-    property_type: local.type || types[0],
-    district: local.district || districts[0],
-    status: local.status || "Актуален",
-    price: Number(local.price) || 0,
-    area: Number(local.area) || 0,
-    floor: parseInt(local.floor) || null,
-    owner_name: local.owner || "",
-    owner_phone: local.ownerPhone || "",
-    description: local.description || ""
-  };
-
-  const id = Number(local.id);
-
-  if (!id) {
-    alert("Сначала создай объект заново. У этого объекта нет нормального id.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("properties")
-    .update(payload)
-    .eq("id", id);
-
-  if (error) {
-    alert("Ошибка сохранения объекта: " + error.message);
-    return;
-  }
-
-  setProperties(prev => prev.map(p =>
-    String(p.id) === String(local.id)
-      ? { ...p, ...local, media: local.media || p.media || [] }
-      : p
-  ));
-
-  alert("Объект сохранён");
-  onClose();
-};
 
   const mediaList = local.media || [];
-
-  const openViewer = (item, index) => {
-    setViewer({ ...item, index });
-  };
+  const currentMedia = viewer !== null ? mediaList[viewer] : null;
 
   const nextMedia = () => {
-    setViewer(v => {
-      const next = (v.index + 1) % mediaList.length;
-      return { ...mediaList[next], index: next };
-    });
+    setViewer(i => (i + 1) % mediaList.length);
   };
 
   const prevMedia = () => {
-    setViewer(v => {
-      const prev = (v.index - 1 + mediaList.length) % mediaList.length;
-      return { ...mediaList[prev], index: prev };
-    });
+    setViewer(i => (i - 1 + mediaList.length) % mediaList.length);
   };
 
   return <Modal onClose={onClose} wide>
@@ -586,253 +623,8 @@ function PropertyModal({property,setProperties,onClose}) {
     <Field label="Описание">
       <textarea className="input" value={local.description || ""} onChange={e=>setLocal({...local,description:e.target.value})}/>
     </Field>
-
-    <div className="card">
-      <h3>Фото / видео объекта</h3>
-
-      <div className="grid4">
-        <Button variant={mediaKind==="Фото" ? "primary" : "soft"} onClick={()=>setMediaKind("Фото")}>Фото</Button>
-        <Button variant={mediaKind==="Видео" ? "primary" : "soft"} onClick={()=>setMediaKind("Видео")}>Видео</Button>
-      </div>
-
-      <input className="input" type="file" accept="image/*,video/*" onChange={e=>setMediaFile(e.target.files?.[0] || null)}/>
-
-      <Button className="full" onClick={addMedia}>Добавить фото/видео</Button>
-
-      <div className="grid2">
-        {mediaList.map((m,i)=>{
-          const kind = m.kind || "Фото";
-          const url = m.url || m.media_url || m;
-          return <div key={i} onClick={()=>openViewer({kind,url,name:m.name}, i)}>
-            <Media kind={kind} name={url} small/>
-          </div>;
-        })}
-      </div>
-    </div>
 
     <Button className="full" onClick={save}>Сохранить объект</Button>
-
-    {viewer && <Modal onClose={()=>setViewer(null)} wide>
-      <div className="row">
-        <button className="icon" onClick={prevMedia}>‹</button>
-        <h2>{viewer.kind} {mediaList.length > 1 ? `${viewer.index + 1}/${mediaList.length}` : ""}</h2>
-        <button className="icon" onClick={nextMedia}>›</button>
-        <button className="icon" onClick={()=>setViewer(null)}>×</button>
-      </div>
-
-      {viewer.kind === "Фото" && <img src={viewer.url || viewer.name} alt="Фото" style={{width:"100%",borderRadius:20}} />}
-      {viewer.kind === "Видео" && <video src={viewer.url || viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />}
-    </Modal>}
-  </Modal>;
-} 
-function PropertyModal({property,setProperties,onClose}) {
-  const [local,setLocal] = useState(property);
-  const [mediaKind,setMediaKind] = useState("Фото");
-  const [mediaFile,setMediaFile] = useState(null);
-  const [viewer,setViewer] = useState(null);
-
-  async function addMedia() {
-    if (!mediaFile) {
-      alert("Сначала выбери фото или видео");
-      return;
-    }
-
-    const propertyId = Number(local.id);
-
-    if (!propertyId) {
-      alert("Сначала сохрани объект и открой его снова");
-      return;
-    }
-
-    const detectedKind = mediaFile.type?.startsWith("video") ? "Видео" : "Фото";
-    const originalName = mediaFile.name || "upload";
-    const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
-    const ext = rawExt.toLowerCase().replace(/[^a-z0-9]/g, "") || "file";
-    const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const path = `${propertyId}/${safeName}`;
-
-    const { error: uploadError } = await supabase
-      .storage
-      .from("property-media")
-      .upload(path, mediaFile, {
-        upsert: true,
-        contentType: mediaFile.type || undefined
-      });
-
-    if (uploadError) {
-      alert("Ошибка загрузки файла: " + uploadError.message);
-      return;
-    }
-
-    const publicUrl = supabase
-      .storage
-      .from("property-media")
-      .getPublicUrl(path).data.publicUrl;
-
-    const { data, error } = await supabase
-      .from("property_media")
-      .insert({
-        property_id: propertyId,
-        media_type: detectedKind,
-        media_url: publicUrl,
-        file_name: originalName
-      })
-      .select()
-      .single();
-
-    if (error) {
-      alert("Файл загрузился, но не записался: " + error.message);
-      return;
-    }
-
-    const item = {
-      kind: data.media_type,
-      url: data.media_url,
-      name: data.file_name
-    };
-
-    setLocal(prev => ({
-      ...prev,
-      media: [...(prev.media || []), item]
-    }));
-
-    setProperties(prev => prev.map(p =>
-      String(p.id) === String(propertyId)
-        ? { ...p, media: [...(p.media || []), item] }
-        : p
-    ));
-
-    setMediaFile(null);
-    alert("Медиа сохранено");
-  }
-
-  const save = async () => {
-  const payload = {
-    title: local.title || "Новый объект",
-    property_type: local.type || types[0],
-    district: local.district || districts[0],
-    status: local.status || "Актуален",
-    price: Number(local.price) || 0,
-    area: Number(local.area) || 0,
-    floor: parseInt(local.floor) || null,
-    owner_name: local.owner || "",
-    owner_phone: local.ownerPhone || "",
-    description: local.description || ""
-  };
-
-  const id = Number(local.id);
-
-  if (id) {
-    const { error } = await supabase
-      .from("properties")
-      .update(payload)
-      .eq("id", id);
-
-    if (error) {
-      alert("Ошибка обновления объекта: " + error.message);
-      return;
-    }
-
-    setProperties(prev => prev.map(p =>
-      String(p.id) === String(local.id)
-        ? { ...p, ...local, media: local.media || p.media || [] }
-        : p
-    ));
-
-    alert("Объект сохранён");
-    onClose();
-    return;
-  }
-
-  const { data, error } = await supabase
-    .from("properties")
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error) {
-    alert("Ошибка создания объекта: " + error.message);
-    return;
-  }
-
-  const saved = {
-    ...local,
-    id: String(data.id),
-    media: local.media || []
-  };
-
-  setProperties(prev => prev.map(p =>
-    String(p.id) === String(local.id) ? saved : p
-  ));
-
-  alert("Объект создан и сохранён");
-  onClose();
-};
-
-  const mediaList = local.media || [];
-
-  const openViewer = (index) => {
-    setViewer({ index });
-  };
-
-  const nextMedia = () => {
-    setViewer(v => ({ index: (v.index + 1) % mediaList.length }));
-  };
-
-  const prevMedia = () => {
-    setViewer(v => ({ index: (v.index - 1 + mediaList.length) % mediaList.length }));
-  };
-
-  const currentMedia = viewer ? mediaList[viewer.index] : null;
-
-  return <Modal onClose={onClose} wide>
-    <div className="propHero">
-      <button className="icon heroClose" onClick={onClose}>×</button>
-      <h2>{local.title}</h2>
-      <p>{local.type} · {local.district} · {money(local.price)}</p>
-    </div>
-
-    <div className="grid2">
-      <Field label="Название объекта">
-        <input className="input" value={local.title || ""} onChange={e=>setLocal({...local,title:e.target.value})}/>
-      </Field>
-
-      <Field label="Тип">
-        <select className="input" value={local.type || types[0]} onChange={e=>setLocal({...local,type:e.target.value})}>
-          {types.map(t=><option key={t}>{t}</option>)}
-        </select>
-      </Field>
-
-      <Field label="Район">
-        <select className="input" value={local.district || districts[0]} onChange={e=>setLocal({...local,district:e.target.value})}>
-          {districts.map(d=><option key={d}>{d}</option>)}
-        </select>
-      </Field>
-
-      <Field label="Цена">
-        <input className="input" value={local.price || ""} onChange={e=>setLocal({...local,price:e.target.value})}/>
-      </Field>
-
-      <Field label="Площадь">
-        <input className="input" value={local.area || ""} onChange={e=>setLocal({...local,area:e.target.value})}/>
-      </Field>
-
-      <Field label="Этаж">
-        <input className="input" value={local.floor || ""} onChange={e=>setLocal({...local,floor:e.target.value})}/>
-      </Field>
-
-      <Field label="Собственник">
-        <input className="input" value={local.owner || ""} onChange={e=>setLocal({...local,owner:e.target.value})}/>
-      </Field>
-
-      <Field label="Телефон собственника">
-        <input className="input" value={local.ownerPhone || ""} onChange={e=>setLocal({...local,ownerPhone:e.target.value})}/>
-      </Field>
-    </div>
-
-    <Field label="Описание">
-      <textarea className="input" value={local.description || ""} onChange={e=>setLocal({...local,description:e.target.value})}/>
-    </Field>
 
     <div className="card">
       <h3>Фото / видео объекта</h3>
@@ -848,26 +640,25 @@ function PropertyModal({property,setProperties,onClose}) {
 
       <div className="grid2">
         {mediaList.map((m,i)=>
-          <div key={i} onClick={()=>openViewer(i)} style={{cursor:"pointer"}}>
-            <Media kind={m.kind} name={m.url} small/>
+          <div key={i} onClick={()=>setViewer(i)} style={{cursor:"pointer"}}>
+            <Media kind={m.kind} name={m.url} small />
           </div>
         )}
       </div>
     </div>
 
-    <Button className="full" onClick={save}>Сохранить объект</Button>
-
     {currentMedia && <Modal onClose={()=>setViewer(null)} wide>
       <div className="row">
         <button className="icon" onClick={prevMedia}>‹</button>
-        <h2>{currentMedia.kind} {viewer.index + 1}/{mediaList.length}</h2>
+        <h2>{currentMedia.kind} {viewer + 1}/{mediaList.length}</h2>
         <button className="icon" onClick={nextMedia}>›</button>
         <button className="icon" onClick={()=>setViewer(null)}>×</button>
       </div>
 
-      {currentMedia.kind === "Фото" && <img src={currentMedia.url} alt="Фото" style={{width:"100%",borderRadius:20}} />}
-
-      {currentMedia.kind === "Видео" && <video src={currentMedia.url} controls autoPlay style={{width:"100%",borderRadius:20}} />}
+      {currentMedia.kind === "Видео"
+        ? <video src={currentMedia.url} controls autoPlay style={{width:"100%",borderRadius:20}} />
+        : <img src={currentMedia.url} alt="Фото" style={{width:"100%",borderRadius:20}} />
+      }
     </Modal>}
   </Modal>;
 }
