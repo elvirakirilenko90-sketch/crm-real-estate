@@ -477,17 +477,46 @@ function PropertyModal({property,setProperties,onClose}) {
     alert("Медиа добавлено и сохранено");
   }
 
-  const save = () => {
-    setProperties(prev => prev.map(p => {
-      if (String(p.id) !== String(local.id)) return p;
-      return {
-        ...p,
-        ...local,
-        media: p.media || local.media || []
-      };
-    }));
-    onClose();
+  const save = async () => {
+  const payload = {
+    title: local.title || "Новый объект",
+    property_type: local.type || types[0],
+    district: local.district || districts[0],
+    status: local.status || "Актуален",
+    price: Number(local.price) || 0,
+    area: Number(local.area) || 0,
+    floor: parseInt(local.floor) || null,
+    owner_name: local.owner || "",
+    owner_phone: local.ownerPhone || "",
+    description: local.description || ""
   };
+
+  const id = Number(local.id);
+
+  if (!id) {
+    alert("Сначала создай объект заново. У этого объекта нет нормального id.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("properties")
+    .update(payload)
+    .eq("id", id);
+
+  if (error) {
+    alert("Ошибка сохранения объекта: " + error.message);
+    return;
+  }
+
+  setProperties(prev => prev.map(p =>
+    String(p.id) === String(local.id)
+      ? { ...p, ...local, media: local.media || p.media || [] }
+      : p
+  ));
+
+  alert("Объект сохранён");
+  onClose();
+};
 
   const mediaList = local.media || [];
 
