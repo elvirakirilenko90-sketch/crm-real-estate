@@ -766,10 +766,17 @@ export default function App(){
     if (!leadsRes.error && leadsRes.data && leadsRes.data.length > 0) {
       setLeadsRaw(leadsRes.data.map(leadFromDb));
     }
-if (!propsRes.error && propsRes.data && propsRes.data.length > 0) {
+if (propsRes.error) {
+  alert("Ошибка загрузки объектов из Supabase: " + propsRes.error.message);
+} else { 
   const propertyMediaRows = !propertyMediaRes.error && propertyMediaRes.data ? propertyMediaRes.data : [];
-  setPropertiesRaw(propsRes.data.map(row => propertyFromDb(row, propertyMediaRows)));
-} 
+
+  const loadedProperties = (propsRes.data || []).map(row =>
+    propertyFromDb(row, propertyMediaRows)
+  );
+
+  setPropertiesRaw(loadedProperties);
+}
     if (!postsRes.error && postsRes.data && postsRes.data.length > 0) {
   const mediaRows = !mediaRes.error && mediaRes.data ? mediaRes.data : [];
   setPostsRaw(postsRes.data.map(row => postFromDb(row, mediaRows)));
