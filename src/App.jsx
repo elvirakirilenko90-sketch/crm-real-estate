@@ -753,39 +753,52 @@ export default function App(){
     comments: []
   };
 }
+async function loadFromSupabase(){
+  const leadsRes = await supabase
+    .from("leads")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-  async function loadFromSupabase(){
-    const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending:false });
-    const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending:false });
-    const propertyMediaRes = await supabase
-  .from("property_media")
-  .select("*");
-    const postsRes = await supabase.from("news").select("*").order("created_at", { ascending:false });
-    const mediaRes = await supabase.from("news_media").select("*").order("created_at", { ascending:false });
+  const propsRes = await supabase
+    .from("properties")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    if (!leadsRes.error && leadsRes.data && leadsRes.data.length > 0) {
-      setLeadsRaw(leadsRes.data.map(leadFromDb));
-    }
-if (propsRes.error) {
-  alert("Ошибка загрузки объектов из Supabase: " + propsRes.error.message);
-} else { 
-  const propertyMediaRows = !propertyMediaRes.error && propertyMediaRes.data ? propertyMediaRes.data : [];
+  const propertyMediaRes = await supabase
+    .from("property_media")
+    .select("*");
 
-  const loadedProperties = (propsRes.data || []).map(row =>
-    propertyFromDb(row, propertyMediaRows)
-  );
+  const postsRes = await supabase
+    .from("news")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-  setPropertiesRaw(loadedProperties);
-}
-    if (!postsRes.error && postsRes.data && postsRes.data.length > 0) {
-  const mediaRows = !mediaRes.error && mediaRes.data ? mediaRes.data : [];
-  setPostsRaw(postsRes.data.map(row => postFromDb(row, mediaRows)));
+  const mediaRes = await supabase
+    .from("news_media")
+    .select("*")
+    .order("created_at", { ascending: false });
 
+  if (!leadsRes.error) {
+    setLeadsRaw((leadsRes.data || []).map(leadFromDb));
   }
 
-  useEffect(() => {
-    loadFromSupabase();
-  }, []);
+  if (propsRes.error) {
+    alert("Ошибка загрузки Вторички: " + propsRes.error.message);
+  } else {
+    const propertyMediaRows = propertyMediaRes.error ? [] : (propertyMediaRes.data || []);
+
+    const loadedProperties = (propsRes.data || []).map(row =>
+      propertyFromDb(row, propertyMediaRows)
+    );
+
+    setPropertiesRaw(loadedProperties);
+  }
+
+  if (!postsRes.error) {
+    const mediaRows = mediaRes.error ? [] : (mediaRes.data || []);
+    setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
+  }
+}
 
   async function syncLeadToSupabase(item){
     const payload = {
