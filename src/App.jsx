@@ -356,20 +356,20 @@ function Properties({properties,setProperties,onOpen}) {
 
   const create = () => {
     const p = {
-      id: "P-" + Date.now(),
-      title: "Новый объект",
-      type: types[0],
-      district: districts[0],
-      status: "Актуален",
-      price: 70000,
-      area: 45,
-      floor: "",
-      owner: "",
-      ownerPhone: "+380",
-      description: "",
-      media: [],
-      history: []
-    };
+  id: "P-" + Date.now(),
+  title: "",
+  type: types[0],
+  district: districts[0],
+  status: "Актуален",
+  price: "",
+  area: "",
+  floor: "",
+  owner: "",
+  ownerPhone: "+380",
+  description: "",
+  media: [],
+  history: []
+};
 
     onOpen(p);
   };
@@ -887,18 +887,11 @@ if (propsRes.error) {
   }
 
   function setProperties(next){
-    setPropertiesRaw(prev => {
-      const value = typeof next === "function" ? next(prev) : next;
-
-      const changed = value.filter(v => {
-        const old = prev.find(p => p.id === v.id);
-        return !old || JSON.stringify(old) !== JSON.stringify(v);
-      });
-
-      changed.forEach(syncPropertyToSupabase);
-      return value;
-    });
-  }
+  setPropertiesRaw(prev => {
+    const value = typeof next === "function" ? next(prev) : next;
+    return value;
+  });
+} 
 
   function setPosts(next){
     setPostsRaw(prev => {
