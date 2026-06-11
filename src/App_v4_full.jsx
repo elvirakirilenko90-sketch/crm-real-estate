@@ -1007,51 +1007,36 @@ export default function App(){
   };
 }
 async function loadFromSupabase(){
-  const leadsRes = await supabase
-    .from("leads")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending: false });
 
-  const propsRes = await supabase
-    .from("properties")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const postsRes = await supabase.from("news").select("*").order("created_at", { ascending: false });
+  const newsMediaRes = await supabase.from("news_media").select("*").order("created_at", { ascending: false });
 
-  const propertyMediaRes = await supabase
-    .from("property_media")
-    .select("*");
-
-  const postsRes = await supabase
-    .from("news")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const mediaRes = await supabase
-    .from("news_media")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending: false });
+  const propertyMediaRes = await supabase.from("property_media").select("*").order("created_at", { ascending: false });
 
   if (!leadsRes.error) {
     setLeadsRaw((leadsRes.data || []).map(leadFromDb));
   }
 
-  if (propsRes.error) {
-    alert("Ошибка загрузки Вторички: " + propsRes.error.message);
+  if (!postsRes.error) {
+    const mediaRows = newsMediaRes.error ? [] : (newsMediaRes.data || []);
+    setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
   } else {
-    const propertyMediaRows = propertyMediaRes.error ? [] : (propertyMediaRes.data || []);
-
-    const loadedProperties = (propsRes.data || []).map(row =>
-      propertyFromDb(row, propertyMediaRows)
-    );
-
-    setPropertiesRaw(loadedProperties);
+    alert("Ошибка загрузки ленты: " + postsRes.error.message);
   }
 
-  if (!postsRes.error) {
-    const mediaRows = mediaRes.error ? [] : (mediaRes.data || []);
-    setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
+  if (!propsRes.error) {
+    const propertyMediaRows = propertyMediaRes.error ? [] : (propertyMediaRes.data || []);
+    setPropertiesRaw((propsRes.data || []).map(row => propertyFromDb(row, propertyMediaRows)));
+  } else {
+    alert("Ошибка загрузки вторички: " + propsRes.error.message);
   }
 }
+
+useEffect(() => {
+  loadFromSupabase();
+}, []);
 useEffect(() => {
   loadFromSupabase();
 }, []);
