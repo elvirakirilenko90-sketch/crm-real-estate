@@ -950,6 +950,7 @@ export default function App(){
 }
 
 async function loadFromSupabase(){
+  alert("CRM начала загружать данные из Supabase");
   const leadsRes = await supabase.from("leads").select("*");
   const postsRes = await supabase.from("news").select("*");
   const newsMediaRes = await supabase.from("news_media").select("*");
