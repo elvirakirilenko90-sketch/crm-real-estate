@@ -950,47 +950,30 @@ export default function App(){
 }
 
 async function loadFromSupabase(){
-  const leadsRes = await supabase
-    .from("leads")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const leadsRes = await supabase.from("leads").select("*");
+  const postsRes = await supabase.from("news").select("*");
+  const newsMediaRes = await supabase.from("news_media").select("*");
+  const propsRes = await supabase.from("properties").select("*");
+  const propertyMediaRes = await supabase.from("property_media").select("*");
 
-  const propsRes = await supabase
-    .from("properties")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const propertyMediaRes = await supabase
-    .from("property_media")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const postsRes = await supabase
-    .from("news")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const mediaRes = await supabase
-    .from("news_media")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (!leadsRes.error) {
+  if (leadsRes.error) {
+    alert("Ошибка загрузки клиентов: " + leadsRes.error.message);
+  } else {
     setLeadsRaw((leadsRes.data || []).map(leadFromDb));
   }
 
-  if (!propsRes.error) {
-    const propertyMediaRows = propertyMediaRes.error ? [] : (propertyMediaRes.data || []);
-    setPropertiesRaw((propsRes.data || []).map(row => propertyFromDb(row, propertyMediaRows)));
+  if (postsRes.error) {
+    alert("Ошибка загрузки ленты: " + postsRes.error.message);
   } else {
-    alert("Ошибка загрузки Вторички: " + propsRes.error.message);
+    const mediaRows = newsMediaRes.error ? [] : (newsMediaRes.data || []);
+    setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
   }
 
-  if (!postsRes.error) {
-    const mediaRows = mediaRes.error ? [] : (mediaRes.data || []);
-    setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
+  if (propsRes.error) {
+    alert("Ошибка загрузки вторички: " + propsRes.error.message);
   } else {
-    alert("Ошибка загрузки ленты: " + postsRes.error.message);
+    const propertyMediaRows = propertyMediaRes.error ? [] : (propertyMediaRes.data || []);
+    setPropertiesRaw((propsRes.data || []).map(row => propertyFromDb(row, propertyMediaRows)));
   }
 }
 
