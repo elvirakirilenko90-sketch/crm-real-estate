@@ -1052,7 +1052,9 @@ async function loadFromSupabase(){
     setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
   }
 }
-
+useEffect(() => {
+  loadFromSupabase();
+}, []);
   async function syncLeadToSupabase(item){
     const payload = {
       name: item.name,
