@@ -1006,6 +1006,7 @@ export default function App(){
     comments: []
   };
 }
+}
 async function loadFromSupabase(){
   const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending: false });
 
@@ -1145,17 +1146,12 @@ useEffect(() => {
     return value;
   });
 } 
-
-  function setPosts(next){
-    setPostsRaw(prev => {
-      const value = typeof next === "function" ? next(prev) : next;
-
-      const changed = value.filter(v => !prev.find(p => p.id === v.id));
-      changed.forEach(syncPostToSupabase);
-
-      return value;
-    });
-  }
+function setPosts(next){
+  setPostsRaw(prev => {
+    const value = typeof next === "function" ? next(prev) : next;
+    return value;
+  });
+}
 
   return <div className="layout"><Sidebar page={page} setPage={setPage} role={role}/><div className="mainWrap"><main className="main"><Top page={page} setPage={setPage}/>{page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role}/>} {page==="clients"&&<Clients leads={leads} setLeads={setLeads} onOpen={setLead}/>} {page==="calendar"&&<Calendar events={events} setEvents={setEvents} leads={leads} setLeads={setLeads}/>} {page==="properties"&&<Properties properties={properties} setProperties={setProperties} onOpen={setProperty}/>} {page==="analytics"&&<Analytics leads={leads} properties={properties} events={events} role={role}/>} {page==="help"&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={leads} onOpen={setLead}/>} {page==="access"&&<Access managers={managers} setManagers={setManagers}/>} {page==="more"&&<More role={role} setRole={setRole} setPage={setPage}/>}<Bottom page={page} setPage={setPage}/>{lead&&<LeadModal lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} onClose={()=>setLead(null)}/>} {property&&<PropertyModal property={property} setProperties={setProperties} onClose={()=>setProperty(null)}/>}</main></div></div>
 }
