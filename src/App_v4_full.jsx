@@ -150,26 +150,11 @@ function Bottom({page,setPage}) {
   return <nav className="bottom">{items.map(([id,label,icon])=><button key={id} className={page===id ? "active" : ""} onClick={()=>setPage(id)}><span>{icon}</span>{label}</button>)}</nav>;
 }
 
-function Feed({posts,setPosts,role}) {
+function Feed({posts,setPosts}) {
   const [open,setOpen] = useState(false);
-  const [editing,setEditing] = useState(null);
   const [draft,setDraft] = useState({text:"",kind:"Фото",file:""});
   const [fileObj,setFileObj] = useState(null);
   const [viewer,setViewer] = useState(null);
-  const [commentDrafts,setCommentDrafts] = useState({});
-
-  const canManage = role === "Администратор директор" || role === "Администратор тех отдел";
-
-  const readComments = (postId) => {
-    try { return JSON.parse(localStorage.getItem("crm_news_comments_" + postId) || "[]"); }
-    catch { return []; }
-  };
-
-  const saveComments = (postId, comments) => {
-    localStorage.setItem("crm_news_comments_" + postId, JSON.stringify(comments));
-  };
-
-  const readLiked = (postId) => localStorage.getItem("crm_news_liked_" + postId) === "1";
 
   async function uploadToNewsMedia(newsId) {
     if (draft.kind === "Ссылка") {
@@ -206,10 +191,7 @@ function Feed({posts,setPosts,role}) {
     const upload = await supabase
       .storage
       .from("news-media")
-      .upload(path, fileObj, {
-        upsert: true,
-        contentType: fileObj.type || undefined
-      });
+      .upload(path, fileObj, { upsert: true });
 
     if (upload.error) {
       alert("Ошибка загрузки файла: " + upload.error.message);
@@ -227,49 +209,22 @@ function Feed({posts,setPosts,role}) {
         news_id: newsId,
         media_type: draft.kind,
         media_url: publicUrl,
-        file_name: originalName,
+        file_name: fileObj.name,
         link_url: null
       })
       .select()
       .single();
 
     if (error) {
-      alert("Файл загрузился, но не сохранился в таблицу: " + error.message);
+      alert("Файл загрузился, но не записался в таблицу: " + error.message);
       return null;
     }
 
     return data;
   }
 
-  const resetComposer = () => {
-    setDraft({text:"",kind:"Фото",file:""});
-    setFileObj(null);
-    setEditing(null);
-    setOpen(false);
-  };
-
   const publish = async () => {
-    if (!canManage) return;
-    if(!draft.text && !draft.file && !fileObj) return;
-
-    if (editing) {
-      const { error } = await supabase
-        .from("news")
-        .update({
-          title: draft.text ? draft.text.slice(0,80) : "Публикация",
-          content: draft.text || ""
-        })
-        .eq("id", editing.id);
-
-      if (error) {
-        alert("Ошибка редактирования публикации: " + error.message);
-        return;
-      }
-
-      setPosts(prev => prev.map(p => String(p.id) === String(editing.id) ? {...p, text:draft.text || ""} : p));
-      resetComposer();
-      return;
-    }
+    if (!draft.text && !draft.file && !fileObj) return;
 
     const { data: news, error } = await supabase
       .from("news")
@@ -302,124 +257,113 @@ function Feed({posts,setPosts,role}) {
       comments: []
     }, ...prev]);
 
-    resetComposer();
-  };
-
-  const editPost = (post) => {
-    if (!canManage) return;
-    setEditing(post);
-    setDraft({text:post.text || "", kind:post.kind || "Фото", file:post.file || ""});
+    setDraft({text:"",kind:"Фото",file:""});
     setFileObj(null);
-    setOpen(true);
-  };
-
-  const deletePost = async (post) => {
-    if (!canManage) return;
-    if (!confirm("Удалить публикацию?")) return;
-
-    await supabase.from("news_media").delete().eq("news_id", post.id);
-    const { error } = await supabase.from("news").delete().eq("id", post.id);
-
-    if (error) {
-      alert("Ошибка удаления публикации: " + error.message);
-      return;
-    }
-
-    localStorage.removeItem("crm_news_comments_" + post.id);
-    localStorage.removeItem("crm_news_liked_" + post.id);
-    setPosts(prev => prev.filter(p => String(p.id) !== String(post.id)));
-  };
-
-  const likePost = async (post) => {
-    if (readLiked(post.id)) return;
-
-    const nextLikes = Number(post.likes || 0) + 1;
-    localStorage.setItem("crm_news_liked_" + post.id, "1");
-
-    setPosts(prev => prev.map(p => String(p.id) === String(post.id) ? {...p, likes:nextLikes} : p));
-    await supabase.from("news").update({likes_count: nextLikes}).eq("id", post.id);
-  };
-
-  const addComment = async (post) => {
-    const text = (commentDrafts[post.id] || "").trim();
-    if (!text) return;
-
-    const comments = [...readComments(post.id), {
-      text,
-      author: role || "Пользователь",
-      date: new Date().toLocaleString()
-    }];
-
-    saveComments(post.id, comments);
-    setCommentDrafts(prev => ({...prev, [post.id]:""}));
-
-    setPosts(prev => prev.map(p => String(p.id) === String(post.id) ? {...p, comments} : p));
-    await supabase.from("news").update({comments_count: comments.length}).eq("id", post.id);
+    setOpen(false);
   };
 
   return <main className="screen"><div className="feedList">
     <div className="card dark hero">
-      <div><h2>Лента новостей</h2><p>Внутренняя соцсеть агентства: фото, видео, файлы, ссылки, лайки и комментарии.</p></div>
-      {canManage && <Button onClick={()=>{setEditing(null);setOpen(true);}}>+ Новая публикация</Button>}
+      <div>
+        <h2>Лента новостей</h2>
+        <p>Внутренняя соцсеть агентства: фото, видео, файлы, ссылки, лайки и комментарии.</p>
+      </div>
+      <Button onClick={()=>setOpen(true)}>+ Новая публикация</Button>
     </div>
 
-    {open && canManage && <div className="card composer">
-      <div className="row"><h2>{editing ? "Редактировать публикацию" : "Новая публикация"}</h2><button className="icon" onClick={resetComposer}>×</button></div>
+    {open && <div className="card composer">
+      <div className="row">
+        <h2>Новая публикация</h2>
+        <button className="icon" onClick={()=>setOpen(false)}>×</button>
+      </div>
 
-      <textarea className="input" placeholder="Текст публикации..." value={draft.text} onChange={e=>setDraft({...draft,text:e.target.value})}/>
+      <textarea
+        className="input"
+        placeholder="Текст публикации..."
+        value={draft.text}
+        onChange={e=>setDraft({...draft,text:e.target.value})}
+      />
 
-      {!editing && <div className="grid4">{["Фото","Видео","Файл","Ссылка"].map(k=><Button key={k} variant={draft.kind===k?"primary":"soft"} onClick={()=>{setDraft({...draft,kind:k,file:""});setFileObj(null);}}>{k}</Button>)}</div>}
+      <div className="grid4">
+        {["Фото","Видео","Файл","Ссылка"].map(k=>
+          <Button
+            key={k}
+            variant={draft.kind===k ? "primary" : "soft"}
+            onClick={()=>{setDraft({...draft,kind:k,file:""});setFileObj(null);}}
+          >
+            {k}
+          </Button>
+        )}
+      </div>
 
-      {!editing && (draft.kind === "Ссылка" ? (
-        <input className="input" placeholder="Вставьте ссылку" value={draft.file} onChange={e=>setDraft({...draft,file:e.target.value})}/>
+      {draft.kind === "Ссылка" ? (
+        <input
+          className="input"
+          placeholder="Вставьте ссылку"
+          value={draft.file}
+          onChange={e=>setDraft({...draft,file:e.target.value})}
+        />
       ) : (
-        <input className="input" type="file" onChange={e=>setFileObj(e.target.files?.[0] || null)}/>
-      ))}
+        <input
+          className="input"
+          type="file"
+          onChange={e=>setFileObj(e.target.files?.[0] || null)}
+        />
+      )}
 
-      {!editing && <Media kind={draft.kind} name={draft.kind === "Ссылка" ? draft.file : fileObj?.name || ""}/>}
+      <Media kind={draft.kind} name={draft.kind === "Ссылка" ? draft.file : fileObj?.name || ""}/>
 
-      <Button className="full" onClick={publish}>{editing ? "Сохранить изменения" : "Опубликовать"}</Button>
+      <Button className="full" onClick={publish}>Опубликовать</Button>
     </div>}
 
-    {posts.map(post=>{
-      const comments = post.comments?.length ? post.comments : readComments(post.id);
-      const liked = readLiked(post.id);
+    {posts.map(post=><article className="card post" key={post.id}>
+      <div className="postHead">
+        <div>A</div>
+        <section>
+          <b>{post.author}</b>
+          <span>{post.date}</span>
+        </section>
+      </div>
 
-      return <article className="card post" key={post.id}>
-        <div className="postHead"><div>A</div><section><b>{post.author}</b><span>{post.date}</span></section></div>
-        <p>{post.text}</p>
+      <p>{post.text}</p>
 
-        {String(post.kind).toLowerCase().includes("ссылка") ? (
-          <a className="link" href={normalizeUrl(post.file)} target="_blank" rel="noopener noreferrer">🔗 Открыть ссылку</a>
-        ) : (
-          <Media kind={post.kind} name={post.file} onOpen={setViewer}/>
-        )}
+      {String(post.kind).toLowerCase().includes("ссылка") ? (
+        <a
+          className="link"
+          href={normalizeUrl(post.file)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          🔗 Открыть ссылку
+        </a>
+      ) : (
+        <Media kind={post.kind} name={post.file} onOpen={setViewer}/>
+      )}
 
-        <div className="actions">
-          <button className="chip" onClick={()=>likePost(post)}>{liked ? "♥" : "♡"} {post.likes || 0}</button>
-          <span>💬 {comments.length}</span>
-          {canManage && <button className="chip" onClick={()=>editPost(post)}>✎ Редактировать</button>}
-          {canManage && <button className="chip" onClick={()=>deletePost(post)}>Удалить</button>}
-        </div>
+      <div className="actions">
+        <span>♡ {post.likes}</span>
+        <span>💬 {post.comments.length}</span>
+        <span>↗</span>
+      </div>
 
-        <div className="comments">
-          {comments.map((c,i)=><p key={i}><b>{c.author || "Комментарий"}:</b> {c.text || c}</p>)}
-        </div>
-
-        <div className="grid2">
-          <input className="input" placeholder="Написать комментарий..." value={commentDrafts[post.id] || ""} onChange={e=>setCommentDrafts({...commentDrafts,[post.id]:e.target.value})}/>
-          <Button onClick={()=>addComment(post)}>Отправить</Button>
-        </div>
-      </article>;
-    })}
+      {post.comments.length > 0 && <div className="comments">
+        {post.comments.map((c,i)=><p key={i}><b>Комментарий:</b> {c}</p>)}
+      </div>}
+    </article>)}
 
     {viewer && <Modal onClose={()=>setViewer(null)} wide>
       <div className="row">
         <h2>{viewer.kind}</h2>
         <button className="icon" onClick={()=>setViewer(null)}>×</button>
       </div>
-      {viewer.kind === "Фото" && <img src={viewer.name} alt="Фото" style={{width:"100%",borderRadius:20}} />}
-      {viewer.kind === "Видео" && <video src={viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />}
+
+      {viewer.kind === "Фото" && (
+        <img src={viewer.name} alt="Фото" style={{width:"100%",borderRadius:20}} />
+      )}
+
+      {viewer.kind === "Видео" && (
+        <video src={viewer.name} controls autoPlay style={{width:"100%",borderRadius:20}} />
+      )}
     </Modal>}
   </div></main>;
 }
