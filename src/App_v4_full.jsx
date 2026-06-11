@@ -120,12 +120,10 @@ function Media({kind="Фото", name="", small=false, onOpen=null}) {
     return <a className="link" href={name} target="_blank" rel="noreferrer">📄 Открыть файл</a>;
   }
 
-  if (String(kind).toLowerCase().includes("ссылка")) {
-  const url = normalizeUrl(name);
-  return <a className="link" href={url} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()}>
-    🔗 Открыть ссылку
-  </a>;
-}
+  if (kind === "Ссылка") {
+    const url = normalizeUrl(name);
+    return <a className="link" href={url} target="_blank" rel="noreferrer">🔗 Открыть ссылку</a>;
+  }
 
   return <div className={cn("media", small && "small")}><div>{kind === "Видео" ? "▶" : kind === "Файл" ? "📄" : kind === "Ссылка" ? "🔗" : "📷"}</div><b>{name || kind}</b><span>предпросмотр</span></div>;
 }
@@ -1006,146 +1004,97 @@ export default function App(){
     comments: []
   };
 }
-}
+
 async function loadFromSupabase(){
-  const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending: false });
+  const leadsRes = await supabase
+    .from("leads")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-  const postsRes = await supabase.from("news").select("*").order("created_at", { ascending: false });
-  const newsMediaRes = await supabase.from("news_media").select("*").order("created_at", { ascending: false });
+  const propsRes = await supabase
+    .from("properties")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-  const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending: false });
-  const propertyMediaRes = await supabase.from("property_media").select("*").order("created_at", { ascending: false });
+  const propertyMediaRes = await supabase
+    .from("property_media")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  const postsRes = await supabase
+    .from("news")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  const mediaRes = await supabase
+    .from("news_media")
+    .select("*")
+    .order("created_at", { ascending: false });
 
   if (!leadsRes.error) {
     setLeadsRaw((leadsRes.data || []).map(leadFromDb));
-  }
-
-  if (!postsRes.error) {
-    const mediaRows = newsMediaRes.error ? [] : (newsMediaRes.data || []);
-    setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
-  } else {
-    alert("Ошибка загрузки ленты: " + postsRes.error.message);
   }
 
   if (!propsRes.error) {
     const propertyMediaRows = propertyMediaRes.error ? [] : (propertyMediaRes.data || []);
     setPropertiesRaw((propsRes.data || []).map(row => propertyFromDb(row, propertyMediaRows)));
   } else {
-    alert("Ошибка загрузки вторички: " + propsRes.error.message);
+    alert("Ошибка загрузки Вторички: " + propsRes.error.message);
+  }
+
+  if (!postsRes.error) {
+    const mediaRows = mediaRes.error ? [] : (mediaRes.data || []);
+    setPostsRaw((postsRes.data || []).map(row => postFromDb(row, mediaRows)));
+  } else {
+    alert("Ошибка загрузки ленты: " + postsRes.error.message);
   }
 }
 
 useEffect(() => {
   loadFromSupabase();
 }, []);
-useEffect(() => {
-  loadFromSupabase();
-}, []);
-  async function syncLeadToSupabase(item){
-    const payload = {
-      name: item.name,
-      phone: item.phone,
-      source: item.source,
-      stage: item.status,
-      notes: item.notes,
-      next_contact_at: item.nextContact || null
-    };
 
-    if (!String(item.id).startsWith("L-")) {
-      await supabase.from("leads").update(payload).eq("id", item.id);
-    } else {
-      const { data, error } = await supabase.from("leads").insert(payload).select().single();
-      if (!error && data) {
-        setLeadsRaw(prev => prev.map(x => x.id === item.id ? leadFromDb(data) : x));
-      }
-    }
-  }
-
- async function syncPropertyToSupabase(item){
+async function syncLeadToSupabase(item){
   const payload = {
-    title: item.title || "Новый объект",
-    property_type: item.type || types[0],
-    district: item.district || districts[0],
-    status: item.status || "Актуален",
-    price: Number(item.price) || 0,
-    area: Number(item.area) || 0,
-    floor: parseInt(item.floor) || null,
-    owner_name: item.owner || "",
-    owner_phone: item.ownerPhone || "",
-    description: item.description || ""
+    name: item.name,
+    phone: item.phone,
+    source: item.source,
+    stage: item.status,
+    notes: item.notes,
+    next_contact_at: item.nextContact || null
   };
 
-  const isRealId = Number(item.id) && !String(item.id).startsWith("P-");
-
-  if (isRealId) {
-    const { error } = await supabase
-      .from("properties")
-      .update(payload)
-      .eq("id", Number(item.id));
-
-    if (error) {
-      alert("Ошибка обновления объекта: " + error.message);
+  if (!String(item.id).startsWith("L-")) {
+    await supabase.from("leads").update(payload).eq("id", item.id);
+  } else {
+    const { data, error } = await supabase.from("leads").insert(payload).select().single();
+    if (!error && data) {
+      setLeadsRaw(prev => prev.map(x => x.id === item.id ? leadFromDb(data) : x));
     }
-
-    return;
   }
-
-  const { data, error } = await supabase
-    .from("properties")
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error) {
-    alert("Ошибка создания объекта: " + error.message);
-    return;
-  }
-
-  setPropertiesRaw(prev =>
-    prev.map(p =>
-      String(p.id) === String(item.id)
-        ? { ...item, id: String(data.id) }
-        : p
-    )
-  );
 }
 
-  async function syncPostToSupabase(item){
-    if (!String(item.id).startsWith("N-")) return;
+function setLeads(next){
+  setLeadsRaw(prev => {
+    const value = typeof next === "function" ? next(prev) : next;
 
-    const payload = {
-      title: item.text ? item.text.slice(0,80) : "Публикация",
-      content: item.text || "",
-      likes_count: item.likes || 0,
-      comments_count: item.comments ? item.comments.length : 0
-    };
-
-    const { data, error } = await supabase.from("news").insert(payload).select().single();
-    if (!error && data) {
-      setPostsRaw(prev => prev.map(x => x.id === item.id ? postFromDb(data) : x));
-    }
-  }
-
-  function setLeads(next){
-    setLeadsRaw(prev => {
-      const value = typeof next === "function" ? next(prev) : next;
-
-      const changed = value.filter(v => {
-        const old = prev.find(p => p.id === v.id);
-        return !old || JSON.stringify(old) !== JSON.stringify(v);
-      });
-
-      changed.forEach(syncLeadToSupabase);
-      return value;
+    const changed = value.filter(v => {
+      const old = prev.find(p => p.id === v.id);
+      return !old || JSON.stringify(old) !== JSON.stringify(v);
     });
-  }
 
-  function setProperties(next){
+    changed.forEach(syncLeadToSupabase);
+    return value;
+  });
+}
+
+function setProperties(next){
   setPropertiesRaw(prev => {
     const value = typeof next === "function" ? next(prev) : next;
     return value;
   });
-} 
+}
+
 function setPosts(next){
   setPostsRaw(prev => {
     const value = typeof next === "function" ? next(prev) : next;
