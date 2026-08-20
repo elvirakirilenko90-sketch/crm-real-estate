@@ -3102,8 +3102,8 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       p_seen_after:marketSeenAfter()
     };
   };
-  const fetchAllMarketListings=async()=>{
-    if(activeSourceTab==="CRM")return [];
+  const fetchMarketListings=async({quickLun=false}={})=>{
+    if(activeSourceTab==="CRM")return {rows:[],afterId:null};
     const rows=[];
     // Меньший сетевой пакет снижает пиковую память браузера, но не ограничивает общий результат.
     const pageSize=500;
@@ -3123,8 +3123,38 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       if(nextId===null||nextId===undefined||String(nextId)===String(afterId))break;
       afterId=nextId;
       if(batch.length<pageSize)break;
+      // ЛУН содержит десятки тысяч карточек. Для первого экрана забираем одну
+      // серверную страницу, а остальное догружаем после снятия индикатора.
+      // Другие источники сохраняют прежнюю логику без изменений.
+      if(quickLun&&activeSourceTab==="LUN")break;
     }
-    return [...new Map(rows.map(x=>[String(x.id),x])).values()];
+    return {rows:[...new Map(rows.map(x=>[String(x.id),x])).values()],afterId};
+  };
+
+  const hydrateLunListings=async(seq,seedRows,afterId)=>{
+    if(activeSourceTab!=="LUN"||!afterId)return;
+    const rows=[...seedRows];
+    let cursor=afterId;
+    const base=marketServerParams();
+    const pageSize=500;
+    while(seq===marketLoadSeq.current&&activeSourceTab==="LUN"){
+      const {data,error}=await supabase.rpc("analytics_market_search",{
+        ...base,p_after_id:cursor,p_page_size:pageSize
+      });
+      if(error)throw error;
+      const batch=Array.isArray(data)?data:[];
+      if(!batch.length)break;
+      rows.push(...batch);
+      const nextId=batch[batch.length-1]?.id;
+      if(nextId===null||nextId===undefined||String(nextId)===String(cursor))break;
+      cursor=nextId;
+      // Обновляем данные порциями, не блокируя интерфейс тысячами рендеров.
+      if(rows.length%2000===0||batch.length<pageSize){
+        setMarketListings([...new Map(rows.map(x=>[String(x.id),x])).values()]);
+        await new Promise(resolve=>setTimeout(resolve,0));
+      }
+      if(batch.length<pageSize)break;
+    }
   };
 
   const loadMarket=async()=>{
@@ -3132,15 +3162,20 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     const seq=++marketLoadSeq.current;
     setLoadingMarket(true);setMarketError("");
     try{
-      const [rows,sourceRes]=await Promise.all([
-        fetchAllMarketListings(),
+      const [listingResult,sourceRes]=await Promise.all([
+        fetchMarketListings({quickLun:true}),
         supabase.from("market_sources").select("*").eq("agency_id",agencyId).order("created_at",{ascending:false})
       ]);
       // Старый ответ не должен перерисовывать интерфейс после изменения фильтров.
       if(seq!==marketLoadSeq.current)return;
-      setMarketListings(rows);
+      setMarketListings(listingResult.rows);
       if(!sourceRes.error)setMarketSources(sourceRes.data||[]);
       else console.warn("Analytics market_sources:",sourceRes.error);
+      if(activeSourceTab==="LUN"&&listingResult.afterId){
+        hydrateLunListings(seq,listingResult.rows,listingResult.afterId).catch(e=>{
+          if(seq===marketLoadSeq.current)console.warn("Analytics LUN background load:",e);
+        });
+      }
     }catch(e){
       if(seq!==marketLoadSeq.current)return;
       console.error(e);
@@ -3192,12 +3227,17 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       });
       if(error)throw error;
       await new Promise(resolve=>setTimeout(resolve,450));
-      const [afterRows,afterSourceRes]=await Promise.all([
-        fetchAllMarketListings(),
+      const refreshSeq=++marketLoadSeq.current;
+      const [listingResult,afterSourceRes]=await Promise.all([
+        fetchMarketListings({quickLun:true}),
         supabase.from("market_sources").select("*").eq("agency_id",agencyId).order("created_at",{ascending:false})
       ]);
+      const afterRows=listingResult.rows;
       setMarketListings(afterRows);
       if(!afterSourceRes.error)setMarketSources(afterSourceRes.data||[]);
+      if(activeSourceTab==="LUN"&&listingResult.afterId){
+        hydrateLunListings(refreshSeq,afterRows,listingResult.afterId).catch(e=>console.warn("Analytics LUN background load:",e));
+      }
       const results=Array.isArray(data?.results)?data.results:[];
       const found=results.reduce((n,x)=>n+Number(x?.listings_found||x?.found||0),0);
       const importedByFunction=results.reduce((n,x)=>n+Number(x?.listings_imported??x?.imported_count??x?.added_count??x?.inserted_count??x?.upserted_count??x?.last_imported_count??0),0);
