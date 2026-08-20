@@ -3205,7 +3205,22 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
         alert("CRM-объекты уже читаются напрямую из раздела Вторичка.");
         return;
       }
+      // Edge Function принимает только пользовательский JWT. После долгой работы
+      // вкладки access token мог устареть, и supabase-js отправлял publishable key
+      // вместо JWT, из-за чего gateway отвечал non-2xx ещё до запуска market-sync.
+      let {data:sessionData,error:sessionError}=await supabase.auth.getSession();
+      if(sessionError)throw sessionError;
+      let liveSession=sessionData?.session||null;
+      const expiresAt=Number(liveSession?.expires_at||0)*1000;
+      if(liveSession&&expiresAt&&expiresAt<Date.now()+60000){
+        const refreshed=await supabase.auth.refreshSession();
+        if(refreshed.error)throw refreshed.error;
+        liveSession=refreshed.data?.session||null;
+      }
+      if(!liveSession?.access_token)throw new Error("Сессия входа истекла. Выйдите из CRM и войдите заново.");
+
       const {data,error}=await supabase.functions.invoke("market-sync",{
+        headers:{Authorization:`Bearer ${liveSession.access_token}`},
         body:{
           agency_id:Number(agencyId),
           ...(exactSource?{source_id:Number(exactSource.id)}:{sync_all:true}),
