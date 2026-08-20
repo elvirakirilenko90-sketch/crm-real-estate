@@ -5172,28 +5172,52 @@ export default function App(){
 
   useEffect(() => {
     let mounted = true;
+    let profileTimer = null;
 
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      const sess = data?.session || null;
-      setSession(sess);
-      if (sess?.user?.email) await loadUserProfile(sess.user.email);
-      setAuthLoading(false);
-    });
+    // Никогда не оставляем CRM на бесконечном экране загрузки, даже если
+    // браузер держит просроченный refresh token или сеть временно зависла.
+    const loadingGuard = setTimeout(() => {
+      if (mounted) setAuthLoading(false);
+    }, 8000);
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, sess) => {
+    const finishSession = async (sess) => {
       if (!mounted) return;
       setSession(sess);
-      if (sess?.user?.email) {
-        await loadUserProfile(sess.user.email);
-      } else {
-        setCurrentProfile(null);
+      try {
+        if (sess?.user?.email) await loadUserProfile(sess.user.email);
+        else setCurrentProfile(null);
+      } catch (error) {
+        console.error("Auth profile load:", error);
+        if (mounted) setCurrentProfile(null);
+      } finally {
+        if (mounted) setAuthLoading(false);
       }
-      setAuthLoading(false);
+    };
+
+    supabase.auth.getSession()
+      .then(({ data }) => finishSession(data?.session || null))
+      .catch(error => {
+        console.error("Auth session load:", error);
+        if (mounted) {
+          setSession(null);
+          setCurrentProfile(null);
+          setAuthLoading(false);
+        }
+      });
+
+    // Внутри onAuthStateChange нельзя ожидать другие Supabase-запросы:
+    // это может заблокировать обновление токена. Выносим профиль в следующий тик.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      if (!mounted) return;
+      setSession(sess);
+      clearTimeout(profileTimer);
+      profileTimer = setTimeout(() => finishSession(sess), 0);
     });
 
     return () => {
       mounted = false;
+      clearTimeout(loadingGuard);
+      clearTimeout(profileTimer);
       sub?.subscription?.unsubscribe?.();
     };
   }, []);
