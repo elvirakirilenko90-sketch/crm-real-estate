@@ -36,11 +36,11 @@ type F = any;
 const rent = (f: F) => /аренд|оренд|rent/i.test(String(f.deal_type || ""));
 const cityOf = (f: F) => { const c = String(f.city || "").trim(); return c && !/^(все|усі|all)$/i.test(c) ? c : ""; };
 const enCity = (f: F) => CITY_EN[cityOf(f)] || "";
-type Adapter = { name: string; country: string; blocked?: boolean; url: (f: F) => string; note?: string };
+type Adapter = { name: string; country: string; blocked?: boolean; url: (f: F) => string; note?: string; idUrl?: (id: string) => string };
 
 // Порталы. blocked: площадка закрыта для автоматического чтения (проверено 10.11.2026).
 const ADAPTERS: Adapter[] = [
-  { name: "MyHome.ge", country: "Грузия", url: f => `https://www.myhome.ge/en/s/${rent(f) ? "Apartment-for-rent" : "Apartment-for-sale"}-${(enCity(f) || "georgia").replace(/^./, c => c.toUpperCase())}?deal_types=${rent(f) ? 2 : 1}&real_estate_types=1` },
+  { name: "MyHome.ge", country: "Грузия", idUrl: (id) => `https://www.myhome.ge/en/pr/${id}/`, url: f => `https://www.myhome.ge/en/s/${rent(f) ? "Apartment-for-rent" : "Apartment-for-sale"}-${(enCity(f) || "georgia").replace(/^./, c => c.toUpperCase())}?deal_types=${rent(f) ? 2 : 1}&real_estate_types=1` },
   { name: "SS.ge", country: "Грузия", blocked: true, url: f => `https://home.ss.ge/en/real-estate/l/Flat/${rent(f) ? "For-Rent" : "For-Sale"}` },
   { name: "Korter.ge", country: "Грузия", url: f => `https://korter.ge/en/apartments-for-sale-${enCity(f) || "tbilisi"}`, note: "только новостройки, продажа" },
   { name: "Property Finder", country: "ОАЭ", url: f => `https://www.propertyfinder.ae/en/${rent(f) ? "rent" : "buy"}/${enCity(f) || "uae"}/properties-for-${rent(f) ? "rent" : "sale"}.html` },
@@ -119,10 +119,11 @@ async function runAdapter(a: Adapter, f: F) {
     const map = await nbuRates();
     const defCur = COUNTRY_CUR[a.country] || "";
     let list: GItem[] = extractListings(html, r.url || url, 200);
+    if (a.idUrl) list = list.map((g) => (!g.url || g.url === g.id || /^\d+$/.test(g.id) && !/\/pr\//.test(g.url)) && g.id ? { ...g, url: a.idUrl!(g.id) } : g);
     const items = list.map((g) => {
       const cur = g.currency || defCur;
       const usd = cur === "USD" ? g.price : (map[cur] && map.USD ? g.price * map[cur] / map.USD : 0);
-      const complex = complexFromTitle(`${g.title} ${g.address}`);
+      const complex = a.name === "Korter.ge" ? g.title : complexFromTitle(`${g.title} ${g.address}`);
       return {
         external_id: g.id || g.url, source_name: a.name, source_url: g.url, title: g.title, description: g.address || g.title,
         country: a.country, region: String(f.region || ""), city: g.city || city || "", district: "", property_type: String(f.property_type || "Квартира"),

@@ -5,7 +5,7 @@ export type GItem = { title: string; url: string; price: number; currency: strin
 
 const PRICE_K = /^(price|prices|pricevalue|price_value|amount|totalprice|total_price|saleprice|sale_price|askingprice|asking_price|listprice|list_price|displayprice|pricetotal|priceamount|offerprice|cost|value)$/i;
 const URL_K = /^(url|href|link|permalink|canonical|canonicalurl|detailurl|detail_url|shareurl|share_url|seourl|seo_url|slug|path|uri|adurl|propertyurl|listingurl|weburl)$/i;
-const TITLE_K = /^(title|name|headline|heading|displaytitle|caption|summary|propertytitle|adtitle)$/i;
+const TITLE_K = /^(title|dynamic_title|dynamictitle|name|headline|heading|displaytitle|caption|summary|propertytitle|adtitle)$/i;
 const ADDR_K = /^(address|displayaddress|display_address|streetaddress|location|locationname|addresslocality|fulladdress|full_address|subtitle)$/i;
 const AREA_K = /^(area|size|sqm|surface|livingarea|living_area|floorarea|floor_area|floorsize|areainm2|area_m2|m2|squaremeters|square_meters|usablearea|totalarea|total_area|builtarea|livingspace|sqft|floorspace)$/i;
 const ROOMS_K = /^(rooms|room|roomsnumber|rooms_number|numberofrooms|numberofroomstotal|bedrooms|bedroom|beds|bed|bedroomscount|roomcount|room_count|numberofbedrooms)$/i;
@@ -51,8 +51,22 @@ export function jsonRoots(html: string): any[] {
   const roots: any[] = [];
   for (const m of html.matchAll(/<script[^>]+type=["']application\/(?:ld\+)?json["'][^>]*>([\s\S]*?)<\/script>/gi)) { try { roots.push(JSON.parse(m[1].trim())); } catch { /* skip */ } }
   const nd = html.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i); if (nd) { try { roots.push(JSON.parse(nd[1])); } catch { /* skip */ } }
-  for (const m of html.matchAll(/window\.(?:__INITIAL_STATE__|__PRELOADED_STATE__|__APOLLO_STATE__|__NUXT__|__data)\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/g)) { try { roots.push(JSON.parse(m[1])); } catch { /* skip */ } }
+  // window.X = {...}: вырезаем объект по балансу скобок (строки учитываются)
+  for (const m of html.matchAll(/window\.(?:__INITIAL_STATE__|INITIAL_STATE|__PRELOADED_STATE__|__APOLLO_STATE__|__NUXT__|__data|__STATE__|initialState)\s*=\s*\{/g)) {
+    const obj = balanced(html, (m.index ?? 0) + m[0].length - 1);
+    if (obj) { try { roots.push(JSON.parse(obj)); } catch { /* skip */ } }
+  }
   return roots;
+}
+
+function balanced(t: string, start: number): string {
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < t.length && i - start < 8_000_000; i++) {
+    const c = t[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true; else if (c === "{") depth++; else if (c === "}") { depth--; if (depth === 0) return t.slice(start, i + 1); }
+  }
+  return "";
 }
 
 export function extractListings(html: string, base: string, limit = 300): GItem[] {
@@ -68,7 +82,13 @@ export function extractListings(html: string, base: string, limit = 300): GItem[
     if (hasPrice) {
       const offer = o.offers && typeof o.offers === "object" ? (Array.isArray(o.offers) ? o.offers[0] : o.offers) : null;
       const priceRaw = offer ? (offer.price ?? offer.lowPrice ?? offer.priceSpecification?.price) : pick(o, PRICE_K);
-      const price = num(priceRaw);
+      // Цена-объект по валютам (MyHome.ge: {"1":{price_total ₾},"2":{price_total $},"3":{price_total €}})
+      let multiCur = "";
+      let priceVal: any = priceRaw;
+      if (priceVal && typeof priceVal === "object" && !Array.isArray(priceVal) && (priceVal["2"] || priceVal["1"])) {
+        const usd = priceVal["2"]; priceVal = usd ? (usd.price_total ?? usd.total ?? usd.price) : (priceVal["1"].price_total ?? priceVal["1"].price); multiCur = usd ? "USD" : "GEL";
+      }
+      const price = num(priceVal);
       const urlRaw = str(o.url ?? o.href ?? o.link ?? offer?.url ?? pick(o, URL_K));
       const title = str(o.name ?? o.title ?? o.headline ?? pick(o, TITLE_K));
       const address = str(pick(o, ADDR_K));
@@ -76,7 +96,7 @@ export function extractListings(html: string, base: string, limit = 300): GItem[
       if (price > 0 && (urlRaw || idv) && (title || address)) {
         let url = "";
         try { url = urlRaw ? new URL(urlRaw, base).toString() : ""; } catch { url = ""; }
-        const currency = curOf(offer?.priceCurrency ?? pick(o, CUR_K), typeof priceRaw === "string" ? priceRaw : "");
+        const currency = multiCur || curOf(offer?.priceCurrency ?? pick(o, CUR_K), typeof priceRaw === "string" ? priceRaw : "");
         const area = num(pick(o, AREA_K) ?? o.floorSize);
         const rooms = num(pick(o, ROOMS_K) ?? o.numberOfRooms);
         found.push({ o, item: { title: title || address, url, price, currency, area: area > 5 && area < 100000 ? area : 0, rooms: rooms > 0 && rooms < 30 ? Math.round(rooms) : 0, city: str(pick(o, CITY_K)), address, image: firstImage(o.image ?? o.photo ?? pick(o, IMG_K)), id: idv || url } });
