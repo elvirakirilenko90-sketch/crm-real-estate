@@ -181,6 +181,9 @@ function countFrom(html:string,source:string){
 const citySlug=(v="")=>{const k=v.trim().toLowerCase(),m:any={"одеса":"odessa","одесса":"odessa","київ":"kiev","киев":"kiev","харків":"kharkov","харьков":"kharkov","дніпро":"dnepr","днепр":"dnepr","львів":"lvov","львов":"lvov","запоріжжя":"zaporozhe","запорожье":"zaporozhe","вінниця":"vinnitsa","винница":"vinnitsa","миколаїв":"nikolaev","николаев":"nikolaev","полтава":"poltava","черкаси":"cherkassy","черкассы":"cherkassy","чернігів":"chernigov","чернигов":"chernigov","суми":"sumy","житомир":"zhitomir","рівне":"rovno","ровно":"rovno","луцьк":"lutsk","луцк":"lutsk","ужгород":"uzhgorod","чернівці":"chernovtsy","черновцы":"chernovtsy","івано-франківськ":"ivano-frankovsk","ивано-франковск":"ivano-frankovsk","хмельницький":"khmelnitskiy","хмельницкий":"khmelnitskiy","тернопіль":"ternopol","тернополь":"ternopol","кропивницький":"kropivnitskiy","кропивницкий":"kropivnitskiy","херсон":"kherson","лиманка":"myzykevycha-ovydyopol","таїрове":"myzykevycha-ovydyopol","таирово":"myzykevycha-ovydyopol"};return m[k]||""};
 const cityKey=(v="")=>String(v||"").trim().toLowerCase().replace(/[ʼ’'`]/g,"").replace(/ё/g,"е");
 const portalSlug=(portal:"olx"|"dim"|"rieltor",v="")=>{const k=cityKey(v);const rec=(UA_SLUGS as any)[k]||(UA_SLUGS as any)[(UA_UK as any)[k]||""];return rec&&portal in rec?String(rec[portal]||""):undefined};
+let UAH_PER_USD=0,UAH_AT=0;
+async function loadUah(){if(UAH_PER_USD&&Date.now()-UAH_AT<6*3600000)return;try{const r=await fetch("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=USD&json");const j=await r.json();const v=Number(j?.[0]?.rate||0);if(v>0){UAH_PER_USD=v;UAH_AT=Date.now()}}catch{}}
+const uahToUsd=(v:number)=>v>0&&UAH_PER_USD>0?Math.round(v/UAH_PER_USD):0;
 const isRent=(f:Filters)=>/аренд|оренд|rent/i.test(String(f.deal_type||""));
 const geo=(f:Filters)=>({country:f.country||"Украина",region:f.region||"",city:f.city&&!/^(все|усі)$/i.test(f.city)?f.city:"",district:districtCanon(f.district||"")});
 const selectedPropertyType=(f:Filters)=>String(f.property_type||"Квартира").trim();
@@ -294,7 +297,9 @@ function parseDom(html:string,f:Filters){
     // DIM.RIA's authoritative TOTAL object price is the size22 <b>. The nearby
     // <span> is explicitly a per-square-metre price and is never assigned to price.
     const totalMatch=seg.match(/<b[^>]*class=["'][^"']*\bsize22\b[^"']*["'][^>]*>\s*([\d\s\u00a0.,]+)\s*\$\s*<\/b>/i);
-    const price=num(totalMatch?.[1]);
+    // Аренда на DIM.RIA показывается в гривне: переводим в $ по курсу НБУ
+    const uahMatch=totalMatch?null:seg.match(/<b[^>]*class=["'][^"']*\bsize22\b[^"']*["'][^>]*>\s*([\d\s\u00a0.,]+)\s*грн\s*<\/b>/i);
+    const price=totalMatch?num(totalMatch[1]):uahToUsd(num(uahMatch?.[1]));
     if(!price)continue;
     const perM2Match=seg.match(/<span[^>]*>\s*([\d\s\u00a0.,]+)\s*\$\s*(?:за|\/)\s*м(?:²|2)/i);
     const pricePerM2=num(perM2Match?.[1]);
@@ -362,7 +367,7 @@ function parseRem(html:string,f:Filters){
 
 function parseGeneric(html:string,source:string,base:string,f:Filters){
   const re=source==="RIELTOR.UA"
-    ? /href=["']([^"']*(?:flats|houses|areas|commercials|rooms)-sale\/view\/(\d+)\/?[^"']*)["']/gi
+    ? /href=["']([^"']*(?:flats|houses|areas|commercials|rooms)-(?:sale|rent)\/view\/(\d+)\/?[^"']*)["']/gi
     : /href=(?:["']?)(https?:\/\/rem\.ua\/(?:ua\/)?prodazha-[^\s"'<>]*?-db(\d+)[^\s"'<>]*)(?:["']|\s|>)/gi;
   const matches=[...html.matchAll(re)],out:Item[]=[],g=geo(f);
   const groups=[] as {m:RegExpMatchArray,at:number,next:number}[];
@@ -379,15 +384,15 @@ function parseGeneric(html:string,source:string,base:string,f:Filters){
       // block, so parse the entire card instead of free text after the link.
       const cardStart=html.lastIndexOf('<div class="catalog-card ',at);
       if(cardStart>=0){const cardEnd=html.indexOf('<div class="catalog-card ',cardStart+25);seg=html.slice(cardStart,cardEnd>cardStart?cardEnd:cardStart+30000)}
-      const canonical=seg.match(/href=["']([^"']*(?:flats|houses|areas|commercials|rooms)-sale\/view\/(\d+)\/?[^"']*)["']/i);
+      const canonical=seg.match(/href=["']([^"']*(?:flats|houses|areas|commercials|rooms)-(?:sale|rent)\/view\/(\d+)\/?[^"']*)["']/i);
       if(canonical){url=abs(canonical[1],base);id=canonical[2]||id}
     }
     const text=clean(seg);
-    const title=clean((source==="RIELTOR.UA"?seg.match(/class=["']catalog-card-address["'][^>]*>([\s\S]*?)<\//i)?.[1]:source==="REM"?seg.match(/class=["']object-address["'][^>]*>([\s\S]*?)<\//i)?.[1]:"")||seg.match(/<a[^>]*href=["'][^"']*(?:(?:flats|houses|areas|commercials|rooms)-sale\/view\/\d+|prodazha-[^"']*?-db\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/i)?.[1]||seg.match(/<(?:h2|h3)[^>]*>([\s\S]*?)<\/(?:h2|h3)>/i)?.[1]||source);
+    const title=clean((source==="RIELTOR.UA"?seg.match(/class=["']catalog-card-address["'][^>]*>([\s\S]*?)<\//i)?.[1]:source==="REM"?seg.match(/class=["']object-address["'][^>]*>([\s\S]*?)<\//i)?.[1]:"")||seg.match(/<a[^>]*href=["'][^"']*(?:(?:flats|houses|areas|commercials|rooms)-(?:sale|rent)\/view\/\d+|prodazha-[^"']*?-db\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/i)?.[1]||seg.match(/<(?:h2|h3)[^>]*>([\s\S]*?)<\/(?:h2|h3)>/i)?.[1]||source);
     // Do not absorb the gallery photo counter that RIELTOR places immediately
     // before the price (for example: "10 69 500 $").
     const sourcePriceMatch=source==="RIELTOR.UA"
-      ? (seg.match(/class=["']catalog-card-price-title["'][^>]*>\s*([\d\s\u00a0.,]+)\s*\$\s*<\/strong>/i)||seg.match(/data-label=["']\s*([\d\s\u00a0.,]+)\s*\$\s*["']/i))
+      ? (seg.match(/class=["']catalog-card-price-title["'][^>]*>\s*([\d\s\u00a0.,]+)\s*\$\s*<\/strong>/i)||seg.match(/data-label=["']\s*([\d\s\u00a0.,]+)\s*\$\s*["']/i)||((m:any)=>m?[m[0],String(uahToUsd(num(m[1])))]:null)(seg.match(/data-label=["']\s*([\d\s\u00a0.,]+)\s*грн\s*["']/i)))
       : source==="REM"?seg.match(/class=["']object-price["'][^>]*>\s*([\d\s\u00a0.,]+)\s*\$/i):text.match(/(?:^|\D)(\d{2,3}(?:[\s\u00a0]\d{3})+|\d{4,6})(?:[.,]\d+)?\s*\$/);
     const price=num(sourcePriceMatch?.[1]);
     const pricePerM2=source==="RIELTOR.UA"?num(seg.match(/class=["']catalog-card-price-details["'][^>]*>\s*([\d\s\u00a0.,]+)\s*\$\s*\/\s*м(?:²|2)/i)?.[1]):0;
@@ -410,7 +415,7 @@ function parseExactRieltorPage(html:string,f:Filters){
     if(parsed.length){out.push(...parsed);continue}
     // Fallback for a valid card whose repeated auxiliary links confuse the
     // generic grouping parser. Exact ЖК catalog membership is authoritative.
-    const href=seg.match(/href=["']([^"']*(?:flats|houses|areas|commercials|rooms)-sale\/view\/(\d+)\/?[^"']*)["']/i);
+    const href=seg.match(/href=["']([^"']*(?:flats|houses|areas|commercials|rooms)-(?:sale|rent)\/view\/(\d+)\/?[^"']*)["']/i);
     const price=num(seg.match(/class=["']catalog-card-price-title["'][^>]*>\s*([\d\s\u00a0.,]+)\s*\$/i)?.[1]||seg.match(/data-label=["']\s*([\d\s\u00a0.,]+)\s*\$\s*["']/i)?.[1]||0);
     if(!href||!price)continue;
     const text=clean(seg),g=geo(f),url=abs(href[1],"https://rieltor.ua");
@@ -606,6 +611,7 @@ export async function handler(req:Request):Promise<Response>{
     const normalizeSource=(value:unknown)=>{const v=String(value||"").trim();if(/^(?:LUN|ЛУН)$/i.test(v))return"ЛУН";if(/^REM(?:\.UA)?$/i.test(v))return"REM";if(/^RIELTOR(?:\.UA)?$/i.test(v))return"RIELTOR.UA";if(/^(?:DIM|DOM)\.RIA(?: Украина)?$/i.test(v))return"DIM.RIA Украина";return v};
     const requestedSources=[...new Set(rawSources.map(normalizeSource))];
     const sources=requestedSources.filter(x=>["OLX","DIM.RIA Украина","REM","RIELTOR.UA","ЛУН"].includes(x));
+    if(isRent(f))await loadUah();
     const results=(await Promise.all(sources.map(s=>one(s,f)))).map((r:any)=>isRent(f)?{...r,items:(r.items||[]).map((i:any)=>({...i,deal_type:"Аренда"}))}:r);
     // No exchange-rate conversion is performed. Every returned price is the
     // USD amount printed by the advertising source itself.

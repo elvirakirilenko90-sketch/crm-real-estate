@@ -131,7 +131,12 @@ async function runAdapter(a: Adapter, f: F) {
         main_photo_url: g.image, photo_urls: g.image ? [g.image] : [], published_at: null,
         raw_data: { live: true, source_price: g.price, source_currency: cur, converted: cur !== "USD", rate_source: cur !== "USD" ? "НБУ" : null },
       };
-    }).filter((x) => x.price > 0 && x.source_url);
+    }).filter((x) => {
+      if (!(x.price > 0) || !x.source_url) return false;
+      // Отсекаем саму страницу поиска (агрегатная разметка «Properties for sale in …»)
+      const clean = (u: string) => u.split("#")[0].split("?")[0].replace(/\/$/, "");
+      return clean(x.source_url) !== clean(url) && clean(x.source_url) !== clean(r.url || "");
+    });
     const room = Number(String(f.rooms || "").replace(/\D/g, "")) || 0, roomsPlus = /\+/.test(String(f.rooms || ""));
     const want = String(f.complex || "").trim().toLowerCase();
     const filtered = items.filter((x) =>
