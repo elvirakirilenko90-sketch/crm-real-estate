@@ -4565,12 +4565,14 @@ function LeadImport({role, users, currentProfile, onImported}) {
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState(null);
+  const [rowStaff, setRowStaff] = useState([]);
 
   const staff = (users || []).filter(u => u.email && u.access !== false && (!currentProfile?.agency_id || String(u.agency_id) === String(currentProfile.agency_id)));
   const selected = rows.filter(r => r.include);
 
   const showResult = (data) => {
-    setRows((data.leads || []).map((l, i) => ({...l, key: Date.now() + "-" + i, include: !l.duplicate_of && !!(l.name || l.phone)})));
+    setRowStaff(data.staff || []);
+    setRows((data.leads || []).map((l, i) => ({...l, lead_date: l.lead_date || "", key: Date.now() + "-" + i, include: !!(l.name || l.phone)})));
     if (!data.leads?.length) setMessage({type: "red", text: "Не удалось найти клиентов. Проверьте текст или скриншот."});
   };
 
@@ -4608,9 +4610,9 @@ function LeadImport({role, users, currentProfile, onImported}) {
 
   const save = () => run("Сохраняем…", async () => {
     if (!selected.length) throw new Error("Отметьте хотя бы одного клиента.");
-    const data = await callLeadImport({mode: "commit", leads: selected, source, manager_email: managerEmail});
+    const data = await callLeadImport({mode: "commit", leads: selected.map(r => ({...r, append: !!r.duplicate_of})), source, manager_email: managerEmail});
     setRows([]); setText(""); setChatText(""); setFiles([]);
-    setMessage({type: "green", text: `Сохранено новых клиентов: ${data.inserted}` + (data.skipped ? `. Пропущено (дубли или пустые строки): ${data.skipped}` : "")});
+    setMessage({type: "green", text: `Сохранено новых клиентов: ${data.inserted}` + (data.updated ? `. Дополнено карточек: ${data.updated}` : "") + (data.skipped ? `. Пропущено: ${data.skipped}` : "")});
     onImported?.();
   });
 
@@ -4656,7 +4658,7 @@ function LeadImport({role, users, currentProfile, onImported}) {
         Выбрать файл Excel или CSV
         <input type="file" accept=".xlsx,.xls,.csv,.txt,.tsv" style={{display: "none"}} onChange={e => readSpreadsheet(e.target.files?.[0])}/>
       </label>
-      <textarea className="input" style={{minHeight: 120}} placeholder={"Или вставьте список, по клиенту в строке:\nИмя; Телефон; Источник; Заметка"} value={text} onChange={e => setText(e.target.value)}/>
+      <textarea className="input" style={{minHeight: 120}} placeholder={"Или вставьте список, по клиенту в строке. Подходят списки из заметок:\n0671234567 - Иван - 2к Аркадия до 60к - 12.05 - Русаков - задаток"} value={text} onChange={e => setText(e.target.value)}/>
       <Button className="full" disabled={!!busy} onClick={checkList}>{busy || "Проверить список"}</Button>
     </>}
 
@@ -4667,19 +4669,24 @@ function LeadImport({role, users, currentProfile, onImported}) {
       {rows.map(r => <div key={r.key} className="card" style={{margin: 0, opacity: r.include ? 1 : 0.6}}>
         <label style={{display: "flex", gap: 8, alignItems: "center", fontWeight: 900}}>
           <input type="checkbox" checked={r.include} onChange={e => update(r.key, {include: e.target.checked})}/>
-          {r.include ? "Сохранить" : "Не сохранять"}
+          {r.duplicate_of ? (r.include ? `Дополнить карточку №${r.duplicate_of}` : "Не дополнять") : (r.include ? "Сохранить" : "Не сохранять")}
         </label>
         <div className="grid2" style={{marginTop: 8}}>
           <input className="input" placeholder="Имя клиента" value={r.name} onChange={e => update(r.key, {name: e.target.value})}/>
           <input className="input" type="tel" placeholder="Телефон" value={r.phone} onChange={e => update(r.key, {phone: e.target.value})}/>
           <input className="input" placeholder="Источник" value={r.source || ""} onChange={e => update(r.key, {source: e.target.value})}/>
+          {!r.duplicate_of && <>
+            <label>Дата лида<input className="input" type="date" value={r.lead_date || ""} onChange={e => update(r.key, {lead_date: e.target.value})}/></label>
+            <label>Этап<select className="input" value={r.stage || "Новый Лид"} onChange={e => update(r.key, {stage: e.target.value})}>{stages.map(st => <option key={st} value={st}>{st}</option>)}</select></label>
+            {isAdmin && rowStaff.length > 0 && <label>Ответственный<select className="input" value={r.manager_email || managerEmail} onChange={e => update(r.key, {manager_email: e.target.value})}>{rowStaff.map(u => <option key={u.email} value={u.email}>{u.name || u.email}</option>)}</select></label>}
+          </>}
         </div>
         <textarea className="input" style={{minHeight: 60}} placeholder="Заметка" value={r.notes || ""} onChange={e => update(r.key, {notes: e.target.value})}/>
         {r.warnings?.length > 0 && <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
           {r.warnings.map(w => <span key={w} className={cn("badge", r.duplicate_of ? "dark" : "gold")} style={{whiteSpace: "normal"}}>{w}</span>)}
         </div>}
       </div>)}
-      <Button className="full" disabled={!!busy || !selected.length} onClick={save}>{busy || `Сохранить новых клиентов: ${selected.length}`}</Button>
+      <Button className="full" disabled={!!busy || !selected.length} onClick={save}>{busy || `Одобрить и сохранить: ${selected.length}`}</Button>
     </div>}
   </div>;
 }
