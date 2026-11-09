@@ -2486,6 +2486,11 @@ export const uiTemplates = [
   "Approve and save: $1"
  ],
  [
+  "^Похоже на старую испорченную карточку №(\\d+) — отметьте «Дополнить», и CRM вернёт в неё имя и телефон$",
+  "Схоже на стару пошкоджену картку №$1 — позначте «Доповнити», і CRM поверне в неї ім'я та телефон",
+  "Looks like old damaged card #$1 — tick “Update” and the CRM will restore its name and phone"
+ ],
+ [
   "^Уже есть в CRM \\(клиент №(\\d+)\\) — можно дополнить карточку$",
   "Уже є в CRM (клієнт №$1) — можна доповнити картку",
   "Already in the CRM (client #$1) — you can update the card"

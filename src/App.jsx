@@ -2,6 +2,8 @@ import React, { useMemo, useState, useEffect, useRef } from "react";
 import { uiExtra, uiTemplates } from "./i18n-extra.js";
 import { supabase } from "./supabaseClient";
 const stages = ["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
+// Этапы, сохранённые раньше на украинском/английском, показываем в общих колонках воронки
+const LEGACY_STAGE = {"Новий лід":"Новый Лид","New Lead":"Новый Лид","Перший контакт":"Первый контакт","У роботі":"В работе","В роботі":"В работе","Призначено зустріч":"Назначена встреча","Зустріч проведено":"Проведена встреча","Думає":"Думает","Завдаток":"Задаток","Угода":"Сделка","Відмова":"Отказ","Відклали":"Отложили"};
 const sources = ["Повторный клиент","Рекомендации","ОЛХ","Лид руководство","Инстаграм личный","Тик-Ток личный","Фейсбук личный","Тик-Ток рабочий","Инстаграм рабочий","Фейсбук рабочий","Телеграмм-канал рабочий","Рекомендации клиентов"];
 const types = ["1-комнатные","2-комнатные","3-комнатные","Таунхаус","Дом","Участок","Коммерция"];
 const districts = ["Киевский","Приморский","Пересыпский","Хаджибейский","Аркадия"];
@@ -5784,7 +5786,7 @@ export default function App(){
       name: row.name || "Без имени",
       phone: row.phone || "",
       source: row.source || sources[0],
-      status: row.stage || "Новый Лид",
+      status: LEGACY_STAGE[row.stage] || row.stage || "Новый Лид",
       notes: row.notes || "",
       nextContact: row.next_contact_at || "",
       manager: row.manager_name || row.manager || extractManager(row.notes),
@@ -5889,7 +5891,7 @@ export default function App(){
     const agencyId = profile?.agency_id ? String(profile.agency_id) : profileAgencyId;
     const roleForLoad = profile?.role || role;
 
-    const leadsRes = await supabase.from("leads").select("*").order("created_at", { ascending: false });
+    const leadsRes = await supabase.from("leads").select("*").order("id", { ascending: false }); // последние добавленные — сверху (у загруженных из заметок дата лида может быть старой)
     const postsRes = await supabase.from("news").select("*").order("created_at", { ascending: false });
     const newsMediaRes = await supabase.from("news_media").select("*").order("created_at", { ascending: false });
     const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending: false });
