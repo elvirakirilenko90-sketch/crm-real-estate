@@ -3004,7 +3004,110 @@ const officialCityDistricts = {
   "Таиланд|Пхукет":["Bang Tao","Kamala","Patong","Karon","Kata","Rawai","Nai Harn","Mai Khao"],
   "Индонезия / Бали|Денпасар":["Sanur","Denpasar Barat","Denpasar Selatan","Denpasar Timur","Denpasar Utara"]
 };
-function StatisticsReporting({leads,properties,events,role,users,activities,currentProfile}) {
+// ===== Аналитика руководителя (директор и тех. админ) — по образцу Follow Up Boss / kvCORE / Lofty =====
+// Воронка с конверсией, источники лидов, рейтинг менеджеров, теряющиеся лиды, динамика по неделям.
+// Всё считается по уже загруженным данным CRM с учётом выбранного менеджера и периода.
+function AdminInsights({ leads = [], periodLeads = [], events = [], activities = [], onOpenLead }) {
+  const DAY = 86400000, now = Date.now();
+  const closed = s => s === "Сделка" || s === "Отказ";
+  const order = stages.filter(s => s !== "Отказ" && s !== "Отложили");
+  const reached = (l, st) => { const i = order.indexOf(l.status), j = order.indexOf(st); return i >= 0 && i >= j; };
+  const pct = (a, b) => b ? `${Math.round(a / b * 100)}%` : "—";
+  const updatedAt = l => new Date(l.updated_at || l.created_at || 0).getTime();
+  const nextAt = l => l.nextContact ? new Date(l.nextContact).getTime() : NaN;
+  const active = leads.filter(l => !closed(l.status));
+  const overdue = active.filter(l => Number.isFinite(nextAt(l)) && nextAt(l) < now);
+  const noNext = active.filter(l => !l.nextContact);
+  const stalled = active.filter(l => now - updatedAt(l) > 7 * DAY);
+  const dealsInPeriod = periodLeads.filter(l => l.status === "Сделка").length;
+  const eventsByLead = events.reduce((m, e) => { const k = String(e.leadId); (m[k] = m[k] || []).push(e); return m; }, {});
+  const hasMeeting = l => (eventsByLead[String(l.id)] || []).some(e => e.type === "Встреча" || e.type === "Показ");
+
+  // Источники
+  const bySource = Object.values(periodLeads.reduce((m, l) => {
+    const k = l.source || "Не указан"; const r = (m[k] = m[k] || { source: k, leads: 0, work: 0, meet: 0, deals: 0, refused: 0 });
+    r.leads++; if (!["Новый Лид", "Отказ"].includes(l.status)) r.work++; if (hasMeeting(l) || reached(l, "Назначена встреча")) r.meet++;
+    if (l.status === "Сделка") r.deals++; if (l.status === "Отказ") r.refused++; return m;
+  }, {})).sort((a, b) => b.leads - a.leads);
+
+  // Менеджеры
+  const sent = activities.filter(a => String(a.action_type || a.type || "") === "presentation_sent");
+  const byManager = Object.values(leads.reduce((m, l) => {
+    const k = l.manager || l.manager_email || "Не назначен"; const r = (m[k] = m[k] || { name: k, email: l.manager_email || "", leads: 0, period: 0, active: 0, deals: 0, overdue: 0, stalled: 0, meetings: 0, calls: 0, sent: 0 });
+    r.leads++; if (periodLeads.includes(l)) r.period++; if (!closed(l.status)) r.active++; if (l.status === "Сделка") r.deals++;
+    if (!closed(l.status) && Number.isFinite(nextAt(l)) && nextAt(l) < now) r.overdue++;
+    if (!closed(l.status) && now - updatedAt(l) > 7 * DAY) r.stalled++;
+    (eventsByLead[String(l.id)] || []).forEach(e => { if (e.type === "Встреча" || e.type === "Показ") r.meetings++; if (e.type === "Звонок") r.calls++; });
+    return m;
+  }, {}));
+  byManager.forEach(r => { r.sent = sent.filter(a => (r.email && String(a.user_email || a.manager_email || "") === r.email) || String(a.user_name || a.manager_name || "") === r.name).length; });
+  byManager.sort((a, b) => b.deals - a.deals || b.period - a.period);
+
+  // Динамика по неделям: новые лиды и сделки за 12 недель
+  const weekStart = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+  const weeks = Array.from({ length: 12 }, (_, i) => weekStart(now) - (11 - i) * 7 * DAY);
+  const weekly = weeks.map(w => ({ w, leads: leads.filter(l => { const t = new Date(l.created_at || 0).getTime(); return t >= w && t < w + 7 * DAY; }).length,
+    deals: leads.filter(l => l.status === "Сделка" && updatedAt(l) >= w && updatedAt(l) < w + 7 * DAY).length }));
+  const maxW = Math.max(1, ...weekly.map(x => x.leads));
+
+  const attention = [...overdue.map(l => ({ l, why: `Просрочен контакт: ${new Date(l.nextContact).toLocaleDateString()}` })),
+    ...stalled.filter(l => !overdue.includes(l)).map(l => ({ l, why: `Без изменений ${Math.floor((now - updatedAt(l)) / DAY)} дн.` }))].slice(0, 12);
+
+  const th = { textAlign: "left", padding: "8px", borderBottom: "1px solid", whiteSpace: "nowrap" }, td = { padding: "8px", borderBottom: "1px solid" };
+  return <>
+    <div className="card dark"><h2>Аналитика руководителя</h2><p>Воронка, источники, менеджеры и лиды, которые теряются. Видят только директор и тех. администратор.</p></div>
+    <div className="stats">{[
+      ["Новых лидов за период", periodLeads.length],
+      ["Конверсия лид → сделка", pct(dealsInPeriod, periodLeads.length)],
+      ["В работе сейчас", active.length],
+      ["Просрочен следующий контакт", overdue.length],
+      ["Без следующего контакта", noNext.length],
+      ["Без движения больше 7 дней", stalled.length],
+    ].map(([a, b]) => <div className="stat" key={a}><span>{a}</span><b>{b}</b></div>)}</div>
+
+    <div className="card"><h3>Воронка лидов за период</h3>
+      <p className="muted">Сколько лидов, пришедших за период, дошли до каждого этапа, и конверсия от первого этапа.</p>
+      {order.map(st => { const n = periodLeads.filter(l => reached(l, st)).length; return <div key={st} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) 2fr auto", gap: 8, alignItems: "center", margin: "6px 0" }}>
+        <span>{st}</span><div style={{ height: 10, borderRadius: 6, background: "rgba(127,127,127,.18)" }}><div style={{ height: 10, borderRadius: 6, width: `${periodLeads.length ? Math.max(2, n / periodLeads.length * 100) : 0}%`, background: "currentColor", opacity: .55 }} /></div><b>{`${n} · ${pct(n, periodLeads.length)}`}</b></div>; })}
+      <div className="stageRow"><span>Отказ</span><b>{periodLeads.filter(l => l.status === "Отказ").length}</b></div>
+      <div className="stageRow"><span>Отложили</span><b>{periodLeads.filter(l => l.status === "Отложили").length}</b></div>
+    </div>
+
+    <div className="card" style={{ overflowX: "auto" }}><h3>Источники лидов</h3>
+      <p className="muted">Какие площадки приводят клиентов, которые доходят до встречи и сделки.</p>
+      <table className="clientTable" style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}><thead><tr>{["Источник", "Лиды", "В работе", "Встречи", "Сделки", "Конверсия", "Отказы"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{bySource.map(r => <tr key={r.source}><td style={td}>{r.source}</td><td style={td}>{r.leads}</td><td style={td}>{r.work}</td><td style={td}>{r.meet}</td><td style={td}>{r.deals}</td><td style={td}>{pct(r.deals, r.leads)}</td><td style={td}>{r.refused}</td></tr>)}</tbody></table>
+      {bySource.length === 0 && <p className="muted">За период лидов нет.</p>}
+    </div>
+
+    <div className="card" style={{ overflowX: "auto" }}><h3>Рейтинг менеджеров</h3>
+      <p className="muted">Сделки, активность и дисциплина по каждому менеджеру. «Просрочено» и «Без движения» — лиды, которые могут потеряться.</p>
+      <table className="clientTable" style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}><thead><tr>{["Менеджер", "Лидов всего", "Новых за период", "В работе", "Сделки", "Конверсия", "Встречи/показы", "Звонки", "Презентации", "Просрочено", "Без движения"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{byManager.map(r => <tr key={r.name}><td style={td}><b>{r.name}</b></td><td style={td}>{r.leads}</td><td style={td}>{r.period}</td><td style={td}>{r.active}</td><td style={td}>{r.deals}</td><td style={td}>{pct(r.deals, r.leads)}</td><td style={td}>{r.meetings}</td><td style={td}>{r.calls}</td><td style={td}>{r.sent}</td><td style={td}>{r.overdue ? badge(r.overdue, "red") : 0}</td><td style={td}>{r.stalled ? badge(r.stalled, "gold") : 0}</td></tr>)}</tbody></table>
+    </div>
+
+    <div className="card"><h3>Новые лиды и сделки по неделям</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(12,1fr)", gap: 4, alignItems: "end", height: 140, marginTop: 8 }}>
+        {weekly.map(x => <div key={x.w} title={`${new Date(x.w).toLocaleDateString()}: лидов ${x.leads}, сделок ${x.deals}`} style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", height: "100%" }}>
+          <span className="muted" style={{ fontSize: 11 }}>{x.leads || ""}</span>
+          <div style={{ width: "70%", height: `${x.leads / maxW * 100}%`, minHeight: x.leads ? 3 : 0, background: "currentColor", opacity: .45, borderRadius: "4px 4px 0 0" }} />
+        </div>)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(12,1fr)", gap: 4 }}>{weekly.map(x => <span key={x.w} className="muted" style={{ fontSize: 10, textAlign: "center" }}>{new Date(x.w).toLocaleDateString(undefined, { day: "numeric", month: "numeric" })}</span>)}</div>
+      <p className="muted">{`Сделок за 12 недель: ${weekly.reduce((s, x) => s + x.deals, 0)}`}</p>
+    </div>
+
+    <div className="card"><h3>Требуют внимания</h3>
+      {attention.length === 0 && <p className="muted">Просроченных и забытых лидов нет.</p>}
+      {attention.map(({ l, why }) => <div key={l.id} className="row" style={{ borderBottom: "1px solid rgba(127,127,127,.2)", padding: "6px 0" }}>
+        <section><b>{l.name || "Без имени"}</b><p className="muted" style={{ margin: 0 }}>{`${l.manager || "—"} · ${l.status} · ${why}`}</p></section>
+        {onOpenLead && <Button variant="soft" onClick={() => onOpenLead(l.id)}>Открыть</Button>}
+      </div>)}
+    </div>
+  </>;
+}
+
+function StatisticsReporting({leads,properties,events,role,users,activities,currentProfile,onOpenLead}) {
   const canFilter = role === "Администратор тех отдел" || role === "Администратор директор";
   const managerUsers = (users || []).filter(u => String(u.role || "").includes("Менеджер"));
   const [managerFilter,setManagerFilter] = useState(canFilter ? "Все" : (currentProfile?.email || "Все"));
@@ -3056,6 +3159,7 @@ function StatisticsReporting({leads,properties,events,role,users,activities,curr
     <div className="card"><h3>История работы менеджеров</h3>{presentationSends.length===0?<p className="muted">За выбранный период отправленных презентаций нет.</p>:<div style={{overflowX:"auto"}}><table className="clientTable" style={{width:"100%",borderCollapse:"collapse",minWidth:850}}><thead><tr><th>Дата</th><th>Менеджер</th><th>Клиент</th><th>Канал</th><th>Тип</th></tr></thead><tbody>{presentationSends.slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).map((a,i)=><tr key={a.id||i}><td>{a.created_at?new Date(a.created_at).toLocaleString():"—"}</td><td>{a.user_name||a.manager_name||"—"}</td><td>{a.client_name||"—"}</td><td>{a.channel||"—"}</td><td>{a.entity_type==="selection"?"Подборка":"Презентация объекта"}</td></tr>)}</tbody></table></div>}</div>
     <div className="card"><h3>Отправленные презентации по дням</h3>{Object.entries(dailyCounts).sort().map(([d,n])=><div className="stageRow" key={d}><span>{d}</span><b>{n}</b></div>)}</div>
     <div className="card"><h3>Воронка клиентов</h3>{stages.map(st=><div className="stageRow" key={st}><span>{st}</span><b>{scopedAll.filter(l=>l.status===st).length}</b></div>)}</div>
+    {canFilter && <AdminInsights leads={scopedAll} periodLeads={createdClients} events={events.filter(e=>scopedIds.has(String(e.leadId)))} activities={scopedActivities} onOpenLead={onOpenLead}/>}
   </main>;
 }
 
@@ -6130,6 +6234,7 @@ export default function App(){
       manager: row.manager_name || row.manager || extractManager(row.notes),
       manager_email: row.manager_email || "",
       created_at: row.created_at || null,
+      updated_at: row.updated_at || null,
       history: ["Загружено из Supabase"]
     };
   }
@@ -6421,7 +6526,7 @@ export default function App(){
         {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang}/>} 
         {page==="properties"&&<Properties properties={properties} setProperties={setProperties} onOpen={setProperty} users={users} currentProfile={currentProfile} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}   
         {page==="deals"&&<Deals leads={visibleLeads} properties={properties} currentProfile={currentProfile} role={role} lang={lang}/>} 
-        {page==="analytics"&&<StatisticsReporting leads={visibleLeads} properties={properties} events={visibleEvents} role={role} users={users} activities={activities} currentProfile={currentProfile}/>} 
+        {page==="analytics"&&<StatisticsReporting onOpenLead={openLeadById} leads={visibleLeads} properties={properties} events={visibleEvents} role={role} users={users} activities={activities} currentProfile={currentProfile}/>} 
         {page==="tools"&&<AnalyticsWorkspace lang={lang} currentProfile={currentProfile} properties={properties} leads={visibleLeads} onOpenProperty={setProperty} agencyName={agencyName} theme={theme}/>} 
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role}/>} 
         {page==="access"&&role==="Администратор тех отдел"&&<Access agencies={agencies} setAgencies={setAgencies} users={users} setUsers={setUsers}/>} 
