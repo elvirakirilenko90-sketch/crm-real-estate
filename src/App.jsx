@@ -882,7 +882,56 @@ function Bottom({page,setPage,lang}) {
   return <nav className="bottom">{items.map(([id,label,icon])=><button key={id} className={page===id ? "active" : ""} onClick={()=>setPage(id)}><span>{icon}</span>{tr(lang,label)}</button>)}</nav>;
 }
 
-function Feed({posts,setPosts,role,currentProfile,lang}) {
+// «Дни рождения» как в Telegram: сверху ленты — у кого сегодня (и завтра) день рождения.
+// Каждый сотрудник может скрыть плашку крестиком только для себя (birthday_dismissals, на текущий год).
+function birthdayInfo(birthDate, now = new Date()){
+  if(!birthDate) return null;
+  const [y,m,d] = String(birthDate).slice(0,10).split("-").map(Number);
+  if(!m || !d) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next = new Date(now.getFullYear(), m-1, d);
+  if(next < today) next = new Date(now.getFullYear()+1, m-1, d);
+  const days = Math.round((next - today) / 86400000);
+  return {days, year: next.getFullYear(), age: y ? next.getFullYear() - y : null, date: next};
+}
+function BirthdayBanner({users, currentProfile, onCongratulate}){
+  const [hidden,setHidden] = useState(null);
+  const year = new Date().getFullYear();
+  useEffect(()=>{
+    if(!currentProfile?.id){ setHidden([]); return; }
+    supabase.from("birthday_dismissals").select("celebrant_id,year").eq("user_id", currentProfile.id)
+      .then(({data})=>setHidden((data||[]).map(x=>`${x.celebrant_id}:${x.year}`)));
+  },[currentProfile?.id]);
+  if(hidden === null) return null;
+  const sameAgency = u => !currentProfile?.agency_id || String(u.agency_id) === String(currentProfile.agency_id);
+  const list = (users||[])
+    .filter(u => u.birth_date && u.access !== false && sameAgency(u))
+    .map(u => ({u, info: birthdayInfo(u.birth_date)}))
+    .filter(x => x.info && x.info.days <= 1 && !hidden.includes(`${x.u.id}:${x.info.year}`))
+    .sort((a,b) => a.info.days - b.info.days);
+  if(!list.length) return null;
+  const dismiss = async (x) => {
+    setHidden(h => [...h, `${x.u.id}:${x.info.year}`]);
+    if(currentProfile?.id) await supabase.from("birthday_dismissals").insert({user_id: currentProfile.id, celebrant_id: x.u.id, year: x.info.year});
+  };
+  return <div className="card" style={{display:"grid",gap:8,marginBottom:12}}>
+    {list.map(x => {
+      const me = String(x.u.id) === String(currentProfile?.id);
+      const name = x.u.full_name || x.u.email;
+      return <div key={x.u.id} style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:28,lineHeight:1}} aria-hidden="true">🎂</span>
+        <div style={{flex:1,minWidth:0}}>
+          <b>{me ? (x.info.days === 0 ? "С днём рождения!" : "Завтра ваш день рождения") : (x.info.days === 0 ? `Сегодня день рождения: ${name}` : `Завтра день рождения: ${name}`)}</b>
+          <div className="muted">{x.info.date.toLocaleDateString(undefined,{day:"numeric",month:"long"})}{x.info.age && x.info.age > 0 && x.info.age < 120 ? ` · ${x.info.age}` : ""}</div>
+        </div>
+        {!me && x.info.days === 0 && onCongratulate && <Button variant="soft" onClick={()=>onCongratulate?.(name)}>Поздравить</Button>}
+        <button type="button" className="icon" aria-label="Скрыть" title="Скрыть" onClick={()=>dismiss(x)}>×</button>
+      </div>;
+    })}
+  </div>;
+}
+
+function Feed({posts,setPosts,role,currentProfile,lang,users}) {
   const isTech = role === "Администратор тех отдел";
   const [open,setOpen] = useState(false);
   const [draft,setDraft] = useState({text:"",kind:"Фото",file:""});
@@ -1048,7 +1097,7 @@ function Feed({posts,setPosts,role,currentProfile,lang}) {
     return <Media kind={post.kind} name={file} onOpen={setViewer}/>;
   };
 
-  return <main className="screen"><div className="feedList">
+  return <main className="screen"><BirthdayBanner users={users} currentProfile={currentProfile} onCongratulate={!isTech ? null : name=>{setDraft(d=>({...d,text:`С днём рождения, ${name}! 🎉`,kind:"Текст"}));setOpen(true);}}/><div className="feedList">
     <div className="card dark hero">
       <div><h2>Лента новостей</h2><p>Внутренняя соцсеть агентства: фото, видео, файлы, ссылки, лайки и комментарии.</p></div>
       {isTech && <Button onClick={()=>setOpen(true)}>+ Новая публикация</Button>}
@@ -4408,7 +4457,7 @@ function Help({help,setHelp,leads,setLeads,onOpen,currentProfile,role}) {
 function Access({agencies,setAgencies,users,setUsers}) {
   const [agency,setAgency] = useState({name:""});
   const [editingAgency,setEditingAgency] = useState(null);
-  const [user,setUser] = useState({agency_id:"",full_name:"",phone:"",email:"",role:"Менеджер по продажам"});
+  const [user,setUser] = useState({agency_id:"",full_name:"",phone:"",email:"",role:"Менеджер по продажам",birth_date:""});
   const [editingUser,setEditingUser] = useState(null);
 
   const createAgency = async () => {
@@ -4448,13 +4497,14 @@ function Access({agencies,setAgencies,users,setUsers}) {
       phone: user.phone || "",
       email: user.email.trim(),
       role: user.role,
+      birth_date: user.birth_date || null,
       avatar_url: null
     };
 
     const { data, error } = await supabase.from("users").insert(payload).select().single();
     if (error) { alert("Ошибка создания пользователя: " + error.message); return; }
     setUsers(prev => [data, ...prev]);
-    setUser({agency_id: agencyId || "", full_name:"", phone:"", email:"", role:"Менеджер по продажам"});
+    setUser({agency_id: agencyId || "", full_name:"", phone:"", email:"", role:"Менеджер по продажам", birth_date:""});
   };
 
   const saveUser = async () => {
@@ -4464,7 +4514,8 @@ function Access({agencies,setAgencies,users,setUsers}) {
       full_name: editingUser.full_name || "",
       phone: editingUser.phone || "",
       email: editingUser.email || "",
-      role: editingUser.role || "Менеджер по продажам"
+      role: editingUser.role || "Менеджер по продажам",
+      birth_date: editingUser.birth_date || null
     };
     const { data, error } = await supabase.from("users").update(payload).eq("id", editingUser.id).select().single();
     if (error) { alert("Ошибка редактирования пользователя: " + error.message); return; }
@@ -4498,6 +4549,7 @@ function Access({agencies,setAgencies,users,setUsers}) {
           {agencies.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
         <input className="input" placeholder="ФИО пользователя" value={user.full_name} onChange={e=>setUser({...user,full_name:e.target.value})}/>
+        <label className="muted">Дата рождения<input className="input" type="date" value={user.birth_date || ""} onChange={e=>setUser({...user,birth_date:e.target.value})}/></label>
         <input className="input" placeholder="Телефон" value={user.phone} onChange={e=>setUser({...user,phone:e.target.value})}/>
         <input className="input" placeholder="Email пользователя" value={user.email} onChange={e=>setUser({...user,email:e.target.value})}/>
         <select className="input" value={user.role} onChange={e=>setUser({...user,role:e.target.value})}><option>Менеджер по продажам</option><option>Администратор директор</option><option>Администратор тех отдел</option></select>
@@ -4517,7 +4569,7 @@ function Access({agencies,setAgencies,users,setUsers}) {
         </div>
         {list.length === 0 && <p className="muted">Пока нет пользователей.</p>}
         {list.map(u=><div className="lead" key={u.id}>
-          <div className="row"><section><b>{userName(u)}</b><p className="muted">{u.phone || "Без телефона"}<br/>{u.email}<br/>{u.role}</p></section>{badge("Доступ создан","green")}</div>
+          <div className="row"><section><b>{userName(u)}</b><p className="muted">{u.phone || "Без телефона"}<br/>{u.email}<br/>{u.role}{u.birth_date ? <><br/>{`Дата рождения: ${new Date(u.birth_date + "T00:00:00").toLocaleDateString()}`}</> : null}</p></section>{badge("Доступ создан","green")}</div>
           <div className="grid2"><Button variant="soft" onClick={()=>setEditingUser(u)}>Редактировать доступ</Button><Button variant="danger" onClick={()=>deleteUser(u)}>Удалить пользователя</Button></div>
         </div>)}
       </div>;
@@ -4535,6 +4587,7 @@ function Access({agencies,setAgencies,users,setUsers}) {
       <select className="input" value={editingUser.agency_id || ""} onChange={e=>setEditingUser({...editingUser,agency_id:e.target.value})}>{agencies.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
       <input className="input" placeholder="ФИО" value={editingUser.full_name || editingUser.name || ""} onChange={e=>setEditingUser({...editingUser,full_name:e.target.value})}/>
       <input className="input" placeholder="Телефон" value={editingUser.phone || ""} onChange={e=>setEditingUser({...editingUser,phone:e.target.value})}/>
+      <label className="muted">Дата рождения<input className="input" type="date" value={editingUser.birth_date || ""} onChange={e=>setEditingUser({...editingUser,birth_date:e.target.value})}/></label>
       <input className="input" placeholder="Email" value={editingUser.email || ""} onChange={e=>setEditingUser({...editingUser,email:e.target.value})}/>
       <select className="input" value={editingUser.role || "Менеджер по продажам"} onChange={e=>setEditingUser({...editingUser,role:e.target.value})}><option>Менеджер по продажам</option><option>Администратор директор</option><option>Администратор тех отдел</option></select>
       <Button className="full" onClick={saveUser}>Сохранить пользователя</Button>
@@ -6141,7 +6194,7 @@ export default function App(){
     <div className="mainWrap">
       <main className="main">
         <Top page={page} setPage={setPage} agencyName={agencyName} lang={lang}/>
-        {page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role} currentProfile={currentProfile} lang={lang}/>} 
+        {page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role} currentProfile={currentProfile} lang={lang} users={users}/>} 
         {page==="clients"&&<Clients leads={visibleLeads} setLeads={setLeads} onOpen={setLead} currentProfile={currentProfile} role={role} users={users} lang={lang}/>} 
         {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang}/>} 
         {page==="properties"&&<Properties properties={properties} setProperties={setProperties} onOpen={setProperty} users={users} currentProfile={currentProfile} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}   
