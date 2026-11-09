@@ -4658,7 +4658,7 @@ function LeadImport({role, users, currentProfile, onImported}) {
         Выбрать файл Excel или CSV
         <input type="file" accept=".xlsx,.xls,.csv,.txt,.tsv" style={{display: "none"}} onChange={e => readSpreadsheet(e.target.files?.[0])}/>
       </label>
-      <textarea className="input" style={{minHeight: 120}} placeholder={"Или вставьте список, по клиенту в строке. Подходят списки из заметок:\n0671234567 - Иван - 2к Аркадия до 60к - 12.05 - Русаков - задаток"} value={text} onChange={e => setText(e.target.value)}/>
+      <textarea className="input" style={{minHeight: 120}} placeholder={"Или вставьте список, по клиенту в строке. Подходят списки из заметок:\nТик-ток\n1. 0671234567 - Иван - 2к Аркадия до 60к - 12.05 - Русаков - задаток\n2. @nick - Ольга - студия центр - 15.05 - Архипова"} value={text} onChange={e => setText(e.target.value)}/>
       <Button className="full" disabled={!!busy} onClick={checkList}>{busy || "Проверить список"}</Button>
     </>}
 
@@ -4666,6 +4666,7 @@ function LeadImport({role, users, currentProfile, onImported}) {
 
     {rows.length > 0 && <div style={{marginTop: 14, display: "grid", gap: 10}}>
       <b>Найдено: {rows.length} · к сохранению: {selected.length}</b>
+      <datalist id="lead-import-sources">{sources.map(x => <option key={x} value={x}/>)}</datalist>
       {rows.map(r => <div key={r.key} className="card" style={{margin: 0, opacity: r.include ? 1 : 0.6}}>
         <label style={{display: "flex", gap: 8, alignItems: "center", fontWeight: 900}}>
           <input type="checkbox" checked={r.include} onChange={e => update(r.key, {include: e.target.checked})}/>
@@ -4674,7 +4675,7 @@ function LeadImport({role, users, currentProfile, onImported}) {
         <div className="grid2" style={{marginTop: 8}}>
           <input className="input" placeholder="Имя клиента" value={r.name} onChange={e => update(r.key, {name: e.target.value})}/>
           <input className="input" type="tel" placeholder="Телефон" value={r.phone} onChange={e => update(r.key, {phone: e.target.value})}/>
-          <input className="input" placeholder="Источник" value={r.source || ""} onChange={e => update(r.key, {source: e.target.value})}/>
+          <input className="input" list="lead-import-sources" placeholder="Источник" value={r.source || ""} onChange={e => update(r.key, {source: e.target.value})}/>
           {!r.duplicate_of && <>
             <label>Дата лида<input className="input" type="date" value={r.lead_date || ""} onChange={e => update(r.key, {lead_date: e.target.value})}/></label>
             <label>Этап<select className="input" value={r.stage || "Новый Лид"} onChange={e => update(r.key, {stage: e.target.value})}>{stages.map(st => <option key={st} value={st}>{st}</option>)}</select></label>
