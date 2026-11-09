@@ -1258,8 +1258,16 @@ function Contact({phone,onClose}) {
 
 
 
-function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile}) {
+function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile,onOpenLead}) {
   const [local,setLocal] = useState(lead);
+  // Связи «дубль ↔ исходный клиент» — только для администраторов (менеджеру таблица недоступна)
+  const isAdminRole = role === "Администратор директор" || role === "Администратор тех отдел";
+  const [dupLinks,setDupLinks] = useState([]);
+  useEffect(()=>{
+    if(!isAdminRole || String(lead.id).startsWith("L-")) return;
+    supabase.from("lead_duplicates").select("id,lead_id,duplicate_of,status,created_at").or(`lead_id.eq.${lead.id},duplicate_of.eq.${lead.id}`).neq("status","rejected")
+      .then(({data})=>setDupLinks(data||[]));
+  },[lead.id,isAdminRole]);
   const [event,setEvent] = useState({type:"Звонок", date:"2026-05-24", time:"12:00", title:"", reminder:60, sound:"classic"});
   const [question,setQuestion] = useState("");
   const [workComment,setWorkComment] = useState("");
@@ -1341,7 +1349,16 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
     setQuestion("");
   };
 
+  const dupOf = dupLinks.filter(d=>String(d.lead_id)===String(lead.id));
+  const dupCopies = dupLinks.filter(d=>String(d.duplicate_of)===String(lead.id) && d.lead_id);
+  const dupPending = dupLinks.filter(d=>String(d.duplicate_of)===String(lead.id) && d.status==="pending");
   return <Modal onClose={onClose} wide>
+    {isAdminRole && (dupOf.length>0 || dupCopies.length>0 || dupPending.length>0) && <div className="card" style={{margin:"0 0 10px",display:"grid",gap:6}}>
+      <b>Дубль (видит только администратор)</b>
+      {dupOf.map(d=><div key={d.id} className="row"><span>{`Этот клиент — дубль клиента №${d.duplicate_of}`}</span><Button variant="soft" onClick={()=>onOpenLead?.(d.duplicate_of)}>{`Открыть №${d.duplicate_of}`}</Button></div>)}
+      {dupCopies.map(d=><div key={d.id} className="row"><span>{`Повторный лид по этому клиенту: №${d.lead_id}`}</span><Button variant="soft" onClick={()=>onOpenLead?.(d.lead_id)}>{`Открыть №${d.lead_id}`}</Button></div>)}
+      {dupPending.length>0 && <span className="muted">{`Повторных заявок на проверке: ${dupPending.length}`}</span>}
+    </div>}
     <div className="row"><section><label>Имя клиента</label><input className="titleInput" value={local.name} onChange={e=>setLocal({...local,name:e.target.value})}/><p className="muted">{local.id}</p></section><button className="icon" onClick={onClose}>×</button></div>
 
     <div className="formGrid clientDetailsGrid">
@@ -4556,9 +4573,11 @@ async function callLeadImport(body) {
 }
 
 // Загрузка лидов: список (вставка или Excel/CSV) и скриншоты переписки. Сначала предпросмотр, потом сохранение.
-function LeadImport({role, users, currentProfile, onImported}) {
+// Все загруженные клиенты попадают менеджерам этапом «Новый Лид». Старые карточки не меняются.
+// Дубли видит только администратор: может пропустить или всё равно отдать в работу. Дубль от менеджера уходит админу на решение.
+function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}) {
   const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
-  const [tab, setTab] = useState("screenshot");
+  const [tab, setTab] = useState("list");
   const [text, setText] = useState("");
   const [chatText, setChatText] = useState("");
   const [files, setFiles] = useState([]);
@@ -4568,13 +4587,26 @@ function LeadImport({role, users, currentProfile, onImported}) {
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState(null);
   const [rowStaff, setRowStaff] = useState([]);
+  const [pendingDups, setPendingDups] = useState([]);
+  const [dupManager, setDupManager] = useState({});
 
   const staff = (users || []).filter(u => u.email && u.access !== false && (!currentProfile?.agency_id || String(u.agency_id) === String(currentProfile.agency_id)));
+  const staffOptions = rowStaff.length ? rowStaff : staff.map(u => ({name: u.full_name || u.email, email: u.email}));
   const selected = rows.filter(r => r.include);
+  const findLead = (id) => (leads || []).find(l => String(l.id) === String(id));
+
+  // Дубли, которые загрузили менеджеры, ждут решения администратора
+  const loadPending = async () => {
+    if (!isAdmin) return;
+    const { data } = await supabase.from("lead_duplicates").select("*").eq("status", "pending").order("created_at", {ascending: false});
+    setPendingDups(data || []);
+  };
+  useEffect(() => { loadPending(); }, [isAdmin]);
 
   const showResult = (data) => {
     setRowStaff(data.staff || []);
-    setRows((data.leads || []).map((l, i) => ({...l, lead_date: l.lead_date || "", key: Date.now() + "-" + i, include: !!(l.name || l.phone)})));
+    // дубль по умолчанию не сохраняем — администратор решает сам
+    setRows((data.leads || []).map((l, i) => ({...l, lead_date: l.lead_date || "", key: Date.now() + "-" + i, include: !!(l.name || l.phone) && !l.duplicate_of})));
     if (!data.leads?.length) setMessage({type: "red", text: "Не удалось найти клиентов. Проверьте текст или скриншот."});
   };
 
@@ -4612,21 +4644,49 @@ function LeadImport({role, users, currentProfile, onImported}) {
 
   const save = () => run("Сохраняем…", async () => {
     if (!selected.length) throw new Error("Отметьте хотя бы одного клиента.");
-    const data = await callLeadImport({mode: "commit", leads: selected.map(r => ({...r, append: !!r.duplicate_of})), source, manager_email: managerEmail});
+    const data = await callLeadImport({mode: "commit", leads: selected.map(r => ({...r, allow_duplicate: !!r.duplicate_of})), source, manager_email: managerEmail});
     setRows([]); setText(""); setChatText(""); setFiles([]);
-    setMessage({type: "green", text: `Сохранено новых клиентов: ${data.inserted}` + (data.updated ? `. Дополнено карточек: ${data.updated}` : "") + (data.skipped ? `. Пропущено: ${data.skipped}` : "")});
+    const parts = [`Сохранено новых клиентов: ${data.inserted}`];
+    if (data.duplicates_added) parts.push(`Дубли отданы в работу: ${data.duplicates_added}`);
+    if (data.pending) parts.push(`Отправлено администратору на проверку: ${data.pending}`);
+    setMessage({type: "green", text: parts.join(". ")});
     onImported?.();
+    loadPending();
+  });
+
+  const decide = (d, action) => run("Сохраняем…", async () => {
+    await callLeadImport({mode: "decide", id: d.id, action, manager_email: dupManager[d.id] || d.payload?.manager_email});
+    setMessage({type: "green", text: action === "approve" ? "Клиент отдан в работу" : "Дубль отклонён"});
+    onImported?.();
+    loadPending();
   });
 
   const update = (key, patch) => setRows(prev => prev.map(r => r.key === key ? {...r, ...patch} : r));
 
   return <div className="card">
     <h3>Загрузка лидов</h3>
-    <p className="muted">Скриншот переписки или список — CRM найдёт имя, телефон и запрос клиента. Перед сохранением всё можно проверить и исправить, дубли не сохраняются.</p>
+    <p className="muted">Список из заметок, Excel или скриншот переписки — CRM найдёт имя, телефон и запрос клиента. Все клиенты попадают менеджерам этапом «Новый Лид», перед сохранением всё можно проверить и исправить.</p>
+
+    {isAdmin && pendingDups.length > 0 && <div className="card" style={{margin: "10px 0", display: "grid", gap: 10}}>
+      <b>{`Дубли на проверке: ${pendingDups.length}`}</b>
+      <p className="muted" style={{margin: 0}}>Менеджеры загрузили клиентов, которые уже есть в CRM. Менеджеры этого не видят — решение за вами.</p>
+      {pendingDups.map(d => { const orig = findLead(d.duplicate_of); const p = d.payload || {}; return <div key={d.id} className="card" style={{margin: 0}}>
+        <b>{`${p.name || "Без имени"} · ${p.phone || "—"}`}</b>
+        <p className="muted" style={{margin: "4px 0"}}>{`Загрузил: ${p.manager_name || d.uploaded_by}`}{p.source ? ` · ${p.source}` : ""}</p>
+        {p.notes && <p style={{margin: "4px 0", whiteSpace: "pre-line"}}>{p.notes}</p>}
+        <p className="badge dark" style={{whiteSpace: "normal"}}>{`Уже в CRM: клиент №${d.duplicate_of}`}{orig ? ` «${orig.name}»` : ""}</p>{orig && <p className="muted" style={{margin: "4px 0"}}>{`Ведёт: ${orig.manager || "—"}`}{` · `}{`Этап: ${orig.status}`}</p>}
+        <div className="grid2" style={{marginTop: 8}}>
+          <Button variant="soft" onClick={() => onOpenLead?.(d.duplicate_of)}>{`Открыть карточку №${d.duplicate_of}`}</Button>
+          <label>Кому отдать<select className="input" value={dupManager[d.id] || p.manager_email || ""} onChange={e => setDupManager(m => ({...m, [d.id]: e.target.value}))}>{staffOptions.map(u => <option key={u.email} value={u.email}>{u.name || u.email}</option>)}</select></label>
+          <Button disabled={!!busy} onClick={() => decide(d, "approve")}>Отдать в работу</Button>
+          <Button variant="soft" disabled={!!busy} onClick={() => decide(d, "reject")}>Отклонить</Button>
+        </div>
+      </div>; })}
+    </div>}
 
     <div className="chips" style={{margin: "10px 0"}}>
-      <button type="button" className={cn("chip", tab === "screenshot" && "active")} onClick={() => { setTab("screenshot"); setRows([]); setMessage(null); }}>Скриншот переписки</button>
       <button type="button" className={cn("chip", tab === "list" && "active")} onClick={() => { setTab("list"); setRows([]); setMessage(null); }}>Список / Excel</button>
+      <button type="button" className={cn("chip", tab === "screenshot" && "active")} onClick={() => { setTab("screenshot"); setRows([]); setMessage(null); }}>Скриншот переписки</button>
     </div>
 
     <div className="grid2">
@@ -4672,17 +4732,20 @@ function LeadImport({role, users, currentProfile, onImported}) {
       {rows.map(r => <div key={r.key} className="card" style={{margin: 0, opacity: r.include ? 1 : 0.6}}>
         <label style={{display: "flex", gap: 8, alignItems: "center", fontWeight: 900}}>
           <input type="checkbox" checked={r.include} onChange={e => update(r.key, {include: e.target.checked})}/>
-          {r.duplicate_of ? (r.include ? `Дополнить карточку №${r.duplicate_of}` : "Не дополнять") : (r.include ? "Сохранить" : "Не сохранять")}
+          {r.duplicate_of ? (r.include ? "Отдать дубль в работу новым лидом" : "Пропустить дубль") : (r.include ? "Сохранить" : "Не сохранять")}
         </label>
+        {r.duplicate_of && <div className="card" style={{margin: "8px 0 0", display: "grid", gap: 6}}>
+          <b>{`Дубль · уже в CRM: клиент №${r.duplicate_of}`}{` «${r.duplicate?.name || ""}»`}</b>
+          <span className="muted">{`Ведёт: ${r.duplicate?.manager_name || "—"}`}{` · `}{`Этап: ${r.duplicate?.stage || "—"}`}{r.duplicate?.created_at ? ` · ${new Date(r.duplicate.created_at).toLocaleDateString()}` : ""}</span>
+          <Button variant="soft" onClick={() => onOpenLead?.(r.duplicate_of)}>Открыть карточку и историю работы</Button>
+        </div>}
         <div className="grid2" style={{marginTop: 8}}>
           <input className="input" placeholder="Имя клиента" value={r.name} onChange={e => update(r.key, {name: e.target.value})}/>
           <input className="input" type="tel" placeholder="Телефон" value={r.phone} onChange={e => update(r.key, {phone: e.target.value})}/>
           <input className="input" list="lead-import-sources" placeholder="Источник" value={r.source || ""} onChange={e => update(r.key, {source: e.target.value})}/>
-          {!r.duplicate_of && <>
-            <label>Дата лида<input className="input" type="date" value={r.lead_date || ""} onChange={e => update(r.key, {lead_date: e.target.value})}/></label>
-            <label>Этап<select className="input" value={r.stage || "Новый Лид"} onChange={e => update(r.key, {stage: e.target.value})}>{stages.map(st => <option key={st} value={st}>{st}</option>)}</select></label>
-            {isAdmin && rowStaff.length > 0 && <label>Ответственный<select className="input" value={r.manager_email || managerEmail} onChange={e => update(r.key, {manager_email: e.target.value})}>{rowStaff.map(u => <option key={u.email} value={u.email}>{u.name || u.email}</option>)}</select></label>}
-          </>}
+          <label>Дата лида<input className="input" type="date" value={r.lead_date || ""} onChange={e => update(r.key, {lead_date: e.target.value})}/></label>
+          {isAdmin && staffOptions.length > 0 && <label>Ответственный<select className="input" value={r.manager_email || managerEmail} onChange={e => update(r.key, {manager_email: e.target.value})}>{staffOptions.map(u => <option key={u.email} value={u.email}>{u.name || u.email}</option>)}</select></label>}
+          <p className="muted" style={{alignSelf: "center", margin: 0}}>Этап: Новый Лид</p>
         </div>
         <textarea className="input" style={{minHeight: 60}} placeholder="Заметка" value={r.notes || ""} onChange={e => update(r.key, {notes: e.target.value})}/>
         {r.warnings?.length > 0 && <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
@@ -4694,7 +4757,7 @@ function LeadImport({role, users, currentProfile, onImported}) {
   </div>;
 }
 
-function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,users,currentProfile,onLogout,agencyName,onLeadsImported}) {
+function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,users,currentProfile,onLogout,agencyName,onLeadsImported,onOpenLead}) {
   const isTech = role === "Администратор тех отдел";
   const [agencyBrand,setAgencyBrand] = useState(()=>loadAgencyBrand(currentProfile?.agency_id));
   const updateBrand=(patch)=>{const next={...agencyBrand,...patch};setAgencyBrand(next);saveAgencyBrand(currentProfile?.agency_id,next);};
@@ -4867,7 +4930,7 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
       <Button className="full" onClick={createManualLead}>Создать и назначить клиента</Button>
     </div>}
 
-    <LeadImport role={role} users={users} currentProfile={currentProfile} onImported={onLeadsImported}/>
+    <LeadImport role={role} users={users} currentProfile={currentProfile} leads={leads} onImported={onLeadsImported} onOpenLead={onOpenLead}/>
 
     {role==="Менеджер по продажам"&&<div className="card amber">Менеджеру доступны рабочие разделы, язык, цветовая гамма и личная аналитика.</div>}
   </main>;
@@ -6056,6 +6119,8 @@ export default function App(){
   }
 
   const visibleLeads = leads.filter(isMyLead);
+  // открыть карточку клиента по номеру (из загрузки лидов и из пометки «дубль»)
+  const openLeadById = (id) => { const l = leads.find(x => String(x.id) === String(id)); if (l) setLead(l); else alert("Карточка клиента не найдена"); };
   const currentAgency = agencies.find(a => String(a.id) === String(currentProfile?.agency_id));
   // SaaS: название агентства всегда определяется по agency_id текущего входа.
   // Оно используется в шапке CRM, VIP-презентациях, email/WhatsApp и системном Share.
@@ -6085,9 +6150,9 @@ export default function App(){
         {page==="tools"&&<AnalyticsWorkspace lang={lang} currentProfile={currentProfile} properties={properties} leads={visibleLeads} onOpenProperty={setProperty} agencyName={agencyName} theme={theme}/>} 
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role}/>} 
         {page==="access"&&role==="Администратор тех отдел"&&<Access agencies={agencies} setAgencies={setAgencies} users={users} setUsers={setUsers}/>} 
-        {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
+        {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
-        {lead&&<LeadModal lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile}/>} 
+        {lead&&<LeadModal key={lead.id} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile}/>} 
         {property&&<PropertyModal property={property} setProperties={setProperties} onClose={()=>setProperty(null)} users={users} currentProfile={currentProfile} role={role} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}  
       </main>
     </div>
