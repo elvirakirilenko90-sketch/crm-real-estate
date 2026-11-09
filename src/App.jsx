@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { uiExtra, uiTemplates } from "./i18n-extra.js";
 import { supabase } from "./supabaseClient";
 const stages = ["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
 const sources = ["Повторный клиент","Рекомендации","ОЛХ","Лид руководство","Инстаграм личный","Тик-Ток личный","Фейсбук личный","Тик-Ток рабочий","Инстаграм рабочий","Фейсбук рабочий","Телеграмм-канал рабочий","Рекомендации клиентов"];
@@ -59,7 +60,7 @@ const translations = {
     "Язык интерфейса":"Interface language", "Цветовая гамма CRM":"CRM color theme", "Каждый пользователь может выбрать оформление под себя.":"Each user can choose their own interface style.", "Роль для проверки CRM":"Role for CRM testing", "Выйти":"Sign out", "Русский":"Russian", "Українська":"Ukrainian", "English":"English"
   }
 };
-function tr(lang, text){ return (translations[lang] && translations[lang][text]) || text; }
+function tr(lang, text){ if (!lang || lang === "ru") return text; return (translations[lang] && translations[lang][text]) || (uiExtra[lang] && uiExtra[lang][text]) || text; }
 const extraUk = {
 
     "Повторный клиент":"Повторний клієнт","Рекомендации":"Рекомендації","ОЛХ":"OLX","Лид руководство":"Лід керівництво","Инстаграм личный":"Особистий Instagram","Тик-Ток личный":"Особистий TikTok","Фейсбук личный":"Особистий Facebook","Тик-Ток рабочий":"Робочий TikTok","Инстаграм рабочий":"Робочий Instagram","Фейсбук рабочий":"Робочий Facebook","Телеграмм-канал рабочий":"Робочий Telegram-канал","Рекомендации клиентов":"Рекомендації клієнтів",
@@ -286,45 +287,115 @@ function globalThemeCss(themeId){
   `;
 }
 
+// Перевод интерфейса. Переводится только фраза целиком (без замены кусков слов), поэтому
+// данные клиентов не портятся и не получается смесь языков. Исходный русский текст
+// запоминается у каждого элемента — переключаться можно между любыми языками.
+const I18N_EDGE = /^([\s·•\-—–+*✓✎↗↻⏳▦☷✦✨⭐＋‹«▶☎🏠📄📅📊🔄🔌🔗🗑]*)(.*?)([\s:.…!?›»→]*)$/u;
+let i18nCache = {lang:null, dict:null, templates:null};
+function i18nDict(lang){
+  if (i18nCache.lang !== lang){
+    i18nCache = {
+      lang,
+      dict: {...(uiPhraseTranslations[lang] || {}), ...((uiExtra && uiExtra[lang]) || {})},
+      templates: (uiTemplates || []).map(t => [new RegExp(t[0]), lang === "uk" ? t[1] : t[2]])
+    };
+  }
+  return i18nCache;
+}
+function translatePhrase(lang, value){
+  if (!value || typeof value !== "string" || !/[А-Яа-яЁёІіЇїЄєҐґ]/.test(value)) return value;
+  const {dict, templates} = i18nDict(lang);
+  if (dict[value] !== undefined) return dict[value];
+  const trimmed = value.trim();
+  const lead = value.slice(0, value.indexOf(trimmed));
+  const tail = value.slice(value.indexOf(trimmed) + trimmed.length);
+  if (dict[trimmed] !== undefined) return lead + dict[trimmed] + tail;
+  for (const [re, out] of templates){ if (re.test(trimmed)) return lead + trimmed.replace(re, out) + tail; }
+  const m = trimmed.match(I18N_EDGE);
+  if (m && m[2] && dict[m[2]] !== undefined) return lead + m[1] + dict[m[2]] + m[3] + tail;
+  return value;
+}
+const I18N_ATTRS = ["placeholder","title","aria-label"];
+function i18nSkip(el){
+  return !el || ["SCRIPT","STYLE","TEXTAREA","CODE","PRE"].includes(el.tagName) || el.isContentEditable || !!el.closest?.("[data-no-translate]");
+}
+function translateNode(lang, node){
+  if (node.nodeType === 3){
+    if (i18nSkip(node.parentElement)) return;
+    // если React поменял текст после нашего перевода — новый текст становится исходным
+    if (node.__i18nOut !== node.nodeValue) node.__i18nSrc = node.nodeValue;
+    const src = node.__i18nSrc;
+    const next = (!lang || lang === "ru") ? src : translatePhrase(lang, src);
+    node.__i18nOut = next;
+    if (node.nodeValue !== next) node.nodeValue = next;
+    node.__i18nOut = node.nodeValue;
+    return;
+  }
+  if (node.nodeType !== 1 || i18nSkip(node)) return;
+  for (const a of I18N_ATTRS){
+    if (!node.hasAttribute(a)) continue;
+    const cur = node.getAttribute(a);
+    node.__i18nAttr = node.__i18nAttr || {};
+    const rec = node.__i18nAttr[a] || (node.__i18nAttr[a] = {});
+    if (rec.out !== cur) rec.src = cur;
+    const next = (!lang || lang === "ru") ? rec.src : translatePhrase(lang, rec.src);
+    rec.out = next;
+    if (cur !== next) node.setAttribute(a, next);
+  }
+}
 function translateInterfaceText(lang, root=document.body){
-  if (!lang || lang === "ru" || typeof document === "undefined") return;
-  const dict = uiPhraseTranslations[lang] || {};
-  const keys = Object.keys(dict).sort((a,b)=>b.length-a.length);
-  const translateString = (value) => {
-    if (!value || typeof value !== "string") return value;
-    let out = value;
-    for (const key of keys){
-      if (out === key) return dict[key];
-    }
-    for (const key of keys){
-      if (key.length > 2 && out.includes(key)) out = out.split(key).join(dict[key]);
-    }
-    return out;
+  if (typeof document === "undefined" || !root) return;
+  if (root.nodeType === 3){ translateNode(lang, root); return; }
+  translateNode(lang, root);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  while (walker.nextNode()) translateNode(lang, walker.currentNode);
+}
+// Всплывающие окна alert/confirm: переводим фразу целиком или её начало до двоеточия («Ошибка …: текст ошибки»)
+let i18nLang = "ru";
+function translateMessage(msg){
+  const text = String(msg ?? "");
+  if (i18nLang === "ru") return text;
+  const whole = translatePhrase(i18nLang, text);
+  if (whole !== text) return whole;
+  const i = text.indexOf(":");
+  if (i > 0){
+    const head = text.slice(0, i + 1);
+    const out = translatePhrase(i18nLang, head);
+    if (out !== head) return out + text.slice(i + 1);
+  }
+  return text;
+}
+if (typeof window !== "undefined" && !window.__i18nDialogs){
+  window.__i18nDialogs = true;
+  const nativeAlert = window.alert.bind(window), nativeConfirm = window.confirm.bind(window);
+  window.alert = (m) => nativeAlert(translateMessage(m));
+  window.confirm = (m) => nativeConfirm(translateMessage(m));
+}
+
+// Следит за экраном и переводит всё новое: окна, карточки, сообщения, выпадающие списки
+let i18nObserver = null;
+function watchInterfaceLanguage(lang){
+  i18nLang = lang || "ru";
+  if (typeof document === "undefined" || typeof MutationObserver === "undefined") return;
+  i18nObserver?.disconnect();
+  translateInterfaceText(lang);
+  if (!lang || lang === "ru"){ i18nObserver = null; return; }
+  let pending = new Set(), scheduled = false;
+  const flush = () => {
+    scheduled = false;
+    const batch = pending; pending = new Set();
+    i18nObserver?.disconnect();
+    batch.forEach(n => { if (n.isConnected) translateInterfaceText(lang, n); });
+    i18nObserver?.observe(document.body, {subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:I18N_ATTRS});
   };
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode(node){
-      const p = node.parentElement;
-      if (!p || ["SCRIPT","STYLE","TEXTAREA","INPUT"].includes(p.tagName)) return NodeFilter.FILTER_REJECT;
-      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
+  i18nObserver = new MutationObserver(list => {
+    for (const m of list){
+      if (m.type === "childList") m.addedNodes.forEach(n => pending.add(n));
+      else pending.add(m.target);
     }
+    if (!scheduled){ scheduled = true; requestAnimationFrame(flush); }
   });
-  const nodes = [];
-  while(walker.nextNode()) nodes.push(walker.currentNode);
-  nodes.forEach(n => {
-    const next = translateString(n.nodeValue);
-    if (next !== n.nodeValue) n.nodeValue = next;
-  });
-  root.querySelectorAll("input[placeholder],textarea[placeholder]").forEach(el=>{
-    const next = translateString(el.getAttribute("placeholder"));
-    if (next) el.setAttribute("placeholder", next);
-  });
-  root.querySelectorAll("option,button,label,span,p,h1,h2,h3,b,a").forEach(el=>{
-    if (el.childNodes.length === 1 && el.childNodes[0].nodeType === Node.TEXT_NODE){
-      const next = translateString(el.textContent);
-      if (next !== el.textContent) el.textContent = next;
-    }
-  });
+  i18nObserver.observe(document.body, {subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:I18N_ATTRS});
 }
 
 
@@ -4454,7 +4525,166 @@ function Access({agencies,setAgencies,users,setUsers}) {
 
 
 
-function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,users,currentProfile,onLogout,agencyName}) {
+// Сжимаем скриншот перед отправкой: по длинной стороне до 1600px, JPEG — быстрее на мобильном интернете
+async function imageToBase64(file, maxSide = 1600) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { base64: canvas.toDataURL("image/jpeg", 0.85).split(",")[1], mime: "image/jpeg" };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Вызов функции lead-import с понятной ошибкой
+async function callLeadImport(body) {
+  const { data, error } = await supabase.functions.invoke("lead-import", { body });
+  if (error) {
+    let message = error.message;
+    try { const j = await error.context?.json?.(); if (j?.error) message = j.error; } catch {}
+    throw new Error(message);
+  }
+  if (!data?.success) throw new Error(data?.error || "Не удалось обработать данные");
+  return data;
+}
+
+// Загрузка лидов: список (вставка или Excel/CSV) и скриншоты переписки. Сначала предпросмотр, потом сохранение.
+function LeadImport({role, users, currentProfile, onImported}) {
+  const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
+  const [tab, setTab] = useState("screenshot");
+  const [text, setText] = useState("");
+  const [chatText, setChatText] = useState("");
+  const [files, setFiles] = useState([]);
+  const [source, setSource] = useState("");
+  const [managerEmail, setManagerEmail] = useState(currentProfile?.email || "");
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState(null);
+
+  const staff = (users || []).filter(u => u.email && u.access !== false && (!currentProfile?.agency_id || String(u.agency_id) === String(currentProfile.agency_id)));
+  const selected = rows.filter(r => r.include);
+
+  const showResult = (data) => {
+    setRows((data.leads || []).map((l, i) => ({...l, key: Date.now() + "-" + i, include: !l.duplicate_of && !!(l.name || l.phone)})));
+    if (!data.leads?.length) setMessage({type: "red", text: "Не удалось найти клиентов. Проверьте текст или скриншот."});
+  };
+
+  const run = async (label, fn) => {
+    setBusy(label); setMessage(null);
+    try { await fn(); } catch (e) { setMessage({type: "red", text: e.message}); }
+    finally { setBusy(""); }
+  };
+
+  const readSpreadsheet = (file) => run("Читаем файл…", async () => {
+    if (!file) return;
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (["xlsx", "xls"].includes(ext)) {
+      const XLSX = await import(/* @vite-ignore */ "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+      const book = XLSX.read(await file.arrayBuffer());
+      // raw:false — телефоны берём так, как они видны в Excel, без превращения в 3,80E+11
+      const data = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], {header: 1, defval: "", raw: false});
+      setText(data.filter(r => r.some(c => String(c).trim())).map(r => r.join(";")).join("\n"));
+    } else {
+      setText(await file.text());
+    }
+  });
+
+  const checkList = () => run("Проверяем список…", async () => {
+    if (!text.trim()) throw new Error("Вставьте список или выберите файл.");
+    showResult(await callLeadImport({mode: "preview", text, source, manager_email: managerEmail}));
+  });
+
+  const recognize = () => run("Читаем переписку…", async () => {
+    if (!files.length && !chatText.trim()) throw new Error("Выберите скриншоты или вставьте текст переписки.");
+    const images = [];
+    for (const f of files.slice(0, 10)) images.push(await imageToBase64(f));
+    showResult(await callLeadImport({mode: "preview", images, text: chatText.trim() || undefined, ai_text: !!chatText.trim(), source, manager_email: managerEmail}));
+  });
+
+  const save = () => run("Сохраняем…", async () => {
+    if (!selected.length) throw new Error("Отметьте хотя бы одного клиента.");
+    const data = await callLeadImport({mode: "commit", leads: selected, source, manager_email: managerEmail});
+    setRows([]); setText(""); setChatText(""); setFiles([]);
+    setMessage({type: "green", text: `Сохранено новых клиентов: ${data.inserted}` + (data.skipped ? `. Пропущено (дубли или пустые строки): ${data.skipped}` : "")});
+    onImported?.();
+  });
+
+  const update = (key, patch) => setRows(prev => prev.map(r => r.key === key ? {...r, ...patch} : r));
+
+  return <div className="card">
+    <h3>Загрузка лидов</h3>
+    <p className="muted">Скриншот переписки или список — CRM найдёт имя, телефон и запрос клиента. Перед сохранением всё можно проверить и исправить, дубли не сохраняются.</p>
+
+    <div className="chips" style={{margin: "10px 0"}}>
+      <button type="button" className={cn("chip", tab === "screenshot" && "active")} onClick={() => { setTab("screenshot"); setRows([]); setMessage(null); }}>Скриншот переписки</button>
+      <button type="button" className={cn("chip", tab === "list" && "active")} onClick={() => { setTab("list"); setRows([]); setMessage(null); }}>Список / Excel</button>
+    </div>
+
+    <div className="grid2">
+      {isAdmin
+        ? <label>Ответственный менеджер
+            <select className="input" value={managerEmail} onChange={e => setManagerEmail(e.target.value)}>
+              {staff.map(u => <option key={u.email} value={u.email}>{u.full_name || u.email}</option>)}
+            </select>
+          </label>
+        : <p className="muted" style={{alignSelf: "center"}}>Клиенты будут закреплены за вами</p>}
+      <label>Источник (если не указан в списке)
+        <select className="input" value={source} onChange={e => setSource(e.target.value)}>
+          <option value="">Определить автоматически</option>
+          {sources.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </label>
+    </div>
+
+    {tab === "screenshot" && <>
+      <label className="btn soft full" style={{marginTop: 10, textAlign: "center", cursor: "pointer"}}>
+        {files.length ? `Выбрано скриншотов: ${files.length} · заменить` : "Выбрать скриншоты переписки"}
+        <input type="file" accept="image/*" multiple style={{display: "none"}} onChange={e => setFiles(Array.from(e.target.files || []).slice(0, 10))}/>
+      </label>
+      <p className="muted">До 10 скриншотов одной переписки. Подходят Telegram, Viber, WhatsApp, Instagram.</p>
+      <textarea className="input" style={{minHeight: 80}} placeholder="Или вставьте текст переписки" value={chatText} onChange={e => setChatText(e.target.value)}/>
+      <Button className="full" disabled={!!busy} onClick={recognize}>{busy || "Распознать клиента"}</Button>
+    </>}
+
+    {tab === "list" && <>
+      <label className="btn soft full" style={{marginTop: 10, textAlign: "center", cursor: "pointer"}}>
+        Выбрать файл Excel или CSV
+        <input type="file" accept=".xlsx,.xls,.csv,.txt,.tsv" style={{display: "none"}} onChange={e => readSpreadsheet(e.target.files?.[0])}/>
+      </label>
+      <textarea className="input" style={{minHeight: 120}} placeholder={"Или вставьте список, по клиенту в строке:\nИмя; Телефон; Источник; Заметка"} value={text} onChange={e => setText(e.target.value)}/>
+      <Button className="full" disabled={!!busy} onClick={checkList}>{busy || "Проверить список"}</Button>
+    </>}
+
+    {message && <p className={cn("badge", message.type)} style={{whiteSpace: "normal", marginTop: 10}}>{message.text}</p>}
+
+    {rows.length > 0 && <div style={{marginTop: 14, display: "grid", gap: 10}}>
+      <b>Найдено: {rows.length} · к сохранению: {selected.length}</b>
+      {rows.map(r => <div key={r.key} className="card" style={{margin: 0, opacity: r.include ? 1 : 0.6}}>
+        <label style={{display: "flex", gap: 8, alignItems: "center", fontWeight: 900}}>
+          <input type="checkbox" checked={r.include} onChange={e => update(r.key, {include: e.target.checked})}/>
+          {r.include ? "Сохранить" : "Не сохранять"}
+        </label>
+        <div className="grid2" style={{marginTop: 8}}>
+          <input className="input" placeholder="Имя клиента" value={r.name} onChange={e => update(r.key, {name: e.target.value})}/>
+          <input className="input" type="tel" placeholder="Телефон" value={r.phone} onChange={e => update(r.key, {phone: e.target.value})}/>
+          <input className="input" placeholder="Источник" value={r.source || ""} onChange={e => update(r.key, {source: e.target.value})}/>
+        </div>
+        <textarea className="input" style={{minHeight: 60}} placeholder="Заметка" value={r.notes || ""} onChange={e => update(r.key, {notes: e.target.value})}/>
+        {r.warnings?.length > 0 && <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
+          {r.warnings.map(w => <span key={w} className={cn("badge", r.duplicate_of ? "dark" : "gold")} style={{whiteSpace: "normal"}}>{w}</span>)}
+        </div>}
+      </div>)}
+      <Button className="full" disabled={!!busy || !selected.length} onClick={save}>{busy || `Сохранить новых клиентов: ${selected.length}`}</Button>
+    </div>}
+  </div>;
+}
+
+function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,users,currentProfile,onLogout,agencyName,onLeadsImported}) {
   const isTech = role === "Администратор тех отдел";
   const [agencyBrand,setAgencyBrand] = useState(()=>loadAgencyBrand(currentProfile?.agency_id));
   const updateBrand=(patch)=>{const next={...agencyBrand,...patch};setAgencyBrand(next);saveAgencyBrand(currentProfile?.agency_id,next);};
@@ -4627,15 +4857,7 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
       <Button className="full" onClick={createManualLead}>Создать и назначить клиента</Button>
     </div>}
 
-    {isTech && <div className="card">
-      <h3>Загрузка клиентов из файла</h3>
-      <p className="muted">Поддерживаются Excel XLSX/XLS, CSV/TXT/TSV. Колонки: имя; телефон; источник; заметка.</p>
-      <input className="input" type="file" accept=".xlsx,.xls,.csv,.txt,.tsv" onChange={e=>readFile(e.target.files?.[0])}/>
-      <select className="input" value={manualLead.manager_email || activeManager?.email || ""} onChange={e=>setManagerByEmail(e.target.value)}>{managerOptions.map(m=><option key={m.email || m.name} value={m.email}>{m.name} {m.email ? `— ${m.email}` : ""}</option>)}</select>
-      <textarea className="input" style={{minHeight:120}} placeholder="Или вставь список клиентов сюда: Имя;Телефон;Источник;Заметка" value={importText} onChange={e=>{setImportText(e.target.value);setImportPreview(parseRows(e.target.value));}}/>
-      <p className="muted">Готово к загрузке: {(importPreview.length ? importPreview : parseRows(importText)).length} клиентов</p>
-      <Button className="full" onClick={importClients}>Загрузить клиентов и назначить менеджера</Button>
-    </div>}
+    <LeadImport role={role} users={users} currentProfile={currentProfile} onImported={onLeadsImported}/>
 
     {role==="Менеджер по продажам"&&<div className="card amber">Менеджеру доступны рабочие разделы, язык, цветовая гамма и личная аналитика.</div>}
   </main>;
@@ -5535,10 +5757,12 @@ export default function App(){
     };
   }, []);
 
+  // Язык интерфейса: переводим экран и следим за всем, что появляется на нём позже
   useEffect(() => {
-    const id = setTimeout(() => translateInterfaceText(lang), 0);
-    return () => clearTimeout(id);
-  }, [lang, page, theme, leads, posts, properties, events, help, users, lead, property]);
+    watchInterfaceLanguage(lang);
+    document.documentElement.lang = lang === "en" ? "en" : lang === "uk" ? "uk" : "ru";
+    return () => i18nObserver?.disconnect();
+  }, [lang]);
 
   function extractManager(notes=""){
     const match = String(notes || "").match(/Ответственный менеджер:\s*([^\n]+)/i);
@@ -5851,7 +6075,7 @@ export default function App(){
         {page==="tools"&&<AnalyticsWorkspace lang={lang} currentProfile={currentProfile} properties={properties} leads={visibleLeads} onOpenProperty={setProperty} agencyName={agencyName} theme={theme}/>} 
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role}/>} 
         {page==="access"&&role==="Администратор тех отдел"&&<Access agencies={agencies} setAgencies={setAgencies} users={users} setUsers={setUsers}/>} 
-        {page==="more"&&<More role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
+        {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
         {lead&&<LeadModal lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile}/>} 
         {property&&<PropertyModal property={property} setProperties={setProperties} onClose={()=>setProperty(null)} users={users} currentProfile={currentProfile} role={role} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}  
