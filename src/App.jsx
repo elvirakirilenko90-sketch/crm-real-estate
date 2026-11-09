@@ -873,7 +873,7 @@ function Sidebar({page,setPage,role,lang}) {
 }
 
 function Top({page,setPage,agencyName,lang}) {
-  const titles = {feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",properties:"Вторичка",deals:"Сделки",analytics:"Статистика/Отчетность",tools:"Аналитика",help:"Помощь менеджерам",access:"Доступы",more:"Еще"};
+  const titles = {feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",properties:"Вторичка",deals:"Сделки",analytics:"Статистика/Отчетность",tools:"Аналитика",newbuilds:"Новобудови",help:"Помощь менеджерам",access:"Доступы",more:"Еще"};
   return <div className="top"><div className="topLine"><div><p>♛ CRM Real Estate</p><h1>{tr(lang,titles[page])}</h1></div><button className="agencyTop" onClick={()=>setPage("more")}>{agencyName || tr(lang,"Моё агентство")}</button></div><div className="search">🔎 <input placeholder={tr(lang,"Поиск по CRM...")} /></div></div>;
 }
 
@@ -4810,6 +4810,223 @@ function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}
   </div>;
 }
 
+// ===== Новобудови: ЖК агентства из Google Drive («Новострой» → «ПОИСКОВИК НОВОСТРОЙКИ») =====
+// Подбор под клиента, калькулятор рассрочки, подборка для отправки клиенту (без контактов застройщика),
+// ссылки на папки Drive, связь с DIM.RIA. Редактировать карточки ЖК могут директор и тех. администратор.
+const nbMoney = (n) => n ? `$${Math.round(Number(n)).toLocaleString("ru-RU")}` : "—";
+const nbRange = (c) => c.price_m2_min ? (c.price_m2_max && c.price_m2_max !== c.price_m2_min ? `$${Math.round(c.price_m2_min)}–${Math.round(c.price_m2_max)} / м²` : `$${Math.round(c.price_m2_min)} / м²`) : (c.price_note || "цена по запросу");
+// Бюджет и комнаты из текста запроса клиента: «2к Аркадия до 60к», «бюджет 80 000$», «студия до 45 тыс»
+function nbParseRequest(text = ""){
+  const t = String(text).toLowerCase().replace(/ /g, " ");
+  let budget = 0;
+  const k = t.match(/(\d{2,4}(?:[.,]\d)?)\s*(?:к|k|тыс|тис)(?![а-яёіїєґa-z])/);
+  const full = t.match(/(\d{2,3}[\s.]?\d{3})\s*(?:\$|usd|дол|у\.?е)/) || t.match(/\$\s*(\d{2,3}[\s.]?\d{3})/);
+  if (k) budget = Number(k[1].replace(",", ".")) * 1000; else if (full) budget = Number(full[1].replace(/[\s.]/g, ""));
+  let rooms = 0;
+  const r = t.match(/(?:^|[^\d])(\d)\s*[-–]?\s*(?:кк|комн|кімн|room|к(?![а-яёіїєґa-z]))/) || t.match(/(одно|двух|трех|трёх|чотири|четырех)\s*комн/);
+  if (r) rooms = /^\d$/.test(r[1]) ? Number(r[1]) : ({одно:1,двух:2,трех:3,трёх:3,четырех:4,чотири:4}[r[1]] || 0);
+  if (/студи|smart|смарт/.test(t)) rooms = rooms || 1;
+  const districts = [["Приморский", /примор|аркади|фонтан|французск|центр|генуэзск|гагарин/], ["Киевский", /киевск|таиров|черемушк|вильямс|глушко|сахарова|жемчужн|лиманк/], ["Суворовский", /суворов|пересып|котовск|лески|крыжановк|фонтанк/], ["Малиновский", /малинов|хаджибей|молдаванк|краснова/]];
+  const district = (districts.find(([, re]) => re.test(t)) || [])[0] || "";
+  return { budget, rooms, district };
+}
+const nbArea = (rooms) => rooms >= 3 ? 80 : rooms === 2 ? 60 : 40;
+
+function NewBuilds({ role, leads = [], currentProfile }) {
+  const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
+  const [items, setItems] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [q, setQ] = useState("");
+  const [district, setDistrict] = useState("Все");
+  const [developer, setDeveloper] = useState("Все");
+  const [status, setStatus] = useState("Все");
+  const [priceFrom, setPriceFrom] = useState("");
+  const [priceTo, setPriceTo] = useState("");
+  const [sort, setSort] = useState("price");
+  const [picked, setPicked] = useState([]);
+  const [calc, setCalc] = useState(null);
+  const [edit, setEdit] = useState(null);
+  const [leadId, setLeadId] = useState("");
+  const [match, setMatch] = useState(null);
+  const [showLinks, setShowLinks] = useState(false);
+  const [limit, setLimit] = useState(40);
+
+  const load = async () => {
+    setLoading(true); setError("");
+    const [c, l] = await Promise.all([
+      supabase.from("nb_complexes").select("*").eq("is_active", true).order("name"),
+      supabase.from("nb_links").select("*").order("sort"),
+    ]);
+    if (c.error) setError(c.error.message);
+    setItems(c.data || []); setLinks(l.data || []); setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const districts = ["Все", ...Array.from(new Set(items.map(x => (x.district || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"))];
+  const developers = ["Все", ...Array.from(new Set(items.map(x => (x.developer || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"))];
+  const text = q.trim().toLowerCase();
+  const filtered = items.filter(x =>
+    (!text || `${x.name} ${x.developer || ""} ${x.address || ""}`.toLowerCase().includes(text)) &&
+    (district === "Все" || (x.district || "").trim() === district) &&
+    (developer === "Все" || (x.developer || "").trim() === developer) &&
+    (status === "Все" || (status === "Сдан" ? x.is_completed : !x.is_completed)) &&
+    (!priceFrom || Number(x.price_m2_max || x.price_m2_min || 0) >= Number(priceFrom)) &&
+    (!priceTo || (Number(x.price_m2_min || 0) > 0 && Number(x.price_m2_min) <= Number(priceTo)))
+  ).sort((a, b) => sort === "name" ? a.name.localeCompare(b.name, "ru") : (Number(a.price_m2_min || 1e9) - Number(b.price_m2_min || 1e9)));
+
+  // Подбор под клиента из CRM: бюджет / комнаты / район берутся из имени и заметок карточки
+  const runMatch = () => {
+    const lead = leads.find(l => String(l.id) === String(leadId));
+    if (!lead) return;
+    const req = nbParseRequest(`${lead.notes || ""}`);
+    const area = nbArea(req.rooms);
+    const list = items.filter(x => Number(x.price_m2_min) > 0)
+      .filter(x => !req.district || (x.district || "").includes(req.district))
+      .filter(x => !req.budget || Number(x.price_m2_min) * area <= req.budget * 1.05)
+      .sort((a, b) => Number(a.price_m2_min) - Number(b.price_m2_min)).slice(0, 15);
+    setMatch({ lead, req, area, list });
+  };
+
+  const togglePick = (x) => setPicked(p => p.some(y => y.id === x.id) ? p.filter(y => y.id !== x.id) : [...p, x]);
+  // Текст подборки для клиента — без контактов застройщика, правил брони и комиссий
+  const selectionText = () => [
+    "Подборка новостроек от " + (currentProfile?.full_name || "вашего менеджера") + ":",
+    ...picked.map((x, i) => `${i + 1}. ${x.name}${x.address ? ` — ${x.address}` : ""}${x.district ? `, ${x.district} р-н` : ""}\n   Цена: ${nbRange(x)}${x.completion ? ` · сдача: ${x.completion}` : ""}`),
+    "Пишите — подберу планировки и рассчитаю рассрочку.",
+  ].join("\n");
+  const copySelection = async () => { try { await navigator.clipboard.writeText(selectionText()); alert("Подборка скопирована"); } catch { prompt("Скопируйте текст", selectionText()); } };
+
+  const saveEdit = async () => {
+    const payload = { name: edit.name, developer: edit.developer || null, address: edit.address || null, district: edit.district || null,
+      price_m2_min: edit.price_m2_min ? Number(edit.price_m2_min) : null, price_m2_max: edit.price_m2_max ? Number(edit.price_m2_max) : null,
+      completion: edit.completion || null, is_completed: !!edit.is_completed, booking_rule: edit.booking_rule || null, resale_fee: edit.resale_fee || null,
+      commission: edit.commission || null, installment: edit.installment || null, drive_url: edit.drive_url || null, dimria_url: edit.dimria_url || null,
+      notes: edit.notes || null, updated_at: new Date().toISOString() };
+    const res = edit.id ? await supabase.from("nb_complexes").update(payload).eq("id", edit.id).select().single()
+      : await supabase.from("nb_complexes").insert({ ...payload, agency_id: currentProfile?.agency_id || null, source: "CRM" }).select().single();
+    if (res.error) { alert("Ошибка сохранения: " + res.error.message); return; }
+    setItems(prev => edit.id ? prev.map(x => x.id === res.data.id ? res.data : x) : [...prev, res.data]);
+    setEdit(null);
+  };
+
+  const leadsWithNotes = leads.filter(l => String(l.notes || "").trim());
+
+  return <main className="screen">
+    <div className="card">
+      <div className="row"><section><h3>Новобудови</h3><p className="muted">{`ЖК в базе: ${items.length}. Источник — ваша папка «Новострой» на Google Drive.`}</p></section>
+        <div className="grid2" style={{ maxWidth: 360 }}>
+          <Button variant="soft" onClick={() => setShowLinks(v => !v)}>{showLinks ? "Скрыть материалы" : "Материалы Drive"}</Button>
+          {isAdmin && <Button onClick={() => setEdit({ name: "", is_completed: false })}>+ Добавить ЖК</Button>}
+        </div>
+      </div>
+      {showLinks && <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+        {[["common", "Общее"], ["partner", "Материалы застройщиков для агентств"], ["developer", "Папки застройщиков"]].map(([kind, title]) => {
+          const list = links.filter(l => l.kind === kind); if (!list.length) return null;
+          return <div key={kind}><b>{title}</b><div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{list.map(l => <a key={l.id} className="btn soft" href={l.url} target="_blank" rel="noreferrer">{l.title}</a>)}</div></div>;
+        })}
+      </div>}
+    </div>
+
+    <div className="card">
+      <h3>Подбор под клиента</h3>
+      <p className="muted">CRM берёт бюджет, комнаты и район из заметки клиента и показывает подходящие ЖК.</p>
+      <div className="grid2">
+        <select className="input" value={leadId} onChange={e => { setLeadId(e.target.value); setMatch(null); }}>
+          <option value="">Выберите клиента</option>
+          {leadsWithNotes.slice(0, 500).map(l => <option key={l.id} value={l.id}>{`${l.name || "Без имени"} · ${l.phone || ""}`}</option>)}
+        </select>
+        <Button disabled={!leadId} onClick={runMatch}>Подобрать ЖК</Button>
+      </div>
+      {match && <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+        <p className="muted" style={{ margin: 0 }}>{`Бюджет: ${match.req.budget ? nbMoney(match.req.budget) : "не указан"} · комнат: ${match.req.rooms || "—"} · район: ${match.req.district || "любой"} · расчётная площадь ${match.area} м²`}</p>
+        {match.list.length === 0 && <p className="muted">Подходящих ЖК не найдено — уточните бюджет или район в заметке клиента.</p>}
+        {match.list.map(x => <div key={x.id} className="row"><span>{`${x.name} · ${nbRange(x)} · от ${nbMoney(Number(x.price_m2_min) * match.area)}`}</span><Button variant="soft" onClick={() => togglePick(x)}>{picked.some(y => y.id === x.id) ? "Убрать" : "В подборку"}</Button></div>)}
+      </div>}
+    </div>
+
+    {picked.length > 0 && <div className="card">
+      <div className="row"><h3>{`Подборка для клиента: ${picked.length}`}</h3><Button variant="soft" onClick={() => setPicked([])}>Очистить</Button></div>
+      <textarea className="input" style={{ minHeight: 120 }} readOnly value={selectionText()} />
+      <div className="grid3">
+        <Button onClick={copySelection}>Скопировать</Button>
+        <a className="btn soft" href={`https://t.me/share/url?url=${encodeURIComponent(" ")}&text=${encodeURIComponent(selectionText())}`} target="_blank" rel="noreferrer">Telegram</a>
+        <a className="btn soft" href={`viber://forward?text=${encodeURIComponent(selectionText())}`}>Viber</a>
+      </div>
+    </div>}
+
+    <div className="card">
+      <div className="search" style={{ margin: 0 }}>🔎 <input value={q} onChange={e => { setQ(e.target.value); setLimit(40); }} placeholder="ЖК, застройщик или адрес" /></div>
+      <div className="grid3" style={{ marginTop: 8 }}>
+        <Field label="Район"><select className="input" value={district} onChange={e => setDistrict(e.target.value)}>{districts.map(d => <option key={d}>{d}</option>)}</select></Field>
+        <Field label="Застройщик"><select className="input" value={developer} onChange={e => setDeveloper(e.target.value)}>{developers.map(d => <option key={d}>{d}</option>)}</select></Field>
+        <Field label="Статус"><select className="input" value={status} onChange={e => setStatus(e.target.value)}><option>Все</option><option>Строится</option><option>Сдан</option></select></Field>
+        <Field label="Цена м² от, $"><input className="input" inputMode="numeric" value={priceFrom} onChange={e => setPriceFrom(e.target.value.replace(/\D/g, ""))} /></Field>
+        <Field label="Цена м² до, $"><input className="input" inputMode="numeric" value={priceTo} onChange={e => setPriceTo(e.target.value.replace(/\D/g, ""))} /></Field>
+        <Field label="Сортировка"><select className="input" value={sort} onChange={e => setSort(e.target.value)}><option value="price">Сначала дешевле</option><option value="name">По названию</option></select></Field>
+      </div>
+      <p className="muted">{`Найдено: ${filtered.length}`}</p>
+    </div>
+
+    {loading && <div className="card">Загрузка…</div>}
+    {error && <div className="card"><p className="badge red">{error}</p></div>}
+    {filtered.slice(0, limit).map(x => <div key={x.id} className="lead">
+      <div className="row"><section><b>{x.name}</b><p className="muted" style={{ margin: 0 }}>{[x.developer, x.district && `${x.district} р-н`, x.address].filter(Boolean).join(" · ")}</p></section>{badge(x.is_completed ? "Сдан" : "Строится", x.is_completed ? "green" : "gold")}</div>
+      <div className="leadInfoGrid">
+        <div className="leadInfoCell"><span>Цена</span><b>{nbRange(x)}</b></div>
+        <div className="leadInfoCell"><span>Сдача</span><b>{x.completion || "—"}</b></div>
+        <div className="leadInfoCell"><span>Фиксация клиента</span><b>{x.booking_rule || "—"}</b></div>
+        <div className="leadInfoCell"><span>Переуступка</span><b>{x.resale_fee || "—"}</b></div>
+        {x.commission && <div className="leadInfoCell"><span>Комиссия</span><b>{x.commission}</b></div>}
+        {x.installment && <div className="leadInfoCell"><span>Рассрочка</span><b>{x.installment}</b></div>}
+      </div>
+      {x.notes && <p className="muted">{x.notes}</p>}
+      <div className="grid4">
+        {x.drive_url ? <a className="btn soft" href={x.drive_url} target="_blank" rel="noreferrer">Drive</a> : <span />}
+        {x.dimria_url ? <a className="btn soft" href={x.dimria_url} target="_blank" rel="noreferrer">DIM.RIA</a> : <span />}
+        <Button variant="soft" onClick={() => setCalc({ c: x, area: 50, price: Number(x.price_m2_min || 0), first: 30, months: 24, rate: "" })}>Рассрочка</Button>
+        <Button variant={picked.some(y => y.id === x.id) ? "primary" : "soft"} onClick={() => togglePick(x)}>{picked.some(y => y.id === x.id) ? "В подборке" : "В подборку"}</Button>
+      </div>
+      {isAdmin && <Button className="full" variant="soft" onClick={() => setEdit({ ...x })}>Редактировать</Button>}
+    </div>)}
+    {filtered.length > limit && <Button className="full" variant="soft" onClick={() => setLimit(l => l + 40)}>{`Показать ещё (${filtered.length - limit})`}</Button>}
+
+    {calc && <Modal onClose={() => setCalc(null)}>
+      <div className="row"><h2>{`Рассрочка · ${calc.c.name}`}</h2><button className="icon" onClick={() => setCalc(null)}>×</button></div>
+      <div className="grid2">
+        <Field label="Площадь, м²"><input className="input" inputMode="decimal" value={calc.area} onChange={e => setCalc({ ...calc, area: e.target.value })} /></Field>
+        <Field label="Цена м², $"><input className="input" inputMode="decimal" value={calc.price} onChange={e => setCalc({ ...calc, price: e.target.value })} /></Field>
+        <Field label="Первый взнос, %"><input className="input" inputMode="decimal" value={calc.first} onChange={e => setCalc({ ...calc, first: e.target.value })} /></Field>
+        <Field label="Срок, месяцев"><input className="input" inputMode="numeric" value={calc.months} onChange={e => setCalc({ ...calc, months: e.target.value })} /></Field>
+        <Field label="Курс грн за $ (необязательно)"><input className="input" inputMode="decimal" value={calc.rate} onChange={e => setCalc({ ...calc, rate: e.target.value })} /></Field>
+      </div>
+      {(() => {
+        const total = Number(calc.area) * Number(calc.price); const first = total * Number(calc.first) / 100; const rest = total - first;
+        const monthly = Number(calc.months) > 0 ? rest / Number(calc.months) : 0; const rate = Number(String(calc.rate).replace(",", "."));
+        const uah = v => rate > 0 ? ` · ${Math.round(v * rate).toLocaleString("ru-RU")} грн` : "";
+        return <div className="stats">
+          <div className="stat"><span>Стоимость</span><b>{nbMoney(total)}{uah(total)}</b></div>
+          <div className="stat"><span>Первый взнос</span><b>{nbMoney(first)}{uah(first)}</b></div>
+          <div className="stat"><span>Платёж в месяц</span><b>{nbMoney(monthly)}{uah(monthly)}</b></div>
+        </div>;
+      })()}
+      <p className="muted">Расчёт без удорожания. Точные условия рассрочки — в папке застройщика на Drive.</p>
+    </Modal>}
+
+    {edit && <Modal onClose={() => setEdit(null)} wide>
+      <div className="row"><h2>{edit.id ? "Редактировать ЖК" : "Новый ЖК"}</h2><button className="icon" onClick={() => setEdit(null)}>×</button></div>
+      <div className="grid2">
+        {[["name", "Название"], ["developer", "Застройщик"], ["address", "Адрес"], ["district", "Район"], ["price_m2_min", "Цена м² от, $"], ["price_m2_max", "Цена м² до, $"], ["completion", "Срок сдачи"], ["booking_rule", "Фиксация клиента"], ["resale_fee", "Переуступка"], ["commission", "Комиссия агентства"], ["installment", "Условия рассрочки"], ["drive_url", "Ссылка на Drive"], ["dimria_url", "Ссылка на DIM.RIA"]].map(([key, label]) =>
+          <Field key={key} label={label}><input className="input" value={edit[key] ?? ""} onChange={e => setEdit({ ...edit, [key]: e.target.value })} /></Field>)}
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!edit.is_completed} onChange={e => setEdit({ ...edit, is_completed: e.target.checked })} />Дом сдан</label>
+      </div>
+      <Field label="Заметка"><textarea className="input" value={edit.notes || ""} onChange={e => setEdit({ ...edit, notes: e.target.value })} /></Field>
+      <Button className="full" disabled={!String(edit.name || "").trim()} onClick={saveEdit}>Сохранить</Button>
+    </Modal>}
+  </main>;
+}
+
 function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,users,currentProfile,onLogout,agencyName,onLeadsImported,onOpenLead}) {
   const isTech = role === "Администратор тех отдел";
   const [agencyBrand,setAgencyBrand] = useState(()=>loadAgencyBrand(currentProfile?.agency_id));
@@ -4956,6 +5173,11 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
         <option>Администратор тех отдел</option>
       </select>
     </div>}
+
+    <div className="card row">
+      <section><h3>Новобудови</h3><p className="muted">ЖК из папки «Новострой», подбор под клиента, рассрочка</p></section>
+      <Button onClick={()=>setPage("newbuilds")}>Открыть</Button>
+    </div>
 
     <div className="card row">
       <section><h3>Аналитика</h3><p className="muted">{role==="Менеджер по продажам"?"Только моя аналитика":"Доступ по роли"}</p></section>
@@ -6203,6 +6425,7 @@ export default function App(){
         {page==="tools"&&<AnalyticsWorkspace lang={lang} currentProfile={currentProfile} properties={properties} leads={visibleLeads} onOpenProperty={setProperty} agencyName={agencyName} theme={theme}/>} 
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role}/>} 
         {page==="access"&&role==="Администратор тех отдел"&&<Access agencies={agencies} setAgencies={setAgencies} users={users} setUsers={setUsers}/>} 
+        {page==="newbuilds"&&<NewBuilds role={role} leads={visibleLeads} currentProfile={currentProfile}/>}
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
         {lead&&<LeadModal key={lead.id} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile}/>} 
