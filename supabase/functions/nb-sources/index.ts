@@ -6,7 +6,9 @@
 //   list {category?}               — источники агентства (для менеджеров без ссылок)
 //   browse {source_id, folder_id?} — содержимое источника / вложенной папки Google Drive
 //   preview {kind, url}            — проверка ссылки перед подключением (только администратор)
+//   sheet {source_id, file_id, gsheet} — таблица-прайс (Google Таблица или Excel/CSV из папки) для расчётов по формулам
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import * as XLSX from "npm:xlsx@0.18.5";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -109,7 +111,7 @@ Deno.serve(async (req) => {
 
   try {
     if (action === "list") {
-      let q = db.from("nb_sources").select("id,agency_id,category,kind,title,url,active,sort,last_checked_at,last_error,created_at").order("sort").order("created_at");
+      let q = db.from("nb_sources").select("id,agency_id,category,kind,title,url,meta,active,sort,last_checked_at,last_error,created_at").order("sort").order("created_at");
       if (!isTech || agencyId) q = q.eq("agency_id", agencyId);
       if (body.category) q = q.eq("category", body.category);
       const { data, error } = await q;
@@ -137,6 +139,26 @@ Deno.serve(async (req) => {
         await db.from("nb_sources").update({ last_checked_at: new Date().toISOString(), last_error: (e as Error).message }).eq("id", src.id);
         return json({ ok: false, error: (e as Error).message });
       }
+    }
+
+    if (action === "sheet") {
+      // Прайс-таблица: читаем как Excel (все листы), отдаём строки — колонки и формулы применяет CRM по настройке агентства
+      const { data: src } = await db.from("nb_sources").select("id,agency_id,kind").eq("id", Number(body.source_id)).maybeSingle();
+      if (!src || (!isTech && src.agency_id !== agencyId)) return json({ ok: false, error: "Источник не найден" });
+      const fid = String(body.file_id || "");
+      if (!/^[A-Za-z0-9_-]{10,}$/.test(fid)) return json({ ok: false, error: "Неверный файл" });
+      const url = body.gsheet ? `https://docs.google.com/spreadsheets/d/${fid}/export?format=xlsx` : `https://drive.google.com/uc?export=download&id=${fid}`;
+      const r = await fetch(url, { headers: UA, redirect: "follow" });
+      const type = r.headers.get("content-type") || "";
+      if (!r.ok || type.includes("text/html")) return json({ ok: false, error: "Таблица недоступна. Откройте доступ «Все, у кого есть ссылка»." });
+      const buf = new Uint8Array(await r.arrayBuffer());
+      if (buf.byteLength > 15 * 1024 * 1024) return json({ ok: false, error: "Файл больше 15 МБ" });
+      const wb = XLSX.read(buf, { type: "array", cellDates: false });
+      const sheets = wb.SheetNames.slice(0, 15).map((name: string) => {
+        const rows: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: "", blankrows: false });
+        return { name, rows: rows.slice(0, 3000).map((row) => row.slice(0, 40).map((c) => String(c ?? "").trim())) };
+      }).filter((sh: any) => sh.rows.length);
+      return json({ ok: true, sheets });
     }
 
     if (action === "preview") {
