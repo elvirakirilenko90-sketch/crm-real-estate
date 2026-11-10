@@ -55,7 +55,7 @@
 .gcalEv b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
 .gcalEv span{opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gcalEv.touch{background:color-mix(in srgb,var(--ev) 14%,#fff);color:#334155;border:1px dashed var(--ev)}
-.gcalEv.st-done{opacity:.6}
+.gcalEv.st-done{opacity:1}
 .gcalEv.st-canceled,.gcalEv.st-noshow{opacity:.45;text-decoration:line-through}
 
 /* Месяц */
@@ -394,3 +394,31 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
   .homeHello h1{font-size:40px}
   .homeTile b{font-size:38px}
 }
+
+/* ===== Карточки и колонки в стиле Briky (наша гамма) ===== */
+.kanban{display:flex;gap:14px}
+.kanbanCol{border-radius:20px!important;padding:12px!important;display:flex;flex-direction:column;gap:10px}
+.bkColHead{display:flex!important;align-items:center;justify-content:space-between;background:transparent!important;border:0!important;padding:4px 4px 2px!important;margin:0!important;box-shadow:none!important}
+.bkColHead b{font-size:15px;font-weight:800;letter-spacing:-.01em}
+.bkCount{min-width:26px;height:26px;padding:0 8px;border-radius:999px;display:inline-grid;place-items:center;font-size:12px;font-weight:800;background:var(--accent,#d6a500);color:#0B0B0C;box-sizing:border-box}
+.lead.bkLead{margin:0!important;border-radius:18px!important;padding:14px!important;display:flex;flex-direction:column;gap:10px;cursor:grab}
+.bkLeadHead{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:inherit;padding:0;text-align:left;cursor:pointer;font-family:inherit;min-width:0}
+.bkAva{width:38px;height:38px;flex:0 0 38px;border-radius:50%;display:grid;place-items:center;background:var(--accent,#d6a500);color:#0B0B0C;font-weight:800;font-size:15px}
+.bkLeadName{display:flex;flex-direction:column;min-width:0}
+.bkLeadName b{font-size:15px;font-weight:800;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bkLeadName small{font-size:12px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bkPhone{font-size:15px;font-weight:700;color:inherit;text-decoration:none;letter-spacing:.01em}
+.bkMeta{display:flex;flex-wrap:wrap;gap:6px}
+.bkChip{font-size:12px;font-weight:700;border-radius:8px;padding:5px 8px;background:color-mix(in srgb,var(--text,#111) 7%,transparent);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bkChip.warn{background:color-mix(in srgb,#ef4444 18%,transparent);color:#fca5a5}
+.bkNotes{margin:0;font-size:13px;line-height:1.45;opacity:.85;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.bkActions{display:flex;align-items:center;gap:6px}
+.bkIcon{width:36px;height:36px;flex:0 0 36px;border-radius:10px;border:1px solid color-mix(in srgb,var(--text,#111) 14%,transparent);background:transparent;color:inherit;font-weight:800;font-size:14px;cursor:pointer;display:grid;place-items:center}
+.bkIcon.viber{color:#a78bfa}.bkIcon.wa{color:#4ade80}
+.bkNext{flex:1;min-height:36px;border:0;border-radius:10px;background:var(--accent,#d6a500);color:#0B0B0C;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:699px){.bkIcon{width:40px;height:40px;flex-basis:40px}.bkNext{min-height:40px}}
+/* Чекбоксы госпрограмм: обычный размер, текст не обрезается */
+.govChip{display:flex!important;align-items:center;gap:8px;white-space:normal!important;text-align:left;line-height:1.3;min-height:44px;box-sizing:border-box;cursor:pointer}
+.field .govChip input,.govChip input{width:18px!important;height:18px!important;min-width:18px;flex:0 0 18px;padding:0!important;margin:0;border-radius:4px!important;accent-color:var(--accent,#d6a500)}
+/* Любые чекбоксы и радиокнопки внутри полей формы — обычного размера */
+.field input[type=checkbox],.field input[type=radio]{width:18px!important;height:18px!important;padding:0!important;flex:0 0 18px}

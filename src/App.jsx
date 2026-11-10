@@ -296,7 +296,7 @@ function globalThemeCss(themeId){
 // Тёмная тема «Night Gold»: чёрный графит + наш жёлтый. Перекрывает светлые цвета базовых стилей.
 function darkThemeCss(v){
   const accent = v["--accent"], bg = v["--soft"], card = v["--card"], text = v["--text"];
-  const card2 = "#202024", line = "#2C2C31", muted = "#A1A1AA";
+  const card2 = "#222226", line = "#303036", muted = "#B6B6BF";
   return `
     body,.layout,.mainWrap{background:${bg}!important;color:${text}!important;font-family:Manrope,Inter,system-ui,sans-serif!important;}
     .main{background:${bg}!important;box-shadow:none!important;}
@@ -347,6 +347,23 @@ function darkThemeCss(v){
     .igCommentBox button{color:${accent}!important;}
     .igTextCard{background:linear-gradient(135deg,#0B0B0C 0%,#2A2410 60%,#5C4A0E 130%)!important;}
     .homeTile{background:${card}!important;border-color:${line}!important;}
+    /* Читаемость в тёмной теме: подписи, вторичный текст, полупрозрачные счётчики */
+    .field span,.sheet label,.postHead span,.phone p,.week,.monthBox span,.weekRow span,.stat span,.logo span,.leadInfoCell span,.leadNotesBox span{color:${muted}!important;opacity:1!important;}
+    .field span,.sheet label{font-size:12px!important;font-weight:700!important;letter-spacing:.03em!important;}
+    .screen [style*="opacity: 0.6"],.screen [style*="opacity: 0.5"],.screen [style*="opacity: 0.4"]{opacity:.85!important;}
+    small,.muted,p.muted{color:${muted}!important;}
+    .badge.dark{background:#2E2E34!important;color:${text}!important;}
+    .kanbanCol{background:#131316!important;border:1px solid ${line}!important;}
+    .lead.bkLead{background:${card}!important;border:1px solid ${line}!important;}
+    .lead.bkLead:hover{border-color:#45454d!important;}
+    .bkChip{background:#26262B!important;color:#D9D9DF!important;}
+    .bkChip.warn{background:rgba(239,68,68,.16)!important;color:#FCA5A5!important;}
+    .bkNotes{color:#C9C9D1!important;opacity:1!important;}
+    h1,h2,h3,h4{color:${text};letter-spacing:-.01em;}
+    .card h3{font-weight:800;}
+    table th{color:#D4D4DA!important;}
+    .screen [style*="rgba(255, 255, 255, 0.72)"],.screen [style*="background: rgb(255, 255, 255)"],.screen [style*="background: white"],.screen [style*="background-color: rgb(255, 255, 255)"]{background:#1C1C20!important;color:${text}!important;border-color:${line}!important;}
+    table td{color:${text}!important;}
     .leadTop{color:#0B0B0C!important;}.leadTop b,.leadTop span,.leadTop p,.leadTop h3,.leadTop small,.leadTop div{color:#0B0B0C!important;}
   `;
 }
@@ -1531,24 +1548,32 @@ function Clients({leads,setLeads,onOpen,currentProfile,role,users,lang}) {
             const lead = leads.find(l=>String(l.id)===String(id));
             if (lead) move(lead, s);
           }}>
-          <div className="kanbanHead"><b>{s}</b>{badge(list.length,"gold")}</div>
-          {list.map(l=><div className="lead expressiveLead" key={l.id} draggable onDragStart={e=>e.dataTransfer.setData("leadId", l.id)}>
-            <div className="leadTop"><section><b>{l.name || tr(lang,"Без имени")}</b><span>{l.id}</span></section>{badge(tr(lang,l.status),"dark")}</div>
-            <div className="leadInfoGrid">
-              <div className="leadInfoCell"><span>{tr(lang,"Телефон")}</span><b>☎ {l.phone||"—"}</b></div>
-              <div className="leadInfoCell"><span>{tr(lang,"Источник")}</span><b>{tr(lang,l.source||"—")}</b></div>
-              <div className="leadInfoCell"><span>{tr(lang,"Следующий контакт")}</span><b>{l.nextContact||"—"}</b></div>
-              <div className="leadInfoCell"><span>{tr(lang,"Ответственный")}</span><b>{l.manager||tr(lang,"не назначен")}</b></div>
+          <div className="kanbanHead bkColHead"><b>{tr(lang,s)}</b><span className="bkCount">{list.length}</span></div>
+          {list.map(l=>{
+            // Карточка клиента в стиле Briky: имя, телефон, следующий контакт, менеджер, заметка, действия
+            const nd = calParseLeadNext(l.nextContact);
+            const overdue = nd && nd < new Date();
+            const ndText = nd ? nd.toLocaleString(lang==="en"?"en-GB":lang==="uk"?"uk-UA":"ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : tr(lang,"не назначен");
+            const initial = String(l.name || "?").trim().charAt(0).toUpperCase();
+            return <div className="lead bkLead" key={l.id} draggable onDragStart={e=>e.dataTransfer.setData("leadId", l.id)}>
+            <button className="bkLeadHead" onClick={()=>onOpen(l)}>
+              <span className="bkAva">{initial}</span>
+              <span className="bkLeadName"><b>{l.name || tr(lang,"Без имени")}</b><small>№{l.id} · {tr(lang,l.source||"—")}</small></span>
+            </button>
+            {l.phone && <a className="bkPhone" href={`tel:${String(l.phone).replace(/[^\d+]/g,"")}`}>{l.phone}</a>}
+            <div className="bkMeta">
+              <span className={cn("bkChip", overdue && "warn")} title={tr(lang,"Следующий контакт")}>{overdue ? "⚠ " : "⏰ "}{ndText}</span>
+              <span className="bkChip" title={tr(lang,"Ответственный")}>{l.manager || tr(lang,"не назначен")}</span>
             </div>
-            <div className="leadNotesBox"><span>{tr(lang,"Заметки")}</span><p>{l.notes || tr(lang,"Без заметки")}</p></div>
-            <div className="grid4">
-              <Button variant="soft" onClick={()=>setPhone(l.phone)}>☎</Button>
-              <Button variant="purple" onClick={()=>setPhone(l.phone)}>V</Button>
-              <Button variant="green" onClick={()=>setPhone(l.phone)}>W</Button>
-              <Button onClick={()=>onOpen(l)}>✎</Button>
+            {l.notes && <p className="bkNotes">{l.notes}</p>}
+            <div className="bkActions">
+              <button className="bkIcon" aria-label={tr(lang,"Позвонить")} onClick={()=>setPhone(l.phone)}>☎</button>
+              <button className="bkIcon viber" aria-label="Viber" onClick={()=>setPhone(l.phone)}>V</button>
+              <button className="bkIcon wa" aria-label="WhatsApp" onClick={()=>setPhone(l.phone)}>W</button>
+              <button className="bkIcon" aria-label={tr(lang,"Открыть карточку")} onClick={()=>onOpen(l)}>✎</button>
+              <button className="bkNext" onClick={()=>move(l)}>{tr(lang,"Дальше")} →</button>
             </div>
-            <Button className="full" onClick={()=>move(l)}>Следующий этап →</Button>
-          </div>)}
+          </div>;})}
         </section>
       })}
     </div>}
@@ -1871,10 +1896,10 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
 const CAL_TYPES = {
   "Звонок":{c:"#2563eb",i:"📞"},
   "Встреча":{c:"#7c3aed",i:"🤝"},
-  "Показ":{c:"#16a34a",i:"🏠"},
-  "Задача":{c:"#d97706",i:"✅"},
-  "Подписание":{c:"#dc2626",i:"✍️"},
-  "Касание":{c:"#64748b",i:"⏰"}
+  "Показ":{c:"#15803d",i:"🏠"},
+  "Задача":{c:"#b45309",i:"✅"},
+  "Подписание":{c:"#b91c1c",i:"✍️"},
+  "Касание":{c:"#475569",i:"⏰"}
 };
 const CAL_EVENT_TYPES = ["Звонок","Встреча","Показ","Задача","Подписание"];
 const CAL_STATUSES = [["planned","Запланировано"],["done","Проведено"],["moved","Перенесено"],["noshow","Клиент не пришёл"],["canceled","Отменено"]];
@@ -5452,7 +5477,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       <div className="grid4" style={{marginTop:12}}>
         <Field label="Год постройки от"><input className="input" type="number" min="1800" max="2100" value={constructionYearFrom} onChange={e=>setConstructionYearFrom(e.target.value)} placeholder="любой"/></Field>
         <Field label="Год постройки до"><input className="input" type="number" min="1800" max="2100" value={constructionYearTo} onChange={e=>setConstructionYearTo(e.target.value)} placeholder="любой"/></Field>
-        <div style={{...filterBox,gridColumn:"span 2"}}><Field label="Государственные программы · можно выбрать несколько"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>{["єОселя","єВідновлення / сертификат","Постановление №280","Постановление №719","Постановление №1176","Другие госпрограммы"].map(program=><label key={program} className={cn("chip",governmentPrograms.includes(program)&&"active")} style={{justifyContent:"flex-start"}}><input type="checkbox" checked={governmentPrograms.includes(program)} onChange={()=>setGovernmentPrograms(current=>current.includes(program)?current.filter(x=>x!==program):[...current,program])}/>{program}</label>)}</div></Field></div>
+        <div style={{...filterBox,gridColumn:"span 2"}}><Field label="Государственные программы · можно выбрать несколько"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>{["єОселя","єВідновлення / сертификат","Постановление №280","Постановление №719","Постановление №1176","Другие госпрограммы"].map(program=><label key={program} className={cn("chip","govChip",governmentPrograms.includes(program)&&"active")} style={{justifyContent:"flex-start"}}><input type="checkbox" checked={governmentPrograms.includes(program)} onChange={()=>setGovernmentPrograms(current=>current.includes(program)?current.filter(x=>x!==program):[...current,program])}/>{program}</label>)}</div></Field></div>
       </div>
       <div className="chips" style={{marginTop:14}}>
         <label className={cn("chip",verifiedOnly&&"active")}><input type="checkbox" checked={verifiedOnly} onChange={e=>setVerifiedOnly(e.target.checked)}/> Только проверенные объявления</label>
