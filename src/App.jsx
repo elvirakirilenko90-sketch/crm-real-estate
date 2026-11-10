@@ -1193,9 +1193,13 @@ function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPag
 function FeedLightbox({viewer, lang, onClose, onLike}){
   const [zoom,setZoom] = useState(false);
   const post = viewer.post;
-  const isVideo = String(viewer.kind || "").toLowerCase().includes("видео");
+  const gallery = viewer.gallery || null;
+  const [gi,setGi] = useState(viewer.index || 0);
+  const cur = gallery ? gallery[gi] : {kind:viewer.kind, url:viewer.name};
+  const isVideo = String(cur?.kind || "").toLowerCase().includes("видео");
+  const step = (d) => { if(!gallery) return; setZoom(false); setGi(i => Math.max(0, Math.min(gallery.length - 1, i + d))); };
   useEffect(() => {
-    const onKey = e => { if(e.key === "Escape") onClose(); };
+    const onKey = e => { if(e.key === "Escape") onClose(); if(e.key === "ArrowRight") step(1); if(e.key === "ArrowLeft") step(-1); };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
@@ -1205,8 +1209,11 @@ function FeedLightbox({viewer, lang, onClose, onLike}){
     <button className="fbxClose" onClick={onClose} aria-label={tr(lang,"Закрыть")}>×</button>
     <div className={cn("fbxMedia", zoom && "zoom")} onMouseDown={e => { if(e.target === e.currentTarget) onClose(); }}>
       {isVideo
-        ? <video src={viewer.name} controls autoPlay playsInline/>
-        : <img src={viewer.name} alt="" onClick={() => setZoom(z => !z)} title={zoom ? tr(lang,"Уменьшить") : tr(lang,"Увеличить")}/>}
+        ? <video key={cur.url} src={cur.url} controls autoPlay playsInline/>
+        : <img src={cur.url} alt="" onClick={() => setZoom(z => !z)} title={zoom ? tr(lang,"Уменьшить") : tr(lang,"Увеличить")}/>}
+      {gallery && gi > 0 && <button className="fbxNav prev" onClick={() => step(-1)} aria-label="prev">‹</button>}
+      {gallery && gi < gallery.length - 1 && <button className="fbxNav next" onClick={() => step(1)} aria-label="next">›</button>}
+      {gallery && <div className="fbxCount">{gi + 1} / {gallery.length}</div>}
       {!isVideo && <div className="fbxHint">{zoom ? tr(lang,"Нажмите на фото, чтобы уменьшить") : tr(lang,"Нажмите на фото, чтобы увеличить")}</div>}
     </div>
     {post && <aside className="fbxSide">
@@ -1221,8 +1228,39 @@ function FeedLightbox({viewer, lang, onClose, onLike}){
   </div>;
 }
 
+// ===== Карусель фото/видео поста (альбомы из Telegram-каналов и т.п.) =====
+function FeedGallery({post, onOpen, onDoubleTap}){
+  const items = post.gallery || [];
+  const track = useRef(null);
+  const lastTap = useRef(0);
+  const [idx,setIdx] = useState(0);
+  const onScroll = () => { const el = track.current; if(!el) return; const i = Math.round(el.scrollLeft / Math.max(1, el.clientWidth)); if(i !== idx) setIdx(i); };
+  const go = (i) => { const el = track.current; if(!el) return; const n = Math.max(0, Math.min(items.length - 1, i)); el.scrollTo({left:n * el.clientWidth, behavior:"smooth"}); setIdx(n); };
+  const open = (i) => onOpen && onOpen({kind:items[i].kind, name:items[i].url, post, gallery:items, index:i});
+  const tap = (i) => { const t = Date.now(); if(t - lastTap.current < 320){ onDoubleTap && onDoubleTap(); lastTap.current = 0; return; } lastTap.current = t; };
+  return <div className="igGallery">
+    <div className="igGalleryTrack" ref={track} onScroll={onScroll}>
+      {items.map((m,i) => <div key={i} className="igGallerySlide" onClick={() => tap(i)}>
+        {/видео/i.test(m.kind)
+          ? <video src={m.url} controls playsInline preload="metadata"/>
+          : <img src={m.url} alt="" loading={i < 2 ? "eager" : "lazy"}/>}
+        {m.cover && <span className="igVideoBadge">▶</span>}
+      </div>)}
+    </div>
+    <span className="igGalleryCount">{idx + 1}/{items.length}</span>
+    {idx > 0 && <button className="igGalleryNav prev" onClick={e => { e.stopPropagation(); go(idx - 1); }} aria-label="prev">‹</button>}
+    {idx < items.length - 1 && <button className="igGalleryNav next" onClick={e => { e.stopPropagation(); go(idx + 1); }} aria-label="next">›</button>}
+    <button className="igExpand" onClick={e => { e.stopPropagation(); open(idx); }} aria-label="open">⤢</button>
+    <div className="igGalleryDots">{items.slice(0, 20).map((_,i) => <i key={i} className={cn(i === idx && "on")}/>)}</div>
+  </div>;
+}
+
 // ===== Пост ленты в стиле Instagram (только внешний вид; логика — в Feed) =====
 function FeedPostMedia({post, onOpen, onDoubleTap}){
+  if((post.gallery || []).length > 1) return <FeedGallery post={post} onOpen={onOpen} onDoubleTap={onDoubleTap}/>;
+  return <FeedPostSingle post={post} onOpen={onOpen} onDoubleTap={onDoubleTap}/>;
+}
+function FeedPostSingle({post, onOpen, onDoubleTap}){
   const file = post.file || "";
   const kind = String(post.kind || "").toLowerCase();
   const isUrl = /^https?:\/\//i.test(file);
@@ -7848,6 +7886,11 @@ export default function App(){
 
     const mediaUrl = media?.link_url || media?.media_url || "";
     const mediaType = media?.media_type || (mediaUrl ? "Фото" : "Текст");
+    // Все фото и видео поста по порядку — для карусели (раньше показывался только первый файл)
+    const gallery = mediaRows
+      .filter(m => String(m.news_id) === String(row.id) && /фото|видео/i.test(m.media_type || "") && (m.media_url || m.link_url))
+      .sort((a,b) => Number(a.id) - Number(b.id))
+      .map(m => ({kind: m.media_type, url: m.media_url || m.link_url, cover: /videocover/.test(m.file_name || "")}));
 
     return {
       id: String(row.id),
@@ -7857,6 +7900,7 @@ export default function App(){
       text: row.content || row.title || "",
       kind: mediaType,
       file: mediaUrl,
+      gallery,
       likes: row.likes_count || 0,
       comments
     };

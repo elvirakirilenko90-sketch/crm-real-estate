@@ -17,7 +17,9 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const BUCKET = "news-media";
 const FIRST_SYNC_POSTS = 3;
 const MAX_POSTS_PER_RUN = 10;
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_FILE_BYTES = 50 * 1024 * 1024; // видео до 50 МБ
+const MAX_FILES_PER_POST = 20;
+const MERGE_WINDOW_SEC = 180;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
@@ -124,7 +126,18 @@ async function channelPosts(client: TelegramClient, meta: any, limit = 30) {
     return { external_id: key, text, date: new Date(list[0].date * 1000).toISOString(), msgs: list, mediaCount: list.filter((m) => m.media && (m.media.className === "MessageMediaPhoto" || m.media.className === "MessageMediaDocument")).length };
   }).filter((p) => p.text || p.mediaCount);
   posts.sort((a, b) => a.msgs[0].id - b.msgs[0].id); // от старых к новым
-  return posts;
+  // Текст и альбом, отправленные подряд отдельными сообщениями (до 3 минут), — один пост
+  const merged: any[] = [];
+  for (const p of posts) {
+    const prev = merged[merged.length - 1];
+    const close = prev && Math.abs(Date.parse(p.date) - Date.parse(prev.date)) <= MERGE_WINDOW_SEC * 1000;
+    const compl = prev && ((!prev.mediaCount && p.mediaCount && !p.text) || (prev.mediaCount && !prev.text && p.text && !p.mediaCount) || (prev.mediaCount && !prev.text && p.mediaCount && !p.text));
+    if (close && compl && prev.mediaCount + p.mediaCount <= MAX_FILES_PER_POST) {
+      prev.text = [prev.text, p.text].filter(Boolean).join("\n\n");
+      prev.msgs = prev.msgs.concat(p.msgs); prev.mediaCount += p.mediaCount; prev.ids.push(...p.ids);
+    } else merged.push({ ...p, ids: [p.external_id] });
+  }
+  return merged;
 }
 
 async function uploadBuffer(sourceId: number, extId: string, idx: number, buf: Uint8Array, ext: string, type: string) {
@@ -137,7 +150,7 @@ async function mediaOf(client: TelegramClient, sourceId: number, post: any) {
   const out: { media_type: string; media_url: string; file_name: string }[] = [];
   let i = 0;
   for (const m of post.msgs) {
-    if (out.length >= 4 || !m.media) continue;
+    if (out.length >= MAX_FILES_PER_POST || !m.media) continue;
     try {
       if (m.media.className === "MessageMediaPhoto") {
         const buf = await client.downloadMedia(m, {}) as Uint8Array;
@@ -145,10 +158,13 @@ async function mediaOf(client: TelegramClient, sourceId: number, post: any) {
       } else if (m.media.className === "MessageMediaDocument") {
         const doc = m.media.document; const size = Number(doc?.size || 0); const mime = String(doc?.mimeType || "");
         const nameAttr = (doc?.attributes || []).find((a: any) => a.className === "DocumentAttributeFilename");
-        if (mime.startsWith("video/")) {
-          // видео не копируем целиком — берём обложку
+        if (mime.startsWith("video/") && size && size <= MAX_FILE_BYTES) {
+          const buf = await client.downloadMedia(m, {}) as Uint8Array;
+          if (buf?.length) out.push({ media_type: "Видео", media_url: await uploadBuffer(sourceId, post.external_id, i++, new Uint8Array(buf), "mp4", mime), file_name: `tg-${m.id}.mp4` });
+        } else if (mime.startsWith("video/")) {
+          // видео больше 50 МБ — обложка с отметкой ▶
           const thumb = await client.downloadMedia(m, { thumb: (doc.thumbs || []).length - 1 }) as Uint8Array;
-          if (thumb?.length) out.push({ media_type: "Фото", media_url: await uploadBuffer(sourceId, post.external_id, i++, new Uint8Array(thumb), "jpg", "image/jpeg"), file_name: `tg-${m.id}.jpg` });
+          if (thumb?.length) out.push({ media_type: "Фото", media_url: await uploadBuffer(sourceId, post.external_id, i++, new Uint8Array(thumb), "jpg", "image/jpeg"), file_name: `tg-${m.id}-videocover.jpg` });
         } else if (size && size <= MAX_FILE_BYTES) {
           const buf = await client.downloadMedia(m, {}) as Uint8Array;
           const fname = nameAttr?.fileName || `file-${m.id}`;
@@ -168,22 +184,22 @@ async function syncSource(client: TelegramClient, src: any) {
     const posts = await channelPosts(client, src.meta);
     const { data: seenRows } = await db.from("feed_source_items").select("external_id").eq("source_id", src.id);
     const seen = new Set((seenRows || []).map((r: any) => String(r.external_id)));
-    let fresh = posts.filter((p) => !seen.has(p.external_id));
+    let fresh = posts.filter((p) => !p.ids.some((x: string) => seen.has(String(x))));
     if (!src.last_synced_at && fresh.length > FIRST_SYNC_POSTS) {
-      const skip = fresh.slice(0, fresh.length - FIRST_SYNC_POSTS);
-      await db.from("feed_source_items").upsert(skip.map((p) => ({ source_id: src.id, external_id: p.external_id })), { onConflict: "source_id,external_id", ignoreDuplicates: true });
+      const skip = fresh.slice(0, fresh.length - FIRST_SYNC_POSTS).flatMap((p) => p.ids);
+      await db.from("feed_source_items").upsert(skip.map((x: string) => ({ source_id: src.id, external_id: x })), { onConflict: "source_id,external_id", ignoreDuplicates: true });
       fresh = fresh.slice(-FIRST_SYNC_POSTS);
     }
     for (const p of fresh.slice(-MAX_POSTS_PER_RUN)) {
       const media = await mediaOf(client, src.id, p);
-      if (!p.text && !media.length) { await db.from("feed_source_items").upsert({ source_id: src.id, external_id: p.external_id }, { onConflict: "source_id,external_id", ignoreDuplicates: true }); continue; }
+      if (!p.text && !media.length) { await db.from("feed_source_items").upsert(p.ids.map((x: string) => ({ source_id: src.id, external_id: x })), { onConflict: "source_id,external_id", ignoreDuplicates: true }); continue; }
       const { data: news, error } = await db.from("news").insert({
         agency_id: src.agency_id, title: (p.text || src.title).slice(0, 80), content: p.text || "", likes_count: 0, comments_count: 0,
         created_at: p.date, source_id: src.id, source_name: src.title,
       }).select("id").single();
       if (error) throw new Error(error.message);
       if (media.length) await db.from("news_media").insert(media.map((m) => ({ ...m, news_id: news.id, link_url: null })));
-      await db.from("feed_source_items").upsert({ source_id: src.id, external_id: p.external_id, news_id: news.id }, { onConflict: "source_id,external_id" });
+      await db.from("feed_source_items").upsert(p.ids.map((x: string) => ({ source_id: src.id, external_id: x, news_id: news.id })), { onConflict: "source_id,external_id" });
       added++;
     }
     await db.from("feed_sources").update({ last_synced_at: new Date().toISOString(), last_added: added, last_error: null }).eq("id", src.id);
