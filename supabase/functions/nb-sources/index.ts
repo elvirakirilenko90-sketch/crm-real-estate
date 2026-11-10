@@ -6,6 +6,7 @@
 //   list {category?}               — источники агентства (для менеджеров без ссылок)
 //   browse {source_id, folder_id?} — содержимое источника / вложенной папки Google Drive
 //   preview {kind, url}            — проверка ссылки перед подключением (только администратор)
+//   catalog {categories}           — все прайсы (таблицы) в подключённых папках раздела — для подбора клиенту
 //   sheet {source_id, file_id, gsheet} — таблица-прайс (Google Таблица или Excel/CSV из папки) для расчётов по формулам
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
@@ -139,6 +140,32 @@ Deno.serve(async (req) => {
         await db.from("nb_sources").update({ last_checked_at: new Date().toISOString(), last_error: (e as Error).message }).eq("id", src.id);
         return json({ ok: false, error: (e as Error).message });
       }
+    }
+
+    if (action === "catalog") {
+      // Каталог прайсов для подбора: обходим папки подключённых Google Drive раздела и собираем все таблицы с путём (Застройщик / ЖК / …)
+      const cats = Array.isArray(body.categories) && body.categories.length ? body.categories : ["apartments"];
+      const { data: srcs } = await db.from("nb_sources").select("id,agency_id,category,kind,title,handle,meta,active").eq("agency_id", agencyId).eq("active", true).eq("kind", "gdrive").in("category", cats);
+      const files: any[] = []; const errors: string[] = [];
+      let budget = 80; // не больше 80 папок за запрос
+      for (const src of srcs || []) {
+        const depth = Math.min(6, ((src.meta?.config?.levels || []).length || 3) + 2);
+        let level: { id: string; path: string[] }[] = [{ id: src.handle, path: [] }];
+        for (let d = 0; d < depth && level.length && budget > 0; d++) {
+          const next: { id: string; path: string[] }[] = [];
+          for (let i = 0; i < level.length && budget > 0; i += 6) {
+            const batch = level.slice(i, i + 6); budget -= batch.length;
+            const res = await Promise.all(batch.map((f) => driveFolder(f.id).then((r) => ({ f, r })).catch((e) => { errors.push(`${src.title}: ${(e as Error).message}`); return null; })));
+            for (const x of res) {
+              if (!x) continue;
+              x.r.files.filter((fl) => fl.type === "sheet").forEach((fl) => files.push({ source_id: src.id, category: src.category, source_title: src.title, file_id: fl.id, name: fl.name, gsheet: /docs\.google\.com\/spreadsheets/.test(fl.open), path: x.f.path, modified: fl.modified }));
+              x.r.folders.forEach((sub) => next.push({ id: sub.id, path: [...x.f.path, sub.name] }));
+            }
+          }
+          level = next;
+        }
+      }
+      return json({ ok: true, files: files.slice(0, 200), errors: errors.slice(0, 5), truncated: budget <= 0 });
     }
 
     if (action === "sheet") {

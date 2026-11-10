@@ -643,3 +643,4 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 .nbBuilderHead small{font-size:14px;opacity:.9;line-height:1.4}
 .nbBuilderIcon{font-size:30px}
 .nbSteps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.matchItem .nbInstal{color:var(--accent,#F5C518);font-weight:700}
