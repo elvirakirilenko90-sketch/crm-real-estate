@@ -224,6 +224,7 @@ function globalThemeCss(themeId){
     .btn.soft,.chip,.input, input, textarea, select{background:${card}!important;color:${text}!important;border-color:color-mix(in srgb, ${accent} 35%, #d1d5db)!important;}
     .card,.sheet,.kanbanCol,.modal .sheet,.event{background:${card}!important;color:${text}!important;border-color:color-mix(in srgb, ${accent} 24%, #e5e7eb)!important;box-shadow:0 18px 50px rgba(0,0,0,.08)!important;}
     .lead,.post,.propertyCard{background:linear-gradient(135deg, color-mix(in srgb, ${soft} 68%, ${card}), ${card})!important;color:${text}!important;border-color:color-mix(in srgb, ${accent} 32%, #e5e7eb)!important;box-shadow:0 18px 50px rgba(0,0,0,.08)!important;}
+    .igPost,.igPad,.gcalViews button.active{background:${card}!important;}
     .top,.bottom{background:color-mix(in srgb, ${card} 92%, transparent)!important;border-color:color-mix(in srgb, ${accent} 24%, #e5e7eb)!important;}
     .sideBtn,.roleBox{color:#fff!important;border-color:rgba(255,255,255,.14)!important;}
     .sideBtn:hover{background:rgba(255,255,255,.10)!important;}
@@ -297,7 +298,7 @@ let i18nCache = {lang:null, dict:null, templates:null};
 // Переводы для новых разделов: дни рождения, загрузка лидов, Новобудови, аналитика руководителя
 const uiNewSections = {uk:{"+ Добавить ЖК": "+ Додати ЖК", "Новобудови": "Новобудови", "Отказ": "Відмова", "Отложили": "Відклали", "Переуступка": "Переуступка", "Сдача": "Здача", "Фиксация клиента": "Фіксація клієнта", "CRM берёт бюджет, комнаты и район из заметки клиента и показывает подходящие ЖК.": "CRM бере бюджет, кімнати та район із нотатки клієнта й показує відповідні ЖК.", "Адрес": "Адреса", "Аналитика руководителя": "Аналітика керівника", "Без движения": "Без руху", "Без движения больше 7 дней": "Без руху понад 7 днів", "Без следующего контакта": "Без наступного контакту", "В подборке": "У добірці", "В подборку": "У добірку", "В работе сейчас": "Зараз у роботі", "Воронка лидов за период": "Воронка лідів за період", "Воронка, источники, менеджеры и лиды, которые теряются. Видят только директор и тех. администратор.": "Воронка, джерела, менеджери та ліди, що губляться. Бачать лише директор і тех. адміністратор.", "Вставьте список или выберите файл.": "Вставте список або оберіть файл.", "Встречи/показы": "Зустрічі/покази", "Выберите клиента": "Оберіть клієнта", "Выберите скриншоты или вставьте текст переписки.": "Оберіть скриншоти або вставте текст листування.", "Выбрать скриншоты переписки": "Обрати скриншоти листування", "Выбрать файл Excel или CSV": "Обрати файл Excel або CSV", "Дата лида": "Дата ліда", "До 10 скриншотов одной переписки. Подходят Telegram, Viber, WhatsApp, Instagram.": "До 10 скриншотів одного листування. Підходять Telegram, Viber, WhatsApp, Instagram.", "Дом сдан": "Будинок зданий", "Дубль отклонён": "Дубль відхилено", "ЖК, застройщик или адрес": "ЖК, забудовник або адреса", "За период лидов нет.": "За період лідів немає.", "Завтра ваш день рождения": "Завтра ваш день народження", "Загрузка лидов": "Завантаження лідів", "Заметка": "Нотатка", "Застройщик": "Забудовник", "Или вставьте текст переписки": "Або вставте текст листування", "Источник (если не указан в списке)": "Джерело (якщо не вказане у списку)", "Источники лидов": "Джерела лідів", "Какие площадки приводят клиентов, которые доходят до встречи и сделки.": "Які майданчики приводять клієнтів, що доходять до зустрічі та угоди.", "Клиент отдан в работу": "Клієнта передано в роботу", "Клиенты будут закреплены за вами": "Клієнти будуть закріплені за вами", "Комиссия агентства": "Комісія агентства", "Кому отдать": "Кому передати", "Конверсия лид → сделка": "Конверсія лід → угода", "Курс грн за $ (необязательно)": "Курс грн за $ (необов'язково)", "Лидов всего": "Лідів усього", "Материалы Drive": "Матеріали Drive", "Материалы застройщиков для агентств": "Матеріали забудовників для агентств", "Менеджер": "Менеджер", "Менеджеры загрузили клиентов, которые уже есть в CRM. Менеджеры этого не видят — решение за вами.": "Менеджери завантажили клієнтів, які вже є в CRM. Менеджери цього не бачать — рішення за вами.", "Не назначен": "Не призначено", "Не сохранять": "Не зберігати", "Не удалось найти клиентов. Проверьте текст или скриншот.": "Не вдалося знайти клієнтів. Перевірте текст або скриншот.", "Не указан": "Не вказано", "Новые лиды и сделки по неделям": "Нові ліди та угоди по тижнях", "Новый ЖК": "Новий ЖК", "Новых за период": "Нових за період", "Новых лидов за период": "Нових лідів за період", "Общее": "Загальне", "Определить автоматически": "Визначити автоматично", "Отдать в работу": "Передати в роботу", "Отдать дубль в работу новым лидом": "Передати дубль у роботу новим лідом", "Отказы": "Відмови", "Отклонить": "Відхилити", "Открыть карточку и историю работы": "Відкрити картку та історію роботи", "Отметьте хотя бы одного клиента.": "Позначте хоча б одного клієнта.", "Очистить": "Очистити", "Ошибка сохранения:": "Помилка збереження:", "Папки застройщиков": "Папки забудовників", "Первый взнос": "Перший внесок", "Первый взнос, %": "Перший внесок, %", "Пишите — подберу планировки и рассчитаю рассрочку.": "Пишіть — підберу планування та розрахую розстрочку.", "Платёж в месяц": "Платіж на місяць", "Площадь, м²": "Площа, м²", "По названию": "За назвою", "Подбор под клиента": "Підбір під клієнта", "Подборка новостроек от": "Добірка новобудов від", "Подборка скопирована": "Добірку скопійовано", "Подобрать ЖК": "Підібрати ЖК", "Подходящих ЖК не найдено — уточните бюджет или район в заметке клиента.": "Відповідних ЖК не знайдено — уточніть бюджет або район у нотатці клієнта.", "Поздравить": "Привітати", "Презентации": "Презентації", "Проверить список": "Перевірити список", "Проверяем список…": "Перевіряємо список…", "Пропустить дубль": "Пропустити дубль", "Просрочен следующий контакт": "Прострочено наступний контакт", "Просроченных и забытых лидов нет.": "Прострочених і забутих лідів немає.", "Просрочено": "Прострочено", "Распознать клиента": "Розпізнати клієнта", "Рассрочка": "Розстрочка", "Расчёт без удорожания. Точные условия рассрочки — в папке застройщика на Drive.": "Розрахунок без подорожчання. Точні умови розстрочки — у папці забудовника на Drive.", "Редактировать ЖК": "Редагувати ЖК", "Рейтинг менеджеров": "Рейтинг менеджерів", "С днём рождения!": "З днем народження!", "Сдан": "Зданий", "Сделки, активность и дисциплина по каждому менеджеру. «Просрочено» и «Без движения» — лиды, которые могут потеряться.": "Угоди, активність і дисципліна по кожному менеджеру. «Прострочено» та «Без руху» — ліди, які можуть загубитися.", "Сколько лидов, пришедших за период, дошли до каждого этапа, и конверсия от первого этапа.": "Скільки лідів, що прийшли за період, дійшли до кожного етапу, і конверсія від першого етапу.", "Скопировать": "Скопіювати", "Скопируйте текст": "Скопіюйте текст", "Скриншот переписки": "Скриншот листування", "Скрыть": "Приховати", "Скрыть материалы": "Приховати матеріали", "Сначала дешевле": "Спочатку дешевші", "Сортировка": "Сортування", "Сохраняем…": "Зберігаємо…", "Список / Excel": "Список / Excel", "Срок сдачи": "Термін здачі", "Срок, месяцев": "Термін, місяців", "Ссылка на DIM.RIA": "Посилання на DIM.RIA", "Ссылка на Drive": "Посилання на Drive", "Стоимость": "Вартість", "Строится": "Будується", "Требуют внимания": "Потребують уваги", "Убрать": "Прибрати", "Условия рассрочки": "Умови розстрочки", "Цена м² до, $": "Ціна м² до, $", "Цена м² от, $": "Ціна м² від, $", "Цена м², $": "Ціна м², $", "Читаем переписку…": "Читаємо листування…", "Читаем файл…": "Читаємо файл…", "Этап: Новый Лид": "Етап: Новий лід", "вашего менеджера": "вашого менеджера", "цена по запросу": "ціна за запитом", "Площадки без результатов по этому запросу:": "Майданчики без результатів за цим запитом:", "Открыть поиск на площадке": "Відкрити пошук на майданчику", "На площадке нет отдельной выдачи по этому городу": "На майданчику немає окремої видачі по цьому місту"},en:{"+ Добавить ЖК": "+ Add complex", "Новобудови": "New builds", "Отказ": "Rejected", "Отложили": "Postponed", "Переуступка": "Assignment", "Сдача": "Completion", "Фиксация клиента": "Client registration", "CRM берёт бюджет, комнаты и район из заметки клиента и показывает подходящие ЖК.": "CRM takes the budget, rooms and district from the client's note and shows matching complexes.", "Адрес": "Address", "Аналитика руководителя": "Manager dashboard", "Без движения": "Stalled", "Без движения больше 7 дней": "Stalled over 7 days", "Без следующего контакта": "No next contact", "В подборке": "In selection", "В подборку": "Add to selection", "В работе сейчас": "Active now", "Воронка лидов за период": "Lead funnel for the period", "Воронка, источники, менеджеры и лиды, которые теряются. Видят только директор и тех. администратор.": "Funnel, sources, managers and leads at risk. Visible only to the director and tech admin.", "Вставьте список или выберите файл.": "Paste a list or choose a file.", "Встречи/показы": "Meetings/viewings", "Выберите клиента": "Choose a client", "Выберите скриншоты или вставьте текст переписки.": "Choose screenshots or paste the chat text.", "Выбрать скриншоты переписки": "Choose chat screenshots", "Выбрать файл Excel или CSV": "Choose Excel or CSV file", "Дата лида": "Lead date", "До 10 скриншотов одной переписки. Подходят Telegram, Viber, WhatsApp, Instagram.": "Up to 10 screenshots of one chat. Telegram, Viber, WhatsApp, Instagram are supported.", "Дом сдан": "Completed", "Дубль отклонён": "Duplicate rejected", "ЖК, застройщик или адрес": "Complex, developer or address", "За период лидов нет.": "No leads for the period.", "Завтра ваш день рождения": "Tomorrow is your birthday", "Загрузка лидов": "Lead import", "Заметка": "Note", "Застройщик": "Developer", "Или вставьте текст переписки": "Or paste the chat text", "Источник (если не указан в списке)": "Source (if not in the list)", "Источники лидов": "Lead sources", "Какие площадки приводят клиентов, которые доходят до встречи и сделки.": "Which channels bring clients who reach a meeting and a deal.", "Клиент отдан в работу": "Client assigned", "Клиенты будут закреплены за вами": "Clients will be assigned to you", "Комиссия агентства": "Agency commission", "Кому отдать": "Assign to", "Конверсия лид → сделка": "Lead → deal conversion", "Курс грн за $ (необязательно)": "UAH per $ rate (optional)", "Лидов всего": "Total leads", "Материалы Drive": "Drive materials", "Материалы застройщиков для агентств": "Developer materials for agencies", "Менеджер": "Manager", "Менеджеры загрузили клиентов, которые уже есть в CRM. Менеджеры этого не видят — решение за вами.": "Managers uploaded clients that are already in the CRM. Managers don't see this — the decision is yours.", "Не назначен": "Unassigned", "Не сохранять": "Don't save", "Не удалось найти клиентов. Проверьте текст или скриншот.": "No clients found. Check the text or screenshot.", "Не указан": "Not set", "Новые лиды и сделки по неделям": "New leads and deals by week", "Новый ЖК": "New complex", "Новых за период": "New in period", "Новых лидов за период": "New leads in period", "Общее": "General", "Определить автоматически": "Detect automatically", "Отдать в работу": "Assign", "Отдать дубль в работу новым лидом": "Assign duplicate as a new lead", "Отказы": "Rejections", "Отклонить": "Reject", "Открыть карточку и историю работы": "Open card and history", "Отметьте хотя бы одного клиента.": "Select at least one client.", "Очистить": "Clear", "Ошибка сохранения:": "Save error:", "Папки застройщиков": "Developer folders", "Первый взнос": "Down payment", "Первый взнос, %": "Down payment, %", "Пишите — подберу планировки и рассчитаю рассрочку.": "Message me — I'll pick layouts and calculate the installment plan.", "Платёж в месяц": "Monthly payment", "Площадь, м²": "Area, m²", "По названию": "By name", "Подбор под клиента": "Match for a client", "Подборка новостроек от": "New-build selection from", "Подборка скопирована": "Selection copied", "Подобрать ЖК": "Find complexes", "Подходящих ЖК не найдено — уточните бюджет или район в заметке клиента.": "No matching complexes — refine the budget or district in the client's note.", "Поздравить": "Congratulate", "Презентации": "Presentations", "Проверить список": "Check list", "Проверяем список…": "Checking list…", "Пропустить дубль": "Skip duplicate", "Просрочен следующий контакт": "Next contact overdue", "Просроченных и забытых лидов нет.": "No overdue or forgotten leads.", "Просрочено": "Overdue", "Распознать клиента": "Recognize client", "Рассрочка": "Installment", "Расчёт без удорожания. Точные условия рассрочки — в папке застройщика на Drive.": "Calculated without markup. Exact terms are in the developer's Drive folder.", "Редактировать ЖК": "Edit complex", "Рейтинг менеджеров": "Manager leaderboard", "С днём рождения!": "Happy birthday!", "Сдан": "Completed", "Сделки, активность и дисциплина по каждому менеджеру. «Просрочено» и «Без движения» — лиды, которые могут потеряться.": "Deals, activity and discipline per manager. “Overdue” and “Stalled” are leads at risk of being lost.", "Сколько лидов, пришедших за период, дошли до каждого этапа, и конверсия от первого этапа.": "How many leads from the period reached each stage, and conversion from the first stage.", "Скопировать": "Copy", "Скопируйте текст": "Copy the text", "Скриншот переписки": "Chat screenshot", "Скрыть": "Hide", "Скрыть материалы": "Hide materials", "Сначала дешевле": "Cheapest first", "Сортировка": "Sort", "Сохраняем…": "Saving…", "Список / Excel": "List / Excel", "Срок сдачи": "Completion date", "Срок, месяцев": "Term, months", "Ссылка на DIM.RIA": "DIM.RIA link", "Ссылка на Drive": "Drive link", "Стоимость": "Price", "Строится": "Under construction", "Требуют внимания": "Need attention", "Убрать": "Remove", "Условия рассрочки": "Installment terms", "Цена м² до, $": "Price per m² to, $", "Цена м² от, $": "Price per m² from, $", "Цена м², $": "Price per m², $", "Читаем переписку…": "Reading the chat…", "Читаем файл…": "Reading file…", "Этап: Новый Лид": "Stage: New lead", "вашего менеджера": "your manager", "цена по запросу": "price on request", "Площадки без результатов по этому запросу:": "Platforms with no results for this search:", "Открыть поиск на площадке": "Open search on the platform", "На площадке нет отдельной выдачи по этому городу": "This platform has no separate listing for this city"}};
 // Переводы нового календаря
-const uiCalendar = {"uk": {"Расписание": "Розклад", "3 дня": "3 дні", "Сегодня": "Сьогодні", "Подписание": "Підписання", "Касания из карточек": "Дотики з карток", "Поиск: клиент, телефон, адрес...": "Пошук: клієнт, телефон, адреса...", "Только мои": "Лише мої", "Как прошло? Отметьте итог": "Як пройшло? Позначте підсумок", "Проведено": "Проведено", "Не пришёл": "Не прийшов", "Клиент не пришёл": "Клієнт не прийшов", "Просроченные касания": "Прострочені дотики", "Маршрут показов на день": "Маршрут показів на день", "Маршрут показов": "Маршрут показів", "Загрузка за период": "Завантаження за період", "Новое событие": "Нова подія", "Добавьте название": "Додайте назву", "В это время уже есть": "На цей час уже є", "Карточка": "Картка", "Клиент: имя или телефон (необязательно)": "Клієнт: ім'я або телефон (необов'язково)", "Объект из вторички (необязательно)": "Об'єкт із вторинки (необов'язково)", "Адрес или место встречи": "Адреса або місце зустрічі", "За 5 минут": "За 5 хвилин", "За 15 минут": "За 15 хвилин", "За 30 минут": "За 30 хвилин", "За 1 час": "За 1 годину", "За 2 часа": "За 2 години", "За 1 день": "За 1 день", "Заметка к событию": "Нотатка до події", "Итог": "Підсумок", "Запланировано": "Заплановано", "Перенесено": "Перенесено", "Отменено": "Скасовано", "Что сказал клиент, следующий шаг...": "Що сказав клієнт, наступний крок...", "Сохранить": "Зберегти", "В Google Календарь": "У Google Календар", "В календарь телефона": "У календар телефону", "Напомнить клиенту": "Нагадати клієнту", "Для Viber и Telegram текст копируется — вставьте его в чат.": "Для Viber і Telegram текст копіюється — вставте його в чат.", "На эти две недели событий нет. Нажмите «+», чтобы добавить.": "На ці два тижні подій немає. Натисніть «+», щоб додати.", "Свободный день — добавить событие": "Вільний день — додати подію", "Следующие 2 недели": "Наступні 2 тижні", "касание": "дотик", "мин": "хв", "ч": "год", "адр.": "адр.", "Напоминание": "Нагадування", "Добрый день": "Добрий день", "Напоминаю о встрече": "Нагадую про зустріч", "в": "о", "Раздел в разработке. Скоро здесь появятся новостройки.": "Розділ у розробці. Незабаром тут з'являться новобудови."}, "en": {"Расписание": "Schedule", "3 дня": "3 days", "Сегодня": "Today", "Подписание": "Signing", "Касания из карточек": "Follow-ups from cards", "Поиск: клиент, телефон, адрес...": "Search: client, phone, address...", "Только мои": "Only mine", "Как прошло? Отметьте итог": "How did it go? Mark the result", "Проведено": "Done", "Не пришёл": "No-show", "Клиент не пришёл": "Client didn't come", "Просроченные касания": "Overdue follow-ups", "Маршрут показов на день": "Today's viewing route", "Маршрут показов": "Viewing route", "Загрузка за период": "Workload for the period", "Новое событие": "New event", "Добавьте название": "Add title", "В это время уже есть": "Already booked at this time", "Карточка": "Card", "Клиент: имя или телефон (необязательно)": "Client: name or phone (optional)", "Объект из вторички (необязательно)": "Resale property (optional)", "Адрес или место встречи": "Address or meeting place", "За 5 минут": "5 minutes before", "За 15 минут": "15 minutes before", "За 30 минут": "30 minutes before", "За 1 час": "1 hour before", "За 2 часа": "2 hours before", "За 1 день": "1 day before", "Заметка к событию": "Event note", "Итог": "Result", "Запланировано": "Planned", "Перенесено": "Rescheduled", "Отменено": "Canceled", "Что сказал клиент, следующий шаг...": "What the client said, next step...", "Сохранить": "Save", "В Google Календарь": "To Google Calendar", "В календарь телефона": "To phone calendar", "Напомнить клиенту": "Remind client", "Для Viber и Telegram текст копируется — вставьте его в чат.": "For Viber and Telegram the text is copied — paste it into the chat.", "На эти две недели событий нет. Нажмите «+», чтобы добавить.": "No events for these two weeks. Tap “+” to add one.", "Свободный день — добавить событие": "Free day — add event", "Следующие 2 недели": "Next 2 weeks", "касание": "follow-up", "мин": "min", "ч": "h", "адр.": "addr.", "Напоминание": "Reminder", "Добрый день": "Hello", "Напоминаю о встрече": "A reminder about our meeting", "в": "at", "Раздел в разработке. Скоро здесь появятся новостройки.": "Section in progress. New builds will appear here soon."}};
+const uiCalendar = {"uk": {"Расписание": "Розклад", "3 дня": "3 дні", "Сегодня": "Сьогодні", "Подписание": "Підписання", "Касания из карточек": "Дотики з карток", "Поиск: клиент, телефон, адрес...": "Пошук: клієнт, телефон, адреса...", "Только мои": "Лише мої", "Как прошло? Отметьте итог": "Як пройшло? Позначте підсумок", "Проведено": "Проведено", "Не пришёл": "Не прийшов", "Клиент не пришёл": "Клієнт не прийшов", "Просроченные касания": "Прострочені дотики", "Маршрут показов на день": "Маршрут показів на день", "Маршрут показов": "Маршрут показів", "Загрузка за период": "Завантаження за період", "Новое событие": "Нова подія", "Добавьте название": "Додайте назву", "В это время уже есть": "На цей час уже є", "Карточка": "Картка", "Клиент: имя или телефон (необязательно)": "Клієнт: ім'я або телефон (необов'язково)", "Объект из вторички (необязательно)": "Об'єкт із вторинки (необов'язково)", "Адрес или место встречи": "Адреса або місце зустрічі", "За 5 минут": "За 5 хвилин", "За 15 минут": "За 15 хвилин", "За 30 минут": "За 30 хвилин", "За 1 час": "За 1 годину", "За 2 часа": "За 2 години", "За 1 день": "За 1 день", "Заметка к событию": "Нотатка до події", "Итог": "Підсумок", "Запланировано": "Заплановано", "Перенесено": "Перенесено", "Отменено": "Скасовано", "Что сказал клиент, следующий шаг...": "Що сказав клієнт, наступний крок...", "Сохранить": "Зберегти", "В Google Календарь": "У Google Календар", "В календарь телефона": "У календар телефону", "Напомнить клиенту": "Нагадати клієнту", "Для Viber и Telegram текст копируется — вставьте его в чат.": "Для Viber і Telegram текст копіюється — вставте його в чат.", "На эти две недели событий нет. Нажмите «+», чтобы добавить.": "На ці два тижні подій немає. Натисніть «+», щоб додати.", "Свободный день — добавить событие": "Вільний день — додати подію", "Следующие 2 недели": "Наступні 2 тижні", "касание": "дотик", "мин": "хв", "ч": "год", "адр.": "адр.", "Напоминание": "Нагадування", "Добрый день": "Добрий день", "Напоминаю о встрече": "Нагадую про зустріч", "в": "о", "Раздел в разработке. Скоро здесь появятся новостройки.": "Розділ у розробці. Незабаром тут з'являться новобудови.", "Лента": "Стрічка", "Публикация": "Публікація", "За выбранный период публикаций нет.": "За вибраний період публікацій немає.", "Нравится": "Подобається", "ещё": "ще", "Посмотреть все комментарии": "Переглянути всі коментарі", "Добавьте комментарий...": "Додайте коментар...", "Опубликовать": "Опублікувати", "Редактировать": "Редагувати", "Удалить": "Видалити", "Комментарий": "Коментар"}, "en": {"Расписание": "Schedule", "3 дня": "3 days", "Сегодня": "Today", "Подписание": "Signing", "Касания из карточек": "Follow-ups from cards", "Поиск: клиент, телефон, адрес...": "Search: client, phone, address...", "Только мои": "Only mine", "Как прошло? Отметьте итог": "How did it go? Mark the result", "Проведено": "Done", "Не пришёл": "No-show", "Клиент не пришёл": "Client didn't come", "Просроченные касания": "Overdue follow-ups", "Маршрут показов на день": "Today's viewing route", "Маршрут показов": "Viewing route", "Загрузка за период": "Workload for the period", "Новое событие": "New event", "Добавьте название": "Add title", "В это время уже есть": "Already booked at this time", "Карточка": "Card", "Клиент: имя или телефон (необязательно)": "Client: name or phone (optional)", "Объект из вторички (необязательно)": "Resale property (optional)", "Адрес или место встречи": "Address or meeting place", "За 5 минут": "5 minutes before", "За 15 минут": "15 minutes before", "За 30 минут": "30 minutes before", "За 1 час": "1 hour before", "За 2 часа": "2 hours before", "За 1 день": "1 day before", "Заметка к событию": "Event note", "Итог": "Result", "Запланировано": "Planned", "Перенесено": "Rescheduled", "Отменено": "Canceled", "Что сказал клиент, следующий шаг...": "What the client said, next step...", "Сохранить": "Save", "В Google Календарь": "To Google Calendar", "В календарь телефона": "To phone calendar", "Напомнить клиенту": "Remind client", "Для Viber и Telegram текст копируется — вставьте его в чат.": "For Viber and Telegram the text is copied — paste it into the chat.", "На эти две недели событий нет. Нажмите «+», чтобы добавить.": "No events for these two weeks. Tap “+” to add one.", "Свободный день — добавить событие": "Free day — add event", "Следующие 2 недели": "Next 2 weeks", "касание": "follow-up", "мин": "min", "ч": "h", "адр.": "addr.", "Напоминание": "Reminder", "Добрый день": "Hello", "Напоминаю о встрече": "A reminder about our meeting", "в": "at", "Раздел в разработке. Скоро здесь появятся новостройки.": "Section in progress. New builds will appear here soon.", "Лента": "Feed", "Публикация": "Post", "За выбранный период публикаций нет.": "No posts for the selected period.", "Нравится": "Likes", "ещё": "more", "Посмотреть все комментарии": "View all comments", "Добавьте комментарий...": "Add a comment...", "Опубликовать": "Post", "Редактировать": "Edit", "Удалить": "Delete", "Комментарий": "Comment"}};
 function i18nDict(lang){
   if (i18nCache.lang !== lang){
     i18nCache = {
@@ -935,6 +936,103 @@ function BirthdayBanner({users, currentProfile, onCongratulate}){
   </div>;
 }
 
+// ===== Пост ленты в стиле Instagram (только внешний вид; логика — в Feed) =====
+function FeedPostMedia({post, onOpen, onDoubleTap}){
+  const file = post.file || "";
+  const kind = String(post.kind || "").toLowerCase();
+  const isUrl = /^https?:\/\//i.test(file);
+  const videoRef = useRef(null);
+  const lastTap = useRef(0);
+  const [muted,setMuted] = useState(true);
+  const isVideo = kind.includes("видео") && isUrl;
+  const isPhoto = kind.includes("фото") && isUrl;
+
+  useEffect(() => {
+    if(!isVideo || !videoRef.current || typeof IntersectionObserver === "undefined") return;
+    const v = videoRef.current;
+    const io = new IntersectionObserver(([en]) => { if(en.isIntersecting && en.intersectionRatio > 0.6) v.play().catch(()=>{}); else v.pause(); }, {threshold:[0,0.6,1]});
+    io.observe(v);
+    return () => io.disconnect();
+  }, [isVideo, file]);
+
+  if(!file) return null;
+  const tap = () => { const t = Date.now(); if(t - lastTap.current < 320){ onDoubleTap && onDoubleTap(); lastTap.current = 0; } else lastTap.current = t; };
+
+  if(kind.includes("ссылка") || (isUrl && !kind.includes("фото") && !kind.includes("видео") && !kind.includes("файл"))){
+    const url = normalizeUrl(file);
+    let host = url; try { host = new URL(url).hostname.replace(/^www\./,""); } catch {}
+    return <a className="igLink" href={url} target="_blank" rel="noopener noreferrer"><span>🔗</span><section><b>{host}</b><small>{url}</small></section><i>›</i></a>;
+  }
+  if(isPhoto) return <div className="igMedia" onClick={tap}>
+    <img src={file} alt="" loading="lazy"/>
+    <button className="igExpand" onClick={e => { e.stopPropagation(); onOpen && onOpen({kind:"Фото", name:file}); }} aria-label="open">⤢</button>
+  </div>;
+  if(isVideo) return <div className="igMedia video" onClick={tap}>
+    <video ref={videoRef} src={file} muted={muted} loop playsInline preload="metadata"/>
+    <button className="igSound" onClick={e => { e.stopPropagation(); setMuted(m => !m); }} aria-label="sound">{muted ? "🔇" : "🔊"}</button>
+    <button className="igExpand" onClick={e => { e.stopPropagation(); onOpen && onOpen({kind:"Видео", name:file}); }} aria-label="open">⤢</button>
+  </div>;
+  if(kind.includes("файл") && isUrl) return <a className="igLink" href={file} target="_blank" rel="noopener noreferrer"><span>📄</span><section><b>{decodeURIComponent(file.split("/").pop() || "Файл").replace(/^\d+-[a-z0-9]+\./,"файл.")}</b><small>Открыть файл</small></section><i>›</i></a>;
+  return <div className="igPad"><Media kind={post.kind} name={file} onOpen={onOpen}/></div>;
+}
+
+function FeedPost({post, isTech, lang, onLike, onEdit, onDelete, onOpenMedia, commentValue, onCommentChange, onComment}){
+  const [heart,setHeart] = useState(false);
+  const [pulse,setPulse] = useState(false);
+  const [moreText,setMoreText] = useState(false);
+  const [allComments,setAllComments] = useState(false);
+  const [menu,setMenu] = useState(false);
+  const like = () => { onLike(post); setPulse(true); setTimeout(() => setPulse(false), 350); };
+  const doubleTap = () => { like(); setHeart(true); setTimeout(() => setHeart(false), 800); };
+  const share = async () => {
+    const text = [post.text, post.file].filter(Boolean).join("\n");
+    try { if(navigator.share){ await navigator.share({text}); return; } await navigator.clipboard.writeText(text); alert(tr(lang,"Ссылка скопирована")); } catch {}
+  };
+  const comments = post.comments || [];
+  const shownComments = allComments ? comments : comments.slice(-2);
+  const commentAuthor = c => typeof c === "string" ? tr(lang,"Комментарий") : (c.author_name || c.author || tr(lang,"Комментарий"));
+  const commentBody = c => typeof c === "string" ? c : (c.text || c.content || c.comment || "");
+  const longText = (post.text || "").length > 160;
+  const hasMedia = !!post.file;
+  const initial = String(post.author || "A").trim().charAt(0).toUpperCase() || "A";
+
+  return <article className={cn("igPost", !hasMedia && "textOnly")}>
+    <header className="igHead">
+      <div className="igAvatar"><span>{initial}</span></div>
+      <section><b>{post.author}</b><small>{post.date}</small></section>
+      {isTech && <div className="igMenuWrap">
+        <button className="igIconBtn" onClick={() => setMenu(m => !m)} aria-label="menu">⋯</button>
+        {menu && <div className="igMenu" onMouseLeave={() => setMenu(false)}>
+          <button onClick={() => { setMenu(false); onEdit(post); }}>✎ {tr(lang,"Редактировать")}</button>
+          <button className="danger" onClick={() => { setMenu(false); onDelete(post); }}>🗑 {tr(lang,"Удалить")}</button>
+        </div>}
+      </div>}
+    </header>
+
+    {hasMedia ? <div className="igMediaWrap">
+      <FeedPostMedia post={post} onOpen={onOpenMedia} onDoubleTap={doubleTap}/>
+      {heart && <div className="igBigHeart">♥</div>}
+    </div> : post.text && <div className="igTextCard" onDoubleClick={doubleTap}><p>{post.text}</p>{heart && <div className="igBigHeart">♥</div>}</div>}
+
+    <div className="igActions">
+      <button className={cn("igIconBtn", pulse && "pulse")} onClick={like} aria-label="like"><span className="igHeart">♥</span></button>
+      <button className="igIconBtn" onClick={() => setAllComments(true)} aria-label="comments">💬</button>
+      <button className="igIconBtn" onClick={share} aria-label="share">➤</button>
+    </div>
+    <div className="igBody">
+      <b className="igLikes">{tr(lang,"Нравится")}: {post.likes || 0}</b>
+      {hasMedia && post.text && <p className={cn("igCaption", !moreText && longText && "clamp")}><b>{post.author}</b> {post.text}</p>}
+      {hasMedia && longText && !moreText && <button className="igMore" onClick={() => setMoreText(true)}>{tr(lang,"ещё")}</button>}
+      {comments.length > 2 && !allComments && <button className="igMore" onClick={() => setAllComments(true)}>{tr(lang,"Посмотреть все комментарии")} ({comments.length})</button>}
+      {shownComments.map((c,i) => <p className="igComment" key={i}><b>{commentAuthor(c)}</b> {commentBody(c)}{typeof c !== "string" && c.created_at ? <small> · {new Date(c.created_at).toLocaleDateString()}</small> : null}</p>)}
+      <div className="igCommentBox">
+        <input placeholder={tr(lang,"Добавьте комментарий...")} value={commentValue || ""} onChange={e => onCommentChange(e.target.value)} onKeyDown={e => { if(e.key === "Enter") onComment(post); }}/>
+        {(commentValue || "").trim() && <button onClick={() => onComment(post)}>{tr(lang,"Опубликовать")}</button>}
+      </div>
+    </div>
+  </article>;
+}
+
 function Feed({posts,setPosts,role,currentProfile,lang,users}) {
   const isTech = role === "Администратор тех отдел";
   const [open,setOpen] = useState(false);
@@ -1101,20 +1199,15 @@ function Feed({posts,setPosts,role,currentProfile,lang,users}) {
     return <Media kind={post.kind} name={file} onOpen={setViewer}/>;
   };
 
-  return <main className="screen"><BirthdayBanner users={users} currentProfile={currentProfile} onCongratulate={!isTech ? null : name=>{setDraft(d=>({...d,text:`С днём рождения, ${name}! 🎉`,kind:"Текст"}));setOpen(true);}}/><div className="feedList">
-    <div className="card dark hero">
-      <div><h2>Лента новостей</h2><p>Внутренняя соцсеть агентства: фото, видео, файлы, ссылки, лайки и комментарии.</p></div>
-      {isTech && <Button onClick={()=>setOpen(true)}>+ Новая публикация</Button>}
+  return <main className="screen"><BirthdayBanner users={users} currentProfile={currentProfile} onCongratulate={!isTech ? null : name=>{setDraft(d=>({...d,text:`С днём рождения, ${name}! 🎉`,kind:"Текст"}));setOpen(true);}}/><div className="feedList igFeed">
+    <div className="igTopBar">
+      <h2>{tr(lang,"Лента")}</h2>
+      {isTech && <button className="igNewBtn" onClick={()=>setOpen(true)}>＋ {tr(lang,"Публикация")}</button>}
     </div>
-
-    <div className="card dateFilterCard">
-      <div className="row"><h3>{tr(lang,"Фильтр по датам")}</h3><span className="muted">{tr(lang,"Выбери период просмотра ленты")}</span></div>
-      <div className="grid4">
-        {[["all","Все"],["day","День"],["week","Неделя"],["month","Месяц"]].map(([id,label])=><Button key={id} variant={dateMode===id?"primary":"soft"} onClick={()=>setDateMode(id)}>{tr(lang,label)}</Button>)}
-        <Button variant={dateMode==="custom"?"primary":"soft"} onClick={()=>setDateMode("custom")}>{tr(lang,"Период")}</Button>
-      </div>
-      {dateMode==="custom"&&<div className="grid2" style={{marginTop:10}}><Field label={tr(lang,"Дата от")}><input className="input" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></Field><Field label={tr(lang,"Дата до")}><input className="input" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></Field></div>}
+    <div className="igFilters">
+      {[["all","Все"],["day","День"],["week","Неделя"],["month","Месяц"],["custom","Период"]].map(([id,label])=><button key={id} className={cn(dateMode===id&&"on")} onClick={()=>setDateMode(id)}>{tr(lang,label)}</button>)}
     </div>
+    {dateMode==="custom"&&<div className="card igPeriod"><div className="grid2"><Field label={tr(lang,"Дата от")}><input className="input" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></Field><Field label={tr(lang,"Дата до")}><input className="input" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></Field></div></div>}
 
     {open && isTech && <div className="card composer">
       <div className="row"><h2>Новая публикация</h2><button className="icon" onClick={()=>setOpen(false)}>×</button></div>
@@ -1129,26 +1222,10 @@ function Feed({posts,setPosts,role,currentProfile,lang,users}) {
       <Button className="full" onClick={publish}>Опубликовать</Button>
     </div>}
 
-    {visiblePosts.map(post=><article className="card post" key={post.id}>
-      <div className="postHead"><div>A</div><section><b>{post.author}</b><span>{post.date}</span></section></div>
-      {post.text && <p>{post.text}</p>}
-      {renderPostMedia(post)}
-
-      <div className="actions">
-        <button className="chip" onClick={()=>toggleLike(post)}>♡ {post.likes}</button>
-        <span>💬 {(post.comments || []).length}</span>
-        {isTech && <button className="chip" onClick={()=>setEditPost(post)}>✎ Редактировать</button>}
-        {isTech && <button className="chip" onClick={()=>deletePost(post)}>🗑 Удалить</button>}
-      </div>
-
-      <div className="comments">
-        {(post.comments || []).map((c,i)=><p key={i}><b>{typeof c === "string" ? "Комментарий" : (c.author_name || c.author || "Комментарий")}:</b> {typeof c === "string" ? c : (c.text || c.content || c.comment || "")} {typeof c !== "string" && c.created_at ? <span className="muted"> · {new Date(c.created_at).toLocaleString()}</span> : null}</p>)}
-        <div className="row">
-          <input className="input" placeholder="Написать комментарий..." value={commentText[post.id] || ""} onChange={e=>setCommentText({...commentText,[post.id]:e.target.value})}/>
-          <Button variant="soft" onClick={()=>addComment(post)}>Отправить</Button>
-        </div>
-      </div>
-    </article>)}
+    {visiblePosts.length===0 && <div className="card igEmpty">{tr(lang,"За выбранный период публикаций нет.")}</div>}
+    {visiblePosts.map(post=><FeedPost key={post.id} post={post} isTech={isTech} lang={lang}
+      onLike={toggleLike} onEdit={setEditPost} onDelete={deletePost} onOpenMedia={setViewer}
+      commentValue={commentText[post.id]} onCommentChange={v=>setCommentText(prev=>({...prev,[post.id]:v}))} onComment={addComment}/>)}
 
     {editPost && isTech && <Modal onClose={()=>setEditPost(null)} wide>
       <div className="row"><h2>Редактировать публикацию</h2><button className="icon" onClick={()=>setEditPost(null)}>×</button></div>
