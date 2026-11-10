@@ -45,6 +45,8 @@ function humanError(e: unknown) {
     AUTH_KEY_UNREGISTERED: "Вход в Telegram сброшен. Подключите аккаунт заново",
     SESSION_REVOKED: "Вход в Telegram завершён на телефоне. Подключите аккаунт заново",
     FLOOD_WAIT: "Telegram просит подождать. Попробуйте через несколько минут",
+    SEND_CODE_UNAVAILABLE: "Другие способы отправки кода закончились. Подождите несколько минут и нажмите «Другой номер» → «Получить код»",
+    PHONE_CODE_HASH_EMPTY: "Код устарел. Нажмите «Другой номер» и запросите код снова",
   };
   const key = Object.keys(map).find((k) => m.includes(k));
   return key ? map[key] : m.slice(0, 200);
@@ -259,7 +261,7 @@ Deno.serve(async (req) => {
     if (action === "status") {
       const configured = !!(await setting("tg_api_id")) && !!(await setting("tg_api_hash"));
       const { data: acc } = await db.from("telegram_accounts").select("status,phone,tg_name,updated_at").eq("agency_id", agencyId).maybeSingle();
-      const phone = acc?.phone ? acc.phone.replace(/^(\+?\d{3})\d+(\d{2})$/, "$1•••••$2") : null;
+      const phone = acc?.phone ? acc.phone.replace(/^(\+?\d{5})\d+(\d{2})$/, "$1•••••$2") : null;
       return json({ ok: true, configured, can_configure: !!isTech, status: acc?.status || "new", phone, name: acc?.tg_name || null });
     }
 
@@ -271,14 +273,35 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
-    if (action === "send_code") {
-      const phone = String(body.phone || "").replace(/[^\d+]/g, "");
-      if (!/^\+?\d{10,15}$/.test(phone)) return json({ ok: false, error: "Введите номер в формате +380XXXXXXXXX" });
-      const { client, apiId, apiHash } = await makeClient("");
+    if (action === "send_code" || action === "resend") {
+      let phone = String(body.phone || "").replace(/[^\d+]/g, "");
+      if (/^0\d{9}$/.test(phone)) phone = "+38" + phone;           // 0671234567 → +380671234567
+      if (/^380\d{9}$/.test(phone)) phone = "+" + phone;
+      let acc: any = null;
+      if (action === "resend") {
+        ({ data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle());
+        if (!acc?.temp_session || !acc?.phone_code_hash) return json({ ok: false, error: "Сначала нажмите «Получить код»" });
+        phone = acc.phone;
+      } else if (!/^\+\d{10,15}$/.test(phone)) return json({ ok: false, error: "Введите номер в формате +380XXXXXXXXX" });
+      const { client, apiId, apiHash } = await makeClient(action === "resend" ? acc.temp_session : "");
       try {
-        const res: any = await client.sendCode({ apiId, apiHash }, phone);
+        const res: any = action === "resend"
+          ? await client.invoke(new Api.auth.ResendCode({ phoneNumber: phone, phoneCodeHash: acc.phone_code_hash }))
+          : await client.invoke(new Api.auth.SendCode({ phoneNumber: phone, apiId, apiHash, settings: new Api.CodeSettings({}) }));
+        if (res.className === "auth.SentCodeSuccess") return json({ ok: false, error: "Telegram сразу авторизовал вход — нажмите «Другой номер» и попробуйте ещё раз" });
+        const t = String(res.type?.className || "");
+        const where =
+          t.includes("App") ? "в приложение Telegram — чат «Telegram» с синей галочкой (на телефоне или компьютере, где открыт этот номер)" :
+          t.includes("SetUpEmailRequired") ? "никуда: Telegram требует сначала добавить почту для входа. Откройте Telegram → Настройки → Конфиденциальность → Почта для входа, добавьте почту и запросите код снова" :
+          t.includes("Email") ? `на почту для входа${res.type?.emailPattern ? " (" + res.type.emailPattern + ")" : ""}` :
+          t.includes("FragmentSms") ? "через Fragment (номер куплен на Fragment) — код в приложении Fragment" :
+          t.includes("Sms") || t.includes("FirebaseSms") ? "по СМС на этот номер" :
+          t.includes("Call") || t.includes("FlashCall") || t.includes("MissedCall") ? "звонком на этот номер — код это последние цифры номера звонящего / продиктует робот" :
+          "способом " + t;
+        const next = String(res.nextType?.className || "");
         await db.from("telegram_accounts").upsert({ agency_id: agencyId, phone, status: "code_sent", temp_session: (client.session as any).save(), phone_code_hash: res.phoneCodeHash, connected_by_email: me || null, updated_at: new Date().toISOString() });
-        return json({ ok: true, via_app: !!res.isCodeViaApp });
+        console.log("telegram-private sent code", t, "next", next);
+        return json({ ok: true, type: t, where, can_resend: !!next, timeout: res.timeout || null });
       } finally { await close(client); }
     }
 
