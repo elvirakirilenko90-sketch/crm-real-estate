@@ -6550,6 +6550,13 @@ function TelegramAccountBox({lang, onStatus}){
     qrTimer.current = setTimeout(() => qrStep(false), 3000);
   };
   const startQr = () => { stopQr(); setMsg(""); setQr({loading:true}); qrStep(true); };
+  // Если вход по QR уже начат (например, вы ушли в Telegram подтверждать и вернулись) — продолжаем ждать, а не начинаем заново
+  useEffect(() => { if(st?.status === "qr_wait" && !qrTimer.current && !qr){ setQr({loading:true}); qrStep(false); } }, [st?.status]);
+  useEffect(() => {
+    const onBack = () => { if(document.visibilityState === "visible" && qrTimer.current){ clearTimeout(qrTimer.current); qrStep(false); } };
+    document.addEventListener("visibilitychange", onBack);
+    return () => document.removeEventListener("visibilitychange", onBack);
+  }, []);
   const qrBlock = <div className="tgQr">
     {!qr && <Button onClick={startQr} disabled={!!busy}>📷 {tr(lang,"Войти по QR-коду (без кода)")}</Button>}
     {qr?.loading && <p className="muted">{tr(lang,"Загрузка…")}</p>}
