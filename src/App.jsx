@@ -870,7 +870,7 @@ function LoginScreen({onLogin}) {
 
 function Sidebar({page,setPage,role,lang}) {
   const canSeeHelp = role === "Администратор директор" || role === "Администратор тех отдел";
-  const items = [["feed","Лента","⌂"],["clients","Канбан и клиенты","👥"],["calendar","Календарь","📅"],["properties","Вторичка","🏢"],["deals","Сделки","💼"],["analytics","Статистика/Отчетность","📊"],["tools","Аналитика","⌁"],...(canSeeHelp ? [["help","Помощь менеджерам","🔔"]] : []),...(role === "Администратор тех отдел" ? [["access","Доступы","🔐"]] : []),["more","Ещё","☰"]];
+  const items = [["feed","Лента","⌂"],["clients","Канбан и клиенты","👥"],["calendar","Календарь","📅"],["properties","Вторичка","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["analytics","Статистика/Отчетность","📊"],["tools","Аналитика","⌁"],...(canSeeHelp ? [["help","Помощь менеджерам","🔔"]] : []),...(role === "Администратор тех отдел" ? [["access","Доступы","🔐"]] : []),["more","Ещё","☰"]];
   return <aside className="sidebar"><div className="logo"><div>♛</div><section><b>CRM Real Estate</b><span>Premium SaaS</span></section></div><div className="roleBox">{role}</div>{items.map(([id,label,icon])=><button key={id} onClick={()=>setPage(id)} className={cn("sideBtn", page===id && "active")}><span>{icon}</span>{tr(lang,label)}</button>)}</aside>;
 }
 
@@ -880,7 +880,7 @@ function Top({page,setPage,agencyName,lang}) {
 }
 
 function Bottom({page,setPage,lang}) {
-  const items = [["feed","Лента","⌂"],["clients","Клиенты","👥"],["calendar","Календарь","📅"],["properties","Объекты","🏢"],["deals","Сделки","💼"],["tools","Аналитика","📊"],["more","Ещё","☰"]];
+  const items = [["feed","Лента","⌂"],["clients","Клиенты","👥"],["calendar","Календарь","📅"],["properties","Объекты","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["tools","Аналитика","📊"],["more","Ещё","☰"]];
   return <nav className="bottom">{items.map(([id,label,icon])=><button key={id} className={page===id ? "active" : ""} onClick={()=>setPage(id)}><span>{icon}</span>{tr(lang,label)}</button>)}</nav>;
 }
 
@@ -5288,11 +5288,6 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
         <option>Администратор тех отдел</option>
       </select>
     </div>}
-
-    <div className="card row">
-      <section><h3>Новобудови</h3><p className="muted">ЖК из папки «Новострой», подбор под клиента, рассрочка</p></section>
-      <Button onClick={()=>setPage("newbuilds")}>Открыть</Button>
-    </div>
 
     <div className="card row">
       <section><h3>Аналитика</h3><p className="muted">{role==="Менеджер по продажам"?"Только моя аналитика":"Доступ по роли"}</p></section>
