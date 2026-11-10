@@ -635,3 +635,11 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 .nbUnitCalc small{font-size:12px;opacity:.8}
 .nbUnitCalc b{font-size:16px}
 @media (max-width:640px){.nbRow .nbKey,.nbRow .nbVal{flex:1 1 45%}.nbUnits{grid-template-columns:minmax(0,1fr)}.nbFilters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.nbBuilder{display:flex;flex-direction:column;gap:10px;border:2px solid var(--accent,#F5C518)!important;align-items:flex-start}
+.nbBuilder.done{border-color:#22c55e!important}
+.nbBuilderHead{display:flex;gap:12px;align-items:flex-start}
+.nbBuilderHead section{display:flex;flex-direction:column;gap:4px}
+.nbBuilderHead b{font-size:17px}
+.nbBuilderHead small{font-size:14px;opacity:.9;line-height:1.4}
+.nbBuilderIcon{font-size:30px}
+.nbSteps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:4px;font-size:14px}
