@@ -469,3 +469,8 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 .fbxLikes button{border:0;background:transparent;color:#ed4956;font-size:24px;cursor:pointer}
 .fbxComments p{margin:10px 0;font-size:14px;line-height:1.45}
 @media(max-width:899px){.fbx{flex-direction:column}.fbxSide{width:auto;flex:0 0 auto;max-height:40vh;border-left:0;border-top:1.5px solid #55555F}.fbxMedia{padding:56px 8px 8px}}
+/* Лента «Широко» на компьютере — на всю рабочую зону справа от меню, без пустых полей */
+@media(min-width:900px){
+  .igFeed.view-wide,.igFeed.view-grid{max-width:none!important;width:100%!important;margin:0!important}
+  .screen:has(>.feedList.igFeed),.screen:has(.igFeed){max-width:none!important}
+}
