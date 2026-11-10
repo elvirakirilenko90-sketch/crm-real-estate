@@ -311,3 +311,86 @@
 .mstatsBody{flex:1;min-width:0;display:flex;flex-direction:column}
 .mstatsBody small{opacity:.65;font-size:12px}
 .mstatsRow em{font-style:normal;font-weight:800;white-space:nowrap}
+
+/* ===== Адаптивная вёрстка: телефон и компьютер (исправление «расползания» экрана) ===== */
+html,body{max-width:100%;overflow-x:hidden}
+#root,.layout{max-width:100%;overflow-x:clip}
+.mainWrap,.main{min-width:0}
+/* Главное: секции не растягиваются от широкого содержимого — оно прокручивается внутри своего блока */
+.screen{grid-template-columns:minmax(0,1fr)}
+.screen>*,.card>*,.feedList>*{min-width:0}
+.card{max-width:100%;box-sizing:border-box}
+.chips,.gcalChips,.igFilters,.kanban,.dealsKanban,.tableWrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{max-width:100%}
+img,video{max-width:100%}
+input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
+
+/* Шапка раздела компактнее */
+.top{padding:14px 16px 12px}
+.top h1{font-size:24px;line-height:1.15}
+.topLine{align-items:center}
+.agencyTop{max-width:45%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Нижнее меню телефона: одна строка на всю ширину, листается вбок */
+@media(max-width:899px){
+  .main{max-width:100%}
+  .bottom{display:flex!important;grid-template-columns:none!important;max-width:100%!important;width:100%!important;left:0!important;transform:none!important;overflow-x:auto;overflow-y:hidden;gap:2px!important;padding:6px 6px calc(8px + env(safe-area-inset-bottom))!important;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .bottom::-webkit-scrollbar{display:none}
+  .bottom button{flex:0 0 auto!important;min-width:68px!important;padding:8px 6px!important;border-radius:14px!important;font-size:10.5px!important;white-space:nowrap}
+  .screen{padding:12px}
+}
+@media(min-width:430px) and (max-width:899px){
+  .bottom button{flex:1 0 68px!important}
+}
+/* Сетки и строки не выталкивают содержимое за край */
+.grid2>*,.grid3>*,.grid4>*,.formGrid>*,.stats>*,.propsGrid>*,.row>*{min-width:0}
+.grid2,.grid3,.grid4{grid-template-columns:repeat(var(--cols,2),minmax(0,1fr))}
+.grid2{--cols:2}.grid3{--cols:3}.grid4{--cols:4}
+@media(max-width:699px){
+  .grid4{--cols:2}
+  .row{flex-wrap:wrap}
+  .hero{flex-direction:column!important;align-items:stretch!important}
+  /* Строки и сетки, свёрстанные прямо в разделах, переносятся на телефоне */
+  .screen [style*="display: flex"]:not(.bottom):not(nav){flex-wrap:wrap}
+  .screen [style*="repeat(4"],.screen [style*="repeat(5"],.screen [style*="repeat(6"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .screen [style*="min-width: 190px"],.screen [style*="min-width: 220px"]{min-width:0!important}
+  .card.dark h2,.card.dark h1{font-size:22px!important;line-height:1.2}
+  .btn{max-width:100%;white-space:normal}
+}
+/* Выбор темы */
+.themeMain{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.themeMainBtn{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:10px;border:2px solid color-mix(in srgb,var(--text,#111) 12%,transparent);background:transparent;color:inherit;border-radius:18px;padding:12px;cursor:pointer;font-family:inherit;text-align:left}
+.themeMainBtn.on{border-color:var(--accent,#d6a500)}
+.themeMainBtn b{font-size:14px}
+.themeMainBtn em{position:absolute;top:10px;right:12px;font-style:normal;font-weight:900;color:var(--accent,#d6a500)}
+.themeSwatch{width:100%;height:64px;border-radius:12px;border:1px solid color-mix(in srgb,var(--text,#111) 14%,transparent);position:relative;overflow:hidden}
+.themeSwatch i{position:absolute;left:12px;bottom:12px;width:44px;height:14px;border-radius:7px}
+/* Шапка раздела */
+.top .agencyTop{width:44px;height:44px;flex:0 0 44px;padding:2px;display:grid;place-items:center;font-weight:900;font-size:17px;border-radius:14px;overflow:hidden}
+.top p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .search input{background:transparent!important;border:0!important;color:#fff!important;min-width:0;flex:1}
+.top .search{background:rgba(255,255,255,.1)!important;border:1px solid rgba(255,255,255,.12)!important;border-radius:14px;min-height:44px}
+/* Лента на компьютере: во всю ширину, посты в несколько колонок */
+@media(min-width:900px){
+  .igFeed{max-width:none!important;display:grid!important;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px!important;align-items:start}
+  .igFeed>*{grid-column:1/-1}
+  .igFeed>.igPost{grid-column:auto;margin:0!important}
+  .igFeed .igMedia img{max-height:460px;object-fit:cover;width:100%}
+  .igFeed .igMedia.video video{aspect-ratio:4/5;max-height:520px}
+  .igFeed .igTextCard{min-height:300px}
+}
+/* Объекты: 1 колонка на телефоне, 2–4 на компьютере; поля сделки — 2 колонки на телефоне */
+@media(max-width:599px){.propsList{--cols:1}.grid3{--cols:2}}
+@media(min-width:1100px){.propsList{--cols:3}}
+@media(min-width:1500px){.propsList{--cols:4}}
+/* Главная на компьютере: во всю ширину, «Сегодня» и быстрые переходы в две колонки */
+@media(min-width:900px){
+  .homeScreen{max-width:none!important;display:grid!important;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);column-gap:24px;align-items:start;padding:28px 32px!important}
+  .homeScreen>.homeHead,.homeScreen>.homeHello,.homeScreen>.homeTiles{grid-column:1/-1}
+  .homeScreen>.homeSection,.homeScreen>.homeList{grid-column:1}
+  .homeScreen>.homeSection{grid-row:4}.homeScreen>.homeList{grid-row:5}
+  .homeScreen>.homeAlert{grid-column:2;grid-row:4;margin-top:18px;align-self:start}
+  .homeScreen>.homeShortcuts{grid-column:2;grid-row:5;margin-top:12px;align-self:start}
+  .homeHello h1{font-size:40px}
+  .homeTile b{font-size:38px}
+}

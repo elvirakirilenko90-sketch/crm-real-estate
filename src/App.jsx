@@ -26,8 +26,8 @@ const soundOptions = [
 
 
 const themeOptions = [
-  {id:"nightGold", name:"Night Gold", dark:true, vars:{"--accent":"#F5C518","--accent2":"#FFD84D","--dark":"#0B0B0C","--soft":"#0E0E10","--card":"#18181B","--text":"#F4F2EC"}},
-  {id:"classic", name:"Gold Black (светлая)", vars:{"--accent":"#d6a500","--accent2":"#f3c21b","--dark":"#070707","--soft":"#f5f2ea","--card":"#ffffff","--text":"#111827"}},
+  {id:"nightGold", name:"Чёрная с жёлтым", dark:true, vars:{"--accent":"#F5C518","--accent2":"#FFD84D","--dark":"#0B0B0C","--soft":"#0E0E10","--card":"#18181B","--text":"#F4F2EC"}},
+  {id:"classic", name:"Белая с жёлтым", vars:{"--accent":"#d6a500","--accent2":"#f3c21b","--dark":"#070707","--soft":"#f5f2ea","--card":"#ffffff","--text":"#111827"}},
   {id:"whiteGold", name:"White Gold", vars:{"--accent":"#d8a800","--accent2":"#f2d15b","--dark":"#111827","--soft":"#fff8df","--card":"#ffffff","--text":"#111827"}},
   {id:"graphite", name:"Graphite Amber", vars:{"--accent":"#f59e0b","--accent2":"#fbbf24","--dark":"#111827","--soft":"#f3f4f6","--card":"#ffffff","--text":"#111827"}},
   {id:"navy", name:"Navy Gold", vars:{"--accent":"#d4af37","--accent2":"#facc15","--dark":"#0f172a","--soft":"#eef2ff","--card":"#ffffff","--text":"#0f172a"}},
@@ -226,7 +226,9 @@ function globalThemeCss(themeId){
     .card,.sheet,.kanbanCol,.modal .sheet,.event{background:${card}!important;color:${text}!important;border-color:color-mix(in srgb, ${accent} 24%, #e5e7eb)!important;box-shadow:0 18px 50px rgba(0,0,0,.08)!important;}
     .lead,.post,.propertyCard{background:linear-gradient(135deg, color-mix(in srgb, ${soft} 68%, ${card}), ${card})!important;color:${text}!important;border-color:color-mix(in srgb, ${accent} 32%, #e5e7eb)!important;box-shadow:0 18px 50px rgba(0,0,0,.08)!important;}
     .igPost,.igPad,.gcalViews button.active{background:${card}!important;}
-    .top,.bottom{background:color-mix(in srgb, ${card} 92%, transparent)!important;border-color:color-mix(in srgb, ${accent} 24%, #e5e7eb)!important;}
+    .bottom{background:color-mix(in srgb, ${card} 94%, transparent)!important;border-color:color-mix(in srgb, ${accent} 24%, #e5e7eb)!important;}
+    .top{background:${dark}!important;color:#fff!important;border-color:transparent!important;}
+    .top h1{color:#fff!important;}
     .sideBtn,.roleBox{color:#fff!important;border-color:rgba(255,255,255,.14)!important;}
     .sideBtn:hover{background:rgba(255,255,255,.10)!important;}
     h1,h2,h3,b,.kanbanHead{color:inherit;}
@@ -345,6 +347,7 @@ function darkThemeCss(v){
     .igCommentBox button{color:${accent}!important;}
     .igTextCard{background:linear-gradient(135deg,#0B0B0C 0%,#2A2410 60%,#5C4A0E 130%)!important;}
     .homeTile{background:${card}!important;border-color:${line}!important;}
+    .leadTop{color:#0B0B0C!important;}.leadTop b,.leadTop span,.leadTop p,.leadTop h3,.leadTop small,.leadTop div{color:#0B0B0C!important;}
   `;
 }
 
@@ -935,9 +938,10 @@ function Sidebar({page,setPage,role,lang}) {
   return <aside className="sidebar"><div className="logo"><div>♛</div><section><b>CRM Real Estate</b><span>Premium SaaS</span></section></div><div className="roleBox">{role}</div>{items.map(([id,label,icon])=><button key={id} onClick={()=>setPage(id)} className={cn("sideBtn", page===id && "active")}><span>{icon}</span>{tr(lang,label)}</button>)}</aside>;
 }
 
-function Top({page,setPage,agencyName,lang}) {
+function Top({page,setPage,agencyName,lang,agencyId}) {
   const titles = {home:"Главная",feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",properties:"Вторичка",deals:"Сделки",analytics:"Статистика/Отчетность",tools:"Аналитика",newbuilds:"Новобудови",help:"Помощь менеджерам",access:"Доступы",more:"Еще"};
-  return <div className="top"><div className="topLine"><div><p>♛ CRM Real Estate</p><h1>{tr(lang,titles[page])}</h1></div><button className="agencyTop" onClick={()=>setPage("more")}>{agencyName || tr(lang,"Моё агентство")}</button></div><div className="search">🔎 <input placeholder={tr(lang,"Поиск по CRM...")} /></div></div>;
+  const logo = typeof loadAgencyBrand === "function" ? loadAgencyBrand(agencyId).logo_url : "";
+  return <div className="top"><div className="topLine"><div style={{minWidth:0}}><p>♛ {agencyName || "CRM Real Estate"}</p><h1>{tr(lang,titles[page])}</h1></div><button className="agencyTop" aria-label={tr(lang,"Ещё")} onClick={()=>setPage("more")}>{logo ? <img src={logo} alt="" style={{width:"100%",height:"100%",objectFit:"contain",borderRadius:12,background:"#fff"}}/> : String(agencyName || "CRM").trim().charAt(0).toUpperCase()}</button></div><div className="search">🔎 <input placeholder={tr(lang,"Поиск по CRM...")} /></div></div>;
 }
 
 function Bottom({page,setPage,lang}) {
@@ -1009,7 +1013,7 @@ function HomeIcon({name, size=22}){
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{p}</svg>;
 }
 
-function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPage, onOpenLead, agency, agencyName, onAgencyLogo}){
+function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPage, onOpenLead, agency, agencyName, onAgencyLogo, theme, setTheme}){
   const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
   const now = new Date();
   const todayIso = calIso(now);
@@ -1072,6 +1076,11 @@ function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPag
         ? <img className="homeLogo" src={agency?.logo_url || loadAgencyBrand(currentProfile?.agency_id).logo_url} alt={agencyName || "Логотип агентства"}/>
         : <div className="homeLogo empty"><HomeIcon name="crown" size={22}/></div>}
       <div className="homeAgency"><b>{agencyName || "CRM Real Estate"}</b>{isAdmin && <span>{agency?.logo_url ? tr(lang,"Логотип агентства") : tr(lang,"Добавьте логотип агентства")}</span>}</div>
+      {setTheme && <button className="homeIconBtn" aria-label={theme === "nightGold" ? tr(lang,"Светлая тема") : tr(lang,"Тёмная тема")} onClick={() => { const next = theme === "nightGold" ? "classic" : "nightGold"; setTheme(next); if(currentProfile?.id) supabase.from("users").update({theme:next}).eq("id", currentProfile.id); }}>
+        {theme === "nightGold"
+          ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+          : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>}
+      </button>}
       {isAdmin && <>
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" style={{display:"none"}} onChange={e => { uploadLogo(e.target.files?.[0]); e.target.value = ""; }}/>
         <button className="homeIconBtn" onClick={() => fileRef.current?.click()} disabled={uploading} aria-label={tr(lang,"Загрузить логотип")}>{uploading ? "…" : <HomeIcon name="upload" size={20}/>}</button>
@@ -2954,7 +2963,7 @@ function Properties({properties,setProperties,onOpen,users,currentProfile,lang,a
     <div className="chips">{["Все", ...types].map(t=><button key={t} className={cn("chip", type===t && "active")} onClick={()=>setType(t)}>{tr(lang,t)}</button>)}</div>
     <div className="chips">{["Все", ...districts].map(d=><button key={d} className={cn("chip", district===d && "active")} onClick={()=>setDistrict(d)}>{tr(lang,d)}</button>)}</div>
 
-    <div className="grid2">
+    <div className="grid2 propsList">
       {filtered.map(p => {
         const firstMedia = (p.media || [])[0];
         const fav=favorites.includes(String(p.id));
@@ -6456,8 +6465,14 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
     <div className="card">
       <h3>{tr(lang,"Цветовая гамма CRM")}</h3>
       <p className="muted">{tr(lang,"Каждый пользователь может выбрать оформление под себя.")}</p>
+      <div className="themeMain">
+        {[["nightGold","Чёрная с жёлтым","#0E0E10","#F5C518"],["classic","Белая с жёлтым","#FFFFFF","#d6a500"]].map(([id,label,bg,ac])=><button key={id} className={cn("themeMainBtn", theme===id && "on")} onClick={()=>{setTheme(id); if(currentProfile?.id) supabase.from("users").update({theme:id}).eq("id", currentProfile.id);}}>
+          <span className="themeSwatch" style={{background:bg}}><i style={{background:ac}}></i></span><b>{tr(lang,label)}</b>{theme===id && <em>✓</em>}
+        </button>)}
+      </div>
+      <p className="muted" style={{margin:"14px 0 8px",fontWeight:800}}>{tr(lang,"Другие цвета")}</p>
       <div className="grid3">
-        {themeOptions.map(t=><Button key={t.id} variant={theme===t.id ? "primary" : "soft"} onClick={()=>{setTheme(t.id); if(currentProfile?.id) supabase.from("users").update({theme:t.id}).eq("id", currentProfile.id);}}>{t.name}</Button>)}
+        {themeOptions.filter(t=>!["nightGold","classic"].includes(t.id)).map(t=><Button key={t.id} variant={theme===t.id ? "primary" : "soft"} onClick={()=>{setTheme(t.id); if(currentProfile?.id) supabase.from("users").update({theme:t.id}).eq("id", currentProfile.id);}}>{t.name}</Button>)}
       </div>
     </div>
 
@@ -7378,8 +7393,8 @@ export default function App(){
     setRole(data.role || "Менеджер по продажам");
     if (data.theme) {
       // Разово переводим всех со старой темы по умолчанию (classic) на новую Night Gold; выбор других тем не трогаем.
-      let migrated = false; try { migrated = !!localStorage.getItem("theme_night_v1"); localStorage.setItem("theme_night_v1","1"); } catch {}
-      if (data.theme === "classic" && !migrated) { setTheme("nightGold"); supabase.from("users").update({theme:"nightGold"}).eq("id", data.id).then(()=>{}); }
+      let migrated = false; try { migrated = !!localStorage.getItem("theme_night_v2"); localStorage.setItem("theme_night_v2","1"); } catch {}
+      if (data.theme !== "nightGold" && !migrated) { setTheme("nightGold"); supabase.from("users").update({theme:"nightGold"}).eq("id", data.id).then(()=>{}); }
       else setTheme(data.theme);
     }
     if (data.language) setLang(data.language);
@@ -7742,8 +7757,8 @@ export default function App(){
     <Sidebar page={page} setPage={setPage} role={role} lang={lang}/>
     <div className="mainWrap">
       <main className="main">
-        {page!=="home"&&<Top page={page} setPage={setPage} agencyName={agencyName} lang={lang}/>}
-        {page==="home"&&<Home leads={visibleLeads} events={visibleEvents} deals={deals} currentProfile={currentProfile} role={role} lang={lang} setPage={setPage} onOpenLead={setLead} agency={currentAgency} agencyName={agencyName} onAgencyLogo={url=>setAgencies(prev=>prev.map(a=>String(a.id)===String(currentProfile?.agency_id)?{...a,logo_url:url}:a))}/>}
+        {page!=="home"&&<Top page={page} setPage={setPage} agencyName={agencyName} lang={lang} agencyId={currentProfile?.agency_id}/>}
+        {page==="home"&&<Home leads={visibleLeads} events={visibleEvents} deals={deals} currentProfile={currentProfile} role={role} lang={lang} setPage={setPage} onOpenLead={setLead} agency={currentAgency} agencyName={agencyName} onAgencyLogo={url=>setAgencies(prev=>prev.map(a=>String(a.id)===String(currentProfile?.agency_id)?{...a,logo_url:url}:a))} theme={theme} setTheme={setTheme}/>}
         {page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role} currentProfile={currentProfile} lang={lang} users={users}/>} 
         {page==="clients"&&<Clients leads={visibleLeads} setLeads={setLeads} onOpen={setLead} currentProfile={currentProfile} role={role} users={users} lang={lang}/>} 
         {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang} properties={properties} users={users}/>} 
