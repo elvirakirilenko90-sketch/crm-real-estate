@@ -499,3 +499,11 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 .feedSrcActions button{width:40px;height:40px;border-radius:10px;border:1.5px solid color-mix(in srgb,var(--text,#111) 25%,transparent);background:transparent;color:inherit;font-size:16px;cursor:pointer}
 .feedSrcActions button.danger{border-color:#ef4444}
 .feedSrcToggle{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;margin-right:4px}
+
+/* Закрытые Telegram-каналы: блок подключения аккаунта агентства */
+.tgAcc{border:1.5px solid color-mix(in srgb,var(--accent,#d6a500) 70%,transparent);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;background:color-mix(in srgb,var(--accent,#d6a500) 7%,transparent)}
+.tgAcc.ok{border-color:#22c55e;background:rgba(34,197,94,.10)}
+.tgAcc b{font-size:15px}
+.tgAcc p{margin:0;font-size:13px}
+.tgAccRow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.tgAccRow .input{flex:1 1 180px;min-width:0}

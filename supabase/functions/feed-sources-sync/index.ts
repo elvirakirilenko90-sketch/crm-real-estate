@@ -61,7 +61,7 @@ async function telegramItems(handle: string): Promise<Item[]> {
   const r = await fetch(`https://t.me/s/${handle}`, { headers: UA, redirect: "follow" });
   if (!r.ok) throw new Error(`Telegram не ответил (${r.status})`);
   const html = await r.text();
-  if (!/tgme_widget_message_wrap/.test(html)) throw new Error("Канал не найден или закрыт. Подходит только публичный канал вида t.me/имя.");
+  if (!/tgme_widget_message_wrap/.test(html)) throw new Error("Канал не найден или закрыт. Для закрытого канала выберите «Закрытый Telegram-канал».");
   const out: Item[] = [];
   for (const block of html.split(/<div class="tgme_widget_message_wrap/).slice(1)) {
     const id = (block.match(/data-post="[^"/]+\/(\d+)"/) || [])[1];
@@ -167,6 +167,7 @@ async function syncSource(db: ReturnType<typeof createClient>, src: any) {
 // Проверка ссылки без публикации: сколько постов видно и как они выглядят
 async function previewSource(p: any) {
   const kind = p?.kind === "gdrive" ? "gdrive" : "telegram";
+  if (kind === "telegram" && /(?:t\.me|telegram\.me)\/(?:\+|joinchat\/)/i.test(String(p?.url || ""))) return { ok: false, private: true, error: "Это ссылка-приглашение в закрытый канал. Выберите вариант «Закрытый Telegram-канал» — его CRM читает через Telegram-аккаунт агентства." };
   const handle = kind === "telegram" ? telegramHandle(p?.url) : driveFolderId(p?.url);
   if (!handle) return { ok: false, error: kind === "telegram" ? "Не похоже на ссылку на канал. Пример: https://t.me/имя_канала" : "Не похоже на ссылку на папку. Пример: https://drive.google.com/drive/folders/…" };
   try {
@@ -187,7 +188,7 @@ Deno.serve(async (req) => {
     const { data: s } = await db.from("crm_private_settings").select("value").eq("key", "feed_sync_secret").single();
     if (!s || s.value !== cronSecret) return json({ error: "forbidden" }, 403);
     if (body.preview) return json(await previewSource(body.preview));
-    const { data: sources } = await db.from("feed_sources").select("*").eq("active", true);
+    const { data: sources } = await db.from("feed_sources").select("*").eq("active", true).in("kind", ["telegram", "gdrive"]);
     const results = [];
     for (const src of sources || []) results.push(await syncSource(db, src));
     return json({ ok: true, results });
@@ -203,8 +204,9 @@ Deno.serve(async (req) => {
   if (body.preview) return json(await previewSource(body.preview));
 
   // RLS сам ограничит источники агентством администратора
-  let q = user.from("feed_sources").select("*").eq("active", true);
-  if (body.source_id) q = user.from("feed_sources").select("*").eq("id", body.source_id);
+  // закрытые каналы (tg_private) обновляет функция telegram-private
+  let q = user.from("feed_sources").select("*").eq("active", true).in("kind", ["telegram", "gdrive"]);
+  if (body.source_id) q = user.from("feed_sources").select("*").eq("id", body.source_id).in("kind", ["telegram", "gdrive"]);
   const { data: sources, error } = await q;
   if (error) return json({ error: error.message }, 400);
   const results = [];
