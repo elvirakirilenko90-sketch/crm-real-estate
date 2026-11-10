@@ -326,7 +326,8 @@ Deno.serve(async (req) => {
     // Вход по QR-коду / подтверждению в приложении Telegram (без кода из СМС/чата)
     if (action === "qr_start" || action === "qr_check") {
       const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
-      const session = action === "qr_check" && acc?.status === "qr_wait" ? (acc.temp_session || "") : "";
+      // Всегда продолжаем начатую попытку: если вход уже подтвердили в Telegram, новая попытка его бы потеряла
+      const session = acc?.status === "qr_wait" ? (acc.temp_session || "") : "";
       if (action === "qr_check" && !session) return json({ ok: false, error: "Нажмите «Войти по QR-коду» ещё раз" });
       const { client, apiId, apiHash } = await makeClient(session);
       try {
@@ -344,6 +345,7 @@ Deno.serve(async (req) => {
           }
           throw e;
         }
+        console.log("telegram-private qr", action, r.className);
         if (r.className === "auth.LoginTokenSuccess") {
           const me2: any = await client.getMe();
           const name = [me2?.firstName, me2?.lastName].filter(Boolean).join(" ") || me2?.username || "Telegram";
@@ -364,8 +366,18 @@ Deno.serve(async (req) => {
       if (!acc?.temp_session) return json({ ok: false, error: "Сначала нажмите «Получить код»" });
       const { client, apiId, apiHash } = await makeClient(acc.temp_session);
       try {
-        let needPwd = acc.status === "password_needed";
-        if (!needPwd) {
+        let needPwd = acc.status === "password_needed" || acc.status === "qr_wait";
+        if (acc.status === "qr_wait") {
+          // Вход по QR: убеждаемся, что его подтвердили в Telegram (и переходим на нужный дата-центр), затем пароль
+          try {
+            let r: any = await client.invoke(new Api.auth.ExportLoginToken({ apiId, apiHash, exceptIds: [] }));
+            if (r.className === "auth.LoginTokenMigrateTo") { await (client as any)._switchDC(r.dcId); r = await client.invoke(new Api.auth.ImportLoginToken({ token: r.token })); }
+            console.log("telegram-private qr sign_in", r.className);
+            if (r.className === "auth.LoginToken") return json({ ok: false, error: "Сначала подтвердите вход в Telegram (QR-код или кнопка «Открыть в Telegram»), потом введите пароль" });
+            if (r.className === "auth.LoginTokenSuccess") needPwd = false;
+          } catch (e) { if (!String((e as any)?.errorMessage || e).includes("SESSION_PASSWORD_NEEDED")) throw e; }
+        }
+        if (!needPwd && acc.status !== "qr_wait") {
           try {
             await client.invoke(new Api.auth.SignIn({ phoneNumber: acc.phone, phoneCodeHash: acc.phone_code_hash, phoneCode: String(body.code || "").replace(/\D/g, "") }));
           } catch (e) {
