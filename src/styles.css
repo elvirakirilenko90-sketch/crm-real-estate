@@ -537,3 +537,46 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 .tgOr{margin:6px 0 0!important}
 .tgQrPwd{display:flex;flex-direction:column;gap:6px;width:100%;border-top:1.5px dashed color-mix(in srgb,var(--text,#111) 25%,transparent);padding-top:8px;margin-top:4px}
 .tgQrPwd small{font-size:13px}
+
+/* ===== Новобудови: разделы и подключённые ссылки ===== */
+.nbHub{display:flex;flex-direction:column;gap:14px}
+.nbTabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.nbTab{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 8px;border-radius:16px;border:1.5px solid var(--line,#55555F);background:var(--card,#18181B);color:var(--text,#F4F2EC);cursor:pointer;font:inherit;min-width:0}
+.nbTab b{font-size:15px;line-height:1.2;text-align:center}
+.nbTab small{font-size:12px;font-weight:800;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--text,#fff) 12%,transparent)}
+.nbTabIcon{font-size:26px}
+.nbTab.on{background:var(--accent,#F5C518);border-color:var(--accent,#F5C518);color:#111}
+.nbTab.on small{background:#11111122}
+.nbEmpty{text-align:center;padding:30px 18px!important;display:flex;flex-direction:column;align-items:center;gap:10px}
+.nbEmpty p{max-width:560px}
+.nbGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.nbCard{border:1.5px solid var(--line,#55555F);border-radius:16px;background:var(--card,#18181B);overflow:hidden}
+.nbCard.off{opacity:.6}
+.nbCardMain{display:flex;align-items:center;gap:12px;width:100%;padding:14px;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.nbCardMain section{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.nbCardMain b{font-size:16px}
+.nbCardMain small{font-size:13px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nbCardMain i{font-style:normal;font-size:22px;opacity:.7}
+.nbCardIcon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--accent,#F5C518);color:#111;font-size:20px;flex:0 0 auto}
+.nbCardActions{padding:0 14px 12px;justify-content:flex-end}
+.nbAdd h3{margin:0 0 6px}
+.nbBrowser{display:flex;flex-direction:column;gap:12px}
+.nbBrowserHead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.nbBack{border:1.5px solid var(--line,#55555F);background:var(--card,#18181B);color:inherit;border-radius:12px;padding:10px 14px;font:inherit;font-weight:800;cursor:pointer}
+.nbCrumbs{font-size:15px;min-width:0;overflow-wrap:anywhere}
+.nbCrumbs b,.nbCrumbs span{cursor:pointer}
+.nbFolders{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
+.nbFolder{display:flex;align-items:center;gap:10px;padding:14px;border-radius:14px;border:1.5px solid var(--line,#55555F);background:var(--card,#18181B);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.nbFolder span{font-size:22px}.nbFolder b{flex:1;min-width:0;overflow-wrap:anywhere}.nbFolder i{font-style:normal;opacity:.7;font-size:20px}
+.nbFiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.nbFile{display:flex;flex-direction:column;gap:6px;color:inherit;text-decoration:none;border:1.5px solid var(--line,#55555F);border-radius:14px;overflow:hidden;background:var(--card,#18181B);padding-bottom:8px}
+.nbFile b{font-size:13px;padding:0 8px;overflow-wrap:anywhere;line-height:1.25}
+.nbFile small{font-size:12px;padding:0 8px;opacity:.75}
+.nbThumb{position:relative;aspect-ratio:4/3;background:#0002;display:grid;place-items:center;overflow:hidden}
+.nbThumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.nbThumb span{font-size:30px}
+.nbPosts{display:flex;flex-direction:column;gap:10px;max-width:760px}
+.nbPostImgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin:8px 0}
+.nbPostImgs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px}
+.nbPostText{white-space:pre-wrap;margin:6px 0 0;line-height:1.45}
+@media (max-width:640px){.nbTab{padding:10px 4px}.nbTab b{font-size:13px}.nbTabIcon{font-size:22px}.nbGrid{grid-template-columns:minmax(0,1fr)}.nbFiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
