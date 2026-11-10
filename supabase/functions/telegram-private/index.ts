@@ -10,6 +10,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TelegramClient, Api } from "npm:telegram@2.26.22";
 import { StringSession } from "npm:telegram@2.26.22/sessions/index.js";
 import bigInt from "npm:big-integer@1.6.52";
+import QRCode from "npm:qrcode@1.5.4";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -252,6 +253,7 @@ Deno.serve(async (req) => {
         const r = await makeClient(""); c = r.client; out.connect = "ok";
         try { await c.invoke(new Api.help.GetNearestDc()); out.call = "ok"; } catch (e) { out.call = String((e as any)?.errorMessage || e); }
         try { await c.sendCode({ apiId: r.apiId, apiHash: r.apiHash }, "+999000000000"); out.send_code = "ok?"; } catch (e) { out.send_code = String((e as any)?.errorMessage || (e as Error)?.message || e).slice(0, 300); }
+        try { const t: any = await c.invoke(new Api.auth.ExportLoginToken({ apiId: r.apiId, apiHash: r.apiHash, exceptIds: [] })); out.qr = t.className; } catch (e) { out.qr = String((e as any)?.errorMessage || e).slice(0, 200); }
       } catch (e) { out.error = String((e as Error)?.message || e).slice(0, 300); } finally { await close(c); }
       return json(out);
     }
@@ -318,6 +320,42 @@ Deno.serve(async (req) => {
         await db.from("telegram_accounts").upsert({ agency_id: agencyId, phone, status: "code_sent", temp_session: (client.session as any).save(), phone_code_hash: res.phoneCodeHash, connected_by_email: me || null, updated_at: new Date().toISOString() });
         console.log("telegram-private sent code", t, "next", next);
         return json({ ok: true, type: t, where, can_resend: !!next, timeout: res.timeout || null });
+      } finally { await close(client); }
+    }
+
+    // Вход по QR-коду / подтверждению в приложении Telegram (без кода из СМС/чата)
+    if (action === "qr_start" || action === "qr_check") {
+      const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
+      const session = action === "qr_check" && acc?.status === "qr_wait" ? (acc.temp_session || "") : "";
+      if (action === "qr_check" && !session) return json({ ok: false, error: "Нажмите «Войти по QR-коду» ещё раз" });
+      const { client, apiId, apiHash } = await makeClient(session);
+      try {
+        let r: any;
+        try {
+          r = await client.invoke(new Api.auth.ExportLoginToken({ apiId, apiHash, exceptIds: [] }));
+          if (r.className === "auth.LoginTokenMigrateTo") {
+            await (client as any)._switchDC(r.dcId);
+            r = await client.invoke(new Api.auth.ImportLoginToken({ token: r.token }));
+          }
+        } catch (e) {
+          if (String((e as any)?.errorMessage || e).includes("SESSION_PASSWORD_NEEDED")) {
+            await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "password_needed", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
+            return json({ ok: false, need_password: true, error: "Вход подтверждён. У аккаунта включена двухэтапная проверка — введите пароль" });
+          }
+          throw e;
+        }
+        if (r.className === "auth.LoginTokenSuccess") {
+          const me2: any = await client.getMe();
+          const name = [me2?.firstName, me2?.lastName].filter(Boolean).join(" ") || me2?.username || "Telegram";
+          await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, phone: me2?.phone ? "+" + me2.phone : null, tg_name: name, connected_by_email: me || null, updated_at: new Date().toISOString() });
+          return json({ ok: true, connected: true, name });
+        }
+        const bytes = new Uint8Array(r.token);
+        let bin = ""; for (const b of bytes) bin += String.fromCharCode(b);
+        const url = "tg://login?token=" + btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        const svg = await QRCode.toString(url, { type: "svg", margin: 1, width: 240, color: { dark: "#000000", light: "#ffffff" } });
+        await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "qr_wait", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
+        return json({ ok: true, waiting: true, url, svg, expires: r.expires || null });
       } finally { await close(client); }
     }
 
