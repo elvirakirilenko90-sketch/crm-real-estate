@@ -62,7 +62,7 @@ const translations = {
     "Язык интерфейса":"Interface language", "Цветовая гамма CRM":"CRM color theme", "Каждый пользователь может выбрать оформление под себя.":"Each user can choose their own interface style.", "Роль для проверки CRM":"Role for CRM testing", "Выйти":"Sign out", "Русский":"Russian", "Українська":"Ukrainian", "English":"English"
   }
 };
-function tr(lang, text){ if (!lang || lang === "ru") return text; return (translations[lang] && translations[lang][text]) || (uiExtra[lang] && uiExtra[lang][text]) || text; }
+function tr(lang, text){ if (!lang || lang === "ru") return text; return (translations[lang] && translations[lang][text]) || (uiExtra[lang] && uiExtra[lang][text]) || (typeof uiCalendar !== "undefined" && uiCalendar[lang] && uiCalendar[lang][text]) || text; }
 const extraUk = {
 
     "Повторный клиент":"Повторний клієнт","Рекомендации":"Рекомендації","ОЛХ":"OLX","Лид руководство":"Лід керівництво","Инстаграм личный":"Особистий Instagram","Тик-Ток личный":"Особистий TikTok","Фейсбук личный":"Особистий Facebook","Тик-Ток рабочий":"Робочий TikTok","Инстаграм рабочий":"Робочий Instagram","Фейсбук рабочий":"Робочий Facebook","Телеграмм-канал рабочий":"Робочий Telegram-канал","Рекомендации клиентов":"Рекомендації клієнтів",
@@ -296,11 +296,13 @@ const I18N_EDGE = /^([\s·•\-—–+*✓✎↗↻⏳▦☷✦✨⭐＋‹«▶
 let i18nCache = {lang:null, dict:null, templates:null};
 // Переводы для новых разделов: дни рождения, загрузка лидов, Новобудови, аналитика руководителя
 const uiNewSections = {uk:{"+ Добавить ЖК": "+ Додати ЖК", "Новобудови": "Новобудови", "Отказ": "Відмова", "Отложили": "Відклали", "Переуступка": "Переуступка", "Сдача": "Здача", "Фиксация клиента": "Фіксація клієнта", "CRM берёт бюджет, комнаты и район из заметки клиента и показывает подходящие ЖК.": "CRM бере бюджет, кімнати та район із нотатки клієнта й показує відповідні ЖК.", "Адрес": "Адреса", "Аналитика руководителя": "Аналітика керівника", "Без движения": "Без руху", "Без движения больше 7 дней": "Без руху понад 7 днів", "Без следующего контакта": "Без наступного контакту", "В подборке": "У добірці", "В подборку": "У добірку", "В работе сейчас": "Зараз у роботі", "Воронка лидов за период": "Воронка лідів за період", "Воронка, источники, менеджеры и лиды, которые теряются. Видят только директор и тех. администратор.": "Воронка, джерела, менеджери та ліди, що губляться. Бачать лише директор і тех. адміністратор.", "Вставьте список или выберите файл.": "Вставте список або оберіть файл.", "Встречи/показы": "Зустрічі/покази", "Выберите клиента": "Оберіть клієнта", "Выберите скриншоты или вставьте текст переписки.": "Оберіть скриншоти або вставте текст листування.", "Выбрать скриншоты переписки": "Обрати скриншоти листування", "Выбрать файл Excel или CSV": "Обрати файл Excel або CSV", "Дата лида": "Дата ліда", "До 10 скриншотов одной переписки. Подходят Telegram, Viber, WhatsApp, Instagram.": "До 10 скриншотів одного листування. Підходять Telegram, Viber, WhatsApp, Instagram.", "Дом сдан": "Будинок зданий", "Дубль отклонён": "Дубль відхилено", "ЖК, застройщик или адрес": "ЖК, забудовник або адреса", "За период лидов нет.": "За період лідів немає.", "Завтра ваш день рождения": "Завтра ваш день народження", "Загрузка лидов": "Завантаження лідів", "Заметка": "Нотатка", "Застройщик": "Забудовник", "Или вставьте текст переписки": "Або вставте текст листування", "Источник (если не указан в списке)": "Джерело (якщо не вказане у списку)", "Источники лидов": "Джерела лідів", "Какие площадки приводят клиентов, которые доходят до встречи и сделки.": "Які майданчики приводять клієнтів, що доходять до зустрічі та угоди.", "Клиент отдан в работу": "Клієнта передано в роботу", "Клиенты будут закреплены за вами": "Клієнти будуть закріплені за вами", "Комиссия агентства": "Комісія агентства", "Кому отдать": "Кому передати", "Конверсия лид → сделка": "Конверсія лід → угода", "Курс грн за $ (необязательно)": "Курс грн за $ (необов'язково)", "Лидов всего": "Лідів усього", "Материалы Drive": "Матеріали Drive", "Материалы застройщиков для агентств": "Матеріали забудовників для агентств", "Менеджер": "Менеджер", "Менеджеры загрузили клиентов, которые уже есть в CRM. Менеджеры этого не видят — решение за вами.": "Менеджери завантажили клієнтів, які вже є в CRM. Менеджери цього не бачать — рішення за вами.", "Не назначен": "Не призначено", "Не сохранять": "Не зберігати", "Не удалось найти клиентов. Проверьте текст или скриншот.": "Не вдалося знайти клієнтів. Перевірте текст або скриншот.", "Не указан": "Не вказано", "Новые лиды и сделки по неделям": "Нові ліди та угоди по тижнях", "Новый ЖК": "Новий ЖК", "Новых за период": "Нових за період", "Новых лидов за период": "Нових лідів за період", "Общее": "Загальне", "Определить автоматически": "Визначити автоматично", "Отдать в работу": "Передати в роботу", "Отдать дубль в работу новым лидом": "Передати дубль у роботу новим лідом", "Отказы": "Відмови", "Отклонить": "Відхилити", "Открыть карточку и историю работы": "Відкрити картку та історію роботи", "Отметьте хотя бы одного клиента.": "Позначте хоча б одного клієнта.", "Очистить": "Очистити", "Ошибка сохранения:": "Помилка збереження:", "Папки застройщиков": "Папки забудовників", "Первый взнос": "Перший внесок", "Первый взнос, %": "Перший внесок, %", "Пишите — подберу планировки и рассчитаю рассрочку.": "Пишіть — підберу планування та розрахую розстрочку.", "Платёж в месяц": "Платіж на місяць", "Площадь, м²": "Площа, м²", "По названию": "За назвою", "Подбор под клиента": "Підбір під клієнта", "Подборка новостроек от": "Добірка новобудов від", "Подборка скопирована": "Добірку скопійовано", "Подобрать ЖК": "Підібрати ЖК", "Подходящих ЖК не найдено — уточните бюджет или район в заметке клиента.": "Відповідних ЖК не знайдено — уточніть бюджет або район у нотатці клієнта.", "Поздравить": "Привітати", "Презентации": "Презентації", "Проверить список": "Перевірити список", "Проверяем список…": "Перевіряємо список…", "Пропустить дубль": "Пропустити дубль", "Просрочен следующий контакт": "Прострочено наступний контакт", "Просроченных и забытых лидов нет.": "Прострочених і забутих лідів немає.", "Просрочено": "Прострочено", "Распознать клиента": "Розпізнати клієнта", "Рассрочка": "Розстрочка", "Расчёт без удорожания. Точные условия рассрочки — в папке застройщика на Drive.": "Розрахунок без подорожчання. Точні умови розстрочки — у папці забудовника на Drive.", "Редактировать ЖК": "Редагувати ЖК", "Рейтинг менеджеров": "Рейтинг менеджерів", "С днём рождения!": "З днем народження!", "Сдан": "Зданий", "Сделки, активность и дисциплина по каждому менеджеру. «Просрочено» и «Без движения» — лиды, которые могут потеряться.": "Угоди, активність і дисципліна по кожному менеджеру. «Прострочено» та «Без руху» — ліди, які можуть загубитися.", "Сколько лидов, пришедших за период, дошли до каждого этапа, и конверсия от первого этапа.": "Скільки лідів, що прийшли за період, дійшли до кожного етапу, і конверсія від першого етапу.", "Скопировать": "Скопіювати", "Скопируйте текст": "Скопіюйте текст", "Скриншот переписки": "Скриншот листування", "Скрыть": "Приховати", "Скрыть материалы": "Приховати матеріали", "Сначала дешевле": "Спочатку дешевші", "Сортировка": "Сортування", "Сохраняем…": "Зберігаємо…", "Список / Excel": "Список / Excel", "Срок сдачи": "Термін здачі", "Срок, месяцев": "Термін, місяців", "Ссылка на DIM.RIA": "Посилання на DIM.RIA", "Ссылка на Drive": "Посилання на Drive", "Стоимость": "Вартість", "Строится": "Будується", "Требуют внимания": "Потребують уваги", "Убрать": "Прибрати", "Условия рассрочки": "Умови розстрочки", "Цена м² до, $": "Ціна м² до, $", "Цена м² от, $": "Ціна м² від, $", "Цена м², $": "Ціна м², $", "Читаем переписку…": "Читаємо листування…", "Читаем файл…": "Читаємо файл…", "Этап: Новый Лид": "Етап: Новий лід", "вашего менеджера": "вашого менеджера", "цена по запросу": "ціна за запитом", "Площадки без результатов по этому запросу:": "Майданчики без результатів за цим запитом:", "Открыть поиск на площадке": "Відкрити пошук на майданчику", "На площадке нет отдельной выдачи по этому городу": "На майданчику немає окремої видачі по цьому місту"},en:{"+ Добавить ЖК": "+ Add complex", "Новобудови": "New builds", "Отказ": "Rejected", "Отложили": "Postponed", "Переуступка": "Assignment", "Сдача": "Completion", "Фиксация клиента": "Client registration", "CRM берёт бюджет, комнаты и район из заметки клиента и показывает подходящие ЖК.": "CRM takes the budget, rooms and district from the client's note and shows matching complexes.", "Адрес": "Address", "Аналитика руководителя": "Manager dashboard", "Без движения": "Stalled", "Без движения больше 7 дней": "Stalled over 7 days", "Без следующего контакта": "No next contact", "В подборке": "In selection", "В подборку": "Add to selection", "В работе сейчас": "Active now", "Воронка лидов за период": "Lead funnel for the period", "Воронка, источники, менеджеры и лиды, которые теряются. Видят только директор и тех. администратор.": "Funnel, sources, managers and leads at risk. Visible only to the director and tech admin.", "Вставьте список или выберите файл.": "Paste a list or choose a file.", "Встречи/показы": "Meetings/viewings", "Выберите клиента": "Choose a client", "Выберите скриншоты или вставьте текст переписки.": "Choose screenshots or paste the chat text.", "Выбрать скриншоты переписки": "Choose chat screenshots", "Выбрать файл Excel или CSV": "Choose Excel or CSV file", "Дата лида": "Lead date", "До 10 скриншотов одной переписки. Подходят Telegram, Viber, WhatsApp, Instagram.": "Up to 10 screenshots of one chat. Telegram, Viber, WhatsApp, Instagram are supported.", "Дом сдан": "Completed", "Дубль отклонён": "Duplicate rejected", "ЖК, застройщик или адрес": "Complex, developer or address", "За период лидов нет.": "No leads for the period.", "Завтра ваш день рождения": "Tomorrow is your birthday", "Загрузка лидов": "Lead import", "Заметка": "Note", "Застройщик": "Developer", "Или вставьте текст переписки": "Or paste the chat text", "Источник (если не указан в списке)": "Source (if not in the list)", "Источники лидов": "Lead sources", "Какие площадки приводят клиентов, которые доходят до встречи и сделки.": "Which channels bring clients who reach a meeting and a deal.", "Клиент отдан в работу": "Client assigned", "Клиенты будут закреплены за вами": "Clients will be assigned to you", "Комиссия агентства": "Agency commission", "Кому отдать": "Assign to", "Конверсия лид → сделка": "Lead → deal conversion", "Курс грн за $ (необязательно)": "UAH per $ rate (optional)", "Лидов всего": "Total leads", "Материалы Drive": "Drive materials", "Материалы застройщиков для агентств": "Developer materials for agencies", "Менеджер": "Manager", "Менеджеры загрузили клиентов, которые уже есть в CRM. Менеджеры этого не видят — решение за вами.": "Managers uploaded clients that are already in the CRM. Managers don't see this — the decision is yours.", "Не назначен": "Unassigned", "Не сохранять": "Don't save", "Не удалось найти клиентов. Проверьте текст или скриншот.": "No clients found. Check the text or screenshot.", "Не указан": "Not set", "Новые лиды и сделки по неделям": "New leads and deals by week", "Новый ЖК": "New complex", "Новых за период": "New in period", "Новых лидов за период": "New leads in period", "Общее": "General", "Определить автоматически": "Detect automatically", "Отдать в работу": "Assign", "Отдать дубль в работу новым лидом": "Assign duplicate as a new lead", "Отказы": "Rejections", "Отклонить": "Reject", "Открыть карточку и историю работы": "Open card and history", "Отметьте хотя бы одного клиента.": "Select at least one client.", "Очистить": "Clear", "Ошибка сохранения:": "Save error:", "Папки застройщиков": "Developer folders", "Первый взнос": "Down payment", "Первый взнос, %": "Down payment, %", "Пишите — подберу планировки и рассчитаю рассрочку.": "Message me — I'll pick layouts and calculate the installment plan.", "Платёж в месяц": "Monthly payment", "Площадь, м²": "Area, m²", "По названию": "By name", "Подбор под клиента": "Match for a client", "Подборка новостроек от": "New-build selection from", "Подборка скопирована": "Selection copied", "Подобрать ЖК": "Find complexes", "Подходящих ЖК не найдено — уточните бюджет или район в заметке клиента.": "No matching complexes — refine the budget or district in the client's note.", "Поздравить": "Congratulate", "Презентации": "Presentations", "Проверить список": "Check list", "Проверяем список…": "Checking list…", "Пропустить дубль": "Skip duplicate", "Просрочен следующий контакт": "Next contact overdue", "Просроченных и забытых лидов нет.": "No overdue or forgotten leads.", "Просрочено": "Overdue", "Распознать клиента": "Recognize client", "Рассрочка": "Installment", "Расчёт без удорожания. Точные условия рассрочки — в папке застройщика на Drive.": "Calculated without markup. Exact terms are in the developer's Drive folder.", "Редактировать ЖК": "Edit complex", "Рейтинг менеджеров": "Manager leaderboard", "С днём рождения!": "Happy birthday!", "Сдан": "Completed", "Сделки, активность и дисциплина по каждому менеджеру. «Просрочено» и «Без движения» — лиды, которые могут потеряться.": "Deals, activity and discipline per manager. “Overdue” and “Stalled” are leads at risk of being lost.", "Сколько лидов, пришедших за период, дошли до каждого этапа, и конверсия от первого этапа.": "How many leads from the period reached each stage, and conversion from the first stage.", "Скопировать": "Copy", "Скопируйте текст": "Copy the text", "Скриншот переписки": "Chat screenshot", "Скрыть": "Hide", "Скрыть материалы": "Hide materials", "Сначала дешевле": "Cheapest first", "Сортировка": "Sort", "Сохраняем…": "Saving…", "Список / Excel": "List / Excel", "Срок сдачи": "Completion date", "Срок, месяцев": "Term, months", "Ссылка на DIM.RIA": "DIM.RIA link", "Ссылка на Drive": "Drive link", "Стоимость": "Price", "Строится": "Under construction", "Требуют внимания": "Need attention", "Убрать": "Remove", "Условия рассрочки": "Installment terms", "Цена м² до, $": "Price per m² to, $", "Цена м² от, $": "Price per m² from, $", "Цена м², $": "Price per m², $", "Читаем переписку…": "Reading the chat…", "Читаем файл…": "Reading file…", "Этап: Новый Лид": "Stage: New lead", "вашего менеджера": "your manager", "цена по запросу": "price on request", "Площадки без результатов по этому запросу:": "Platforms with no results for this search:", "Открыть поиск на площадке": "Open search on the platform", "На площадке нет отдельной выдачи по этому городу": "This platform has no separate listing for this city"}};
+// Переводы нового календаря
+const uiCalendar = {"uk": {"Расписание": "Розклад", "3 дня": "3 дні", "Сегодня": "Сьогодні", "Подписание": "Підписання", "Касания из карточек": "Дотики з карток", "Поиск: клиент, телефон, адрес...": "Пошук: клієнт, телефон, адреса...", "Только мои": "Лише мої", "Как прошло? Отметьте итог": "Як пройшло? Позначте підсумок", "Проведено": "Проведено", "Не пришёл": "Не прийшов", "Клиент не пришёл": "Клієнт не прийшов", "Просроченные касания": "Прострочені дотики", "Маршрут показов на день": "Маршрут показів на день", "Маршрут показов": "Маршрут показів", "Загрузка за период": "Завантаження за період", "Новое событие": "Нова подія", "Добавьте название": "Додайте назву", "В это время уже есть": "На цей час уже є", "Карточка": "Картка", "Клиент: имя или телефон (необязательно)": "Клієнт: ім'я або телефон (необов'язково)", "Объект из вторички (необязательно)": "Об'єкт із вторинки (необов'язково)", "Адрес или место встречи": "Адреса або місце зустрічі", "За 5 минут": "За 5 хвилин", "За 15 минут": "За 15 хвилин", "За 30 минут": "За 30 хвилин", "За 1 час": "За 1 годину", "За 2 часа": "За 2 години", "За 1 день": "За 1 день", "Заметка к событию": "Нотатка до події", "Итог": "Підсумок", "Запланировано": "Заплановано", "Перенесено": "Перенесено", "Отменено": "Скасовано", "Что сказал клиент, следующий шаг...": "Що сказав клієнт, наступний крок...", "Сохранить": "Зберегти", "В Google Календарь": "У Google Календар", "В календарь телефона": "У календар телефону", "Напомнить клиенту": "Нагадати клієнту", "Для Viber и Telegram текст копируется — вставьте его в чат.": "Для Viber і Telegram текст копіюється — вставте його в чат.", "На эти две недели событий нет. Нажмите «+», чтобы добавить.": "На ці два тижні подій немає. Натисніть «+», щоб додати.", "Свободный день — добавить событие": "Вільний день — додати подію", "Следующие 2 недели": "Наступні 2 тижні", "касание": "дотик", "мин": "хв", "ч": "год", "адр.": "адр.", "Напоминание": "Нагадування", "Добрый день": "Добрий день", "Напоминаю о встрече": "Нагадую про зустріч", "в": "о", "Раздел в разработке. Скоро здесь появятся новостройки.": "Розділ у розробці. Незабаром тут з'являться новобудови."}, "en": {"Расписание": "Schedule", "3 дня": "3 days", "Сегодня": "Today", "Подписание": "Signing", "Касания из карточек": "Follow-ups from cards", "Поиск: клиент, телефон, адрес...": "Search: client, phone, address...", "Только мои": "Only mine", "Как прошло? Отметьте итог": "How did it go? Mark the result", "Проведено": "Done", "Не пришёл": "No-show", "Клиент не пришёл": "Client didn't come", "Просроченные касания": "Overdue follow-ups", "Маршрут показов на день": "Today's viewing route", "Маршрут показов": "Viewing route", "Загрузка за период": "Workload for the period", "Новое событие": "New event", "Добавьте название": "Add title", "В это время уже есть": "Already booked at this time", "Карточка": "Card", "Клиент: имя или телефон (необязательно)": "Client: name or phone (optional)", "Объект из вторички (необязательно)": "Resale property (optional)", "Адрес или место встречи": "Address or meeting place", "За 5 минут": "5 minutes before", "За 15 минут": "15 minutes before", "За 30 минут": "30 minutes before", "За 1 час": "1 hour before", "За 2 часа": "2 hours before", "За 1 день": "1 day before", "Заметка к событию": "Event note", "Итог": "Result", "Запланировано": "Planned", "Перенесено": "Rescheduled", "Отменено": "Canceled", "Что сказал клиент, следующий шаг...": "What the client said, next step...", "Сохранить": "Save", "В Google Календарь": "To Google Calendar", "В календарь телефона": "To phone calendar", "Напомнить клиенту": "Remind client", "Для Viber и Telegram текст копируется — вставьте его в чат.": "For Viber and Telegram the text is copied — paste it into the chat.", "На эти две недели событий нет. Нажмите «+», чтобы добавить.": "No events for these two weeks. Tap “+” to add one.", "Свободный день — добавить событие": "Free day — add event", "Следующие 2 недели": "Next 2 weeks", "касание": "follow-up", "мин": "min", "ч": "h", "адр.": "addr.", "Напоминание": "Reminder", "Добрый день": "Hello", "Напоминаю о встрече": "A reminder about our meeting", "в": "at", "Раздел в разработке. Скоро здесь появятся новостройки.": "Section in progress. New builds will appear here soon."}};
 function i18nDict(lang){
   if (i18nCache.lang !== lang){
     i18nCache = {
       lang,
-      dict: {...(uiPhraseTranslations[lang] || {}), ...((uiExtra && uiExtra[lang]) || {}), ...(uiNewSections[lang] || {})},
+      dict: {...(uiPhraseTranslations[lang] || {}), ...((uiExtra && uiExtra[lang]) || {}), ...(uiNewSections[lang] || {}), ...(uiCalendar[lang] || {})},
       templates: (uiTemplates || []).map(t => [new RegExp(t[0]), lang === "uk" ? t[1] : t[2]])
     };
   }
@@ -1460,7 +1462,552 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
   </Modal>;
 }
 
-function Calendar({events,setEvents,leads,setLeads,onOpenLead,currentProfile,role,lang}) {
+// ===== Календарь в стиле Google Calendar (события хранятся в Supabase, таблица calendar) =====
+const CAL_TYPES = {
+  "Звонок":{c:"#2563eb",i:"📞"},
+  "Встреча":{c:"#7c3aed",i:"🤝"},
+  "Показ":{c:"#16a34a",i:"🏠"},
+  "Задача":{c:"#d97706",i:"✅"},
+  "Подписание":{c:"#dc2626",i:"✍️"},
+  "Касание":{c:"#64748b",i:"⏰"}
+};
+const CAL_EVENT_TYPES = ["Звонок","Встреча","Показ","Задача","Подписание"];
+const CAL_STATUSES = [["planned","Запланировано"],["done","Проведено"],["moved","Перенесено"],["noshow","Клиент не пришёл"],["canceled","Отменено"]];
+const CAL_DURATIONS = [15,30,45,60,90,120,180];
+const CAL_START_H = 7, CAL_END_H = 23, CAL_HOUR_PX = 52;
+const calPad = n => String(n).padStart(2,"0");
+const calIso = d => `${d.getFullYear()}-${calPad(d.getMonth()+1)}-${calPad(d.getDate())}`;
+const calAddDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+const calDayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const calWeekStart = d => calAddDays(calDayStart(d), -((d.getDay()+6)%7));
+const calStart = e => new Date(`${e.date}T${e.time || "09:00"}:00`);
+const calMin = e => { const [h,m] = String(e.time || "09:00").split(":").map(Number); return (h||0)*60 + (m||0); };
+const calColor = e => (CAL_TYPES[e.type] || CAL_TYPES["Задача"]).c;
+const calIcon = e => (CAL_TYPES[e.type] || CAL_TYPES["Задача"]).i;
+const calLocale = lang => lang === "uk" ? "uk-UA" : lang === "en" ? "en-GB" : "ru-RU";
+function calParseLeadNext(s){ if(!s) return null; const d = new Date(String(s).trim().replace(" ","T")); return isNaN(d) ? null : d; }
+
+function calDbToEvent(r){
+  const s = r.start_at ? new Date(r.start_at) : new Date();
+  const en = r.end_at ? new Date(r.end_at) : null;
+  return {
+    id:String(r.id), dbId:r.id,
+    leadId:r.lead_id ? String(r.lead_id) : "", propertyId:r.property_id ? String(r.property_id) : "",
+    client:r.client_name || "", type:r.event_type || "Задача", title:r.title || "",
+    date:calIso(s), time:`${calPad(s.getHours())}:${calPad(s.getMinutes())}`,
+    duration:en ? Math.max(15, Math.round((en - s)/60000)) : 60,
+    reminder:r.reminder_before ?? 60, sound:r.sound || "classic",
+    manager:r.manager_name || "", manager_email:r.manager_email || "",
+    status:r.status || "planned", location:r.location || "", result:r.result || "",
+    description:r.description || "", created_by:r.created_by ?? null
+  };
+}
+function calEventToDb(e, profile){
+  const s = calStart(e);
+  const dur = Number(e.duration) || 60;
+  const num = v => /^\d+$/.test(String(v || "")) ? Number(v) : null;
+  const row = {
+    title:e.title || e.type, event_type:e.type,
+    lead_id:num(e.leadId), property_id:num(e.propertyId),
+    start_at:s.toISOString(), end_at:new Date(s.getTime() + dur*60000).toISOString(),
+    reminder_before:Number(e.reminder) || 60, description:e.description || null,
+    manager_name:e.manager || null, manager_email:e.manager_email || null,
+    status:e.status || "planned", location:e.location || null, result:e.result || null,
+    sound:e.sound || "classic", client_name:e.client || null, updated_at:new Date().toISOString()
+  };
+  if(!e.dbId) row.created_by = num(profile?.id);
+  return row;
+}
+const calComparable = e => JSON.stringify({...e, notified:undefined});
+
+// Хранилище событий: Supabase вместо localStorage, чтобы календарь был общим для всех устройств и руководителя.
+// API такой же, как у прежнего useStorage("events"): [events, setEvents], поэтому остальной код не меняется.
+function useCalendarEvents(profile){
+  const [events,setRaw] = useState([]);
+  const ref = useRef([]);
+  const pending = useRef(new Set());
+  const readNotified = () => { try { return new Set(JSON.parse(localStorage.getItem("events_notified") || "[]")); } catch { return new Set(); } };
+
+  const load = async () => {
+    if(!profile) return;
+    const {data,error} = await supabase.from("calendar").select("*").order("start_at", {ascending:true});
+    if(error){ console.warn("calendar load:", error.message); return; }
+    const nt = readNotified();
+    const loaded = (data || []).map(r => ({...calDbToEvent(r), notified:nt.has(String(r.id))}));
+    const unsaved = ref.current.filter(e => !e.dbId); // ещё сохраняются — не теряем
+    ref.current = [...unsaved, ...loaded];
+    setRaw(ref.current);
+  };
+
+  // Разовый перенос событий, которые раньше хранились только в браузере этого телефона. Старая копия не удаляется.
+  const migrate = async () => {
+    try {
+      if(localStorage.getItem("events_migrated_v1")) return;
+      const old = JSON.parse(localStorage.getItem("events") || "[]");
+      const real = (Array.isArray(old) ? old : []).filter(e => e && e.date && !["EV-1","EV-2"].includes(e.id));
+      if(real.length){
+        const {error} = await supabase.from("calendar").insert(real.map(e => calEventToDb(e, profile)));
+        if(error){ console.warn("calendar migrate:", error.message); return; }
+      }
+      localStorage.setItem("events_migrated_v1", "1");
+    } catch(err){ console.warn(err); }
+  };
+
+  useEffect(() => {
+    if(!profile?.id) return;
+    (async () => { await migrate(); await load(); })();
+    const onVis = () => { if(document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVis);
+    const t = setInterval(load, 60000);
+    return () => { document.removeEventListener("visibilitychange", onVis); clearInterval(t); };
+  }, [profile?.id]);
+
+  const setEvents = (next) => {
+    const prev = ref.current;
+    const arr = typeof next === "function" ? next(prev) : next;
+    ref.current = arr; setRaw(arr);
+    try { const nt = readNotified(); arr.forEach(e => { if(e.notified) nt.add(String(e.id)); }); localStorage.setItem("events_notified", JSON.stringify([...nt].slice(-500))); } catch {}
+    const prevById = new Map(prev.map(e => [String(e.id), e]));
+    const nextIds = new Set(arr.map(e => String(e.id)));
+    prev.forEach(e => {
+      if(!nextIds.has(String(e.id)) && e.dbId) supabase.from("calendar").delete().eq("id", e.dbId).then(({error}) => { if(error) alert("Ошибка удаления события: " + error.message); });
+    });
+    arr.forEach(e => {
+      const key = String(e.id);
+      if(!e.dbId){
+        if(pending.current.has(key)) return;
+        pending.current.add(key);
+        supabase.from("calendar").insert(calEventToDb(e, profile)).select().single().then(({data,error}) => {
+          pending.current.delete(key);
+          if(error){ alert("Ошибка сохранения события: " + error.message); ref.current = ref.current.filter(x => String(x.id) !== key); setRaw(ref.current); return; }
+          const latest = ref.current.find(x => String(x.id) === key) || e;
+          const saved = {...latest, ...calDbToEvent(data), notified:!!latest.notified};
+          ref.current = ref.current.map(x => String(x.id) === key ? saved : x); setRaw(ref.current);
+        });
+        return;
+      }
+      const old = prevById.get(key);
+      if(old && calComparable(old) !== calComparable(e)) supabase.from("calendar").update(calEventToDb(e, profile)).eq("id", e.dbId).then(({error}) => { if(error) alert("Ошибка сохранения события: " + error.message); });
+    });
+  };
+  return [events, setEvents, load];
+}
+
+// Раскладка пересекающихся событий по колонкам, как в Google Calendar
+function calLayout(list){
+  const items = [...list].sort((a,b) => calMin(a) - calMin(b));
+  const out = []; let cluster = []; let lanesEnd = []; let clusterEnd = -1;
+  const flush = () => { const n = Math.max(1, lanesEnd.length); cluster.forEach(c => { c.lanes = n; out.push(c); }); cluster = []; lanesEnd = []; clusterEnd = -1; };
+  items.forEach(e => {
+    const s = calMin(e), en = s + Math.max(20, Number(e.duration) || 60);
+    if(cluster.length && s >= clusterEnd) flush();
+    let lane = lanesEnd.findIndex(x => x <= s);
+    if(lane < 0){ lane = lanesEnd.length; lanesEnd.push(en); } else lanesEnd[lane] = en;
+    cluster.push({e, lane}); clusterEnd = Math.max(clusterEnd, en);
+  });
+  if(cluster.length) flush();
+  return out;
+}
+const calUtc = d => d.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+function calGoogleLink(e, phone){
+  const s = calStart(e), en = new Date(s.getTime() + (Number(e.duration)||60)*60000);
+  const details = [e.client && `Клиент: ${e.client}`, phone && `Телефон: ${phone}`, e.description].filter(Boolean).join("\n");
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(e.title || e.type)}&dates=${calUtc(s)}/${calUtc(en)}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(e.location || "")}`;
+}
+function calDownloadIcs(e, phone){
+  const s = calStart(e), en = new Date(s.getTime() + (Number(e.duration)||60)*60000);
+  const esc = v => String(v || "").replace(/\\/g,"\\\\").replace(/\n/g,"\\n").replace(/[,;]/g, m => "\\" + m);
+  const body = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//CRM Real Estate//RU","BEGIN:VEVENT",`UID:${e.id}@crm-real-estate`,`DTSTAMP:${calUtc(new Date())}`,`DTSTART:${calUtc(s)}`,`DTEND:${calUtc(en)}`,`SUMMARY:${esc(e.title || e.type)}`,`LOCATION:${esc(e.location)}`,`DESCRIPTION:${esc([e.client && "Клиент: " + e.client, phone && "Телефон: " + phone, e.description].filter(Boolean).join("\n"))}`,"BEGIN:VALARM",`TRIGGER:-PT${Number(e.reminder)||30}M`,"ACTION:DISPLAY","DESCRIPTION:Напоминание","END:VALARM","END:VEVENT","END:VCALENDAR"].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([body], {type:"text/calendar;charset=utf-8"}));
+  a.download = `${(e.title || "event").replace(/[^\wА-Яа-яЁёІіЇїЄєҐґ -]/g,"").slice(0,40) || "event"}.ics`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+const calMapsLink = loc => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc)}`;
+function calRouteLink(locs){
+  if(locs.length === 1) return calMapsLink(locs[0]);
+  const last = locs[locs.length-1], mid = locs.slice(0,-1);
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(last)}&waypoints=${encodeURIComponent(mid.join("|"))}&travelmode=driving`;
+}
+
+function Calendar({events,setEvents,leads,setLeads,onOpenLead,currentProfile,role,lang,properties=[],users=[]}) {
+  const isAdmin = role === "Администратор тех отдел" || role === "Администратор директор";
+  const narrow = typeof window !== "undefined" && window.innerWidth < 700;
+  const [view,setView] = useState(() => { try { return localStorage.getItem("cal_view") || (narrow ? "agenda" : "week"); } catch { return narrow ? "agenda" : "week"; } });
+  useEffect(() => { try { localStorage.setItem("cal_view", view); } catch {} }, [view]);
+  const [cursor,setCursor] = useState(() => new Date());
+  const [open,setOpen] = useState(null);
+  const [search,setSearch] = useState("");
+  const [typeFilter,setTypeFilter] = useState([]);
+  const [managerFilter,setManagerFilter] = useState("all");
+  const [showTouches,setShowTouches] = useState(true);
+  const [leadQuery,setLeadQuery] = useState("");
+  const [showNotify,setShowNotify] = useState(false);
+  const [, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick(x => x+1), 60000); return () => clearInterval(t); }, []);
+  const gridRef = useRef(null);
+  const touchRef = useRef(null);
+
+  const loc = calLocale(lang);
+  const now = new Date();
+  const todayIso = calIso(now);
+  const myEmail = String(currentProfile?.email || "").toLowerCase();
+  const myName = currentProfile?.full_name || currentProfile?.name || "";
+  const leadById = useMemo(() => new Map((leads||[]).map(l => [String(l.id), l])), [leads]);
+  const propById = useMemo(() => new Map((properties||[]).map(p => [String(p.id), p])), [properties]);
+
+  // «Касания» — дата следующего контакта из карточек клиентов, автоматически видна в календаре
+  const touches = useMemo(() => (leads||[]).filter(l => !["Сделка","Отказ"].includes(l.status)).map(l => {
+    const d = calParseLeadNext(l.nextContact); if(!d) return null;
+    return {id:"T-"+l.id, virtual:true, leadId:String(l.id), client:l.name, type:"Касание", title:l.name, date:calIso(d), time:`${calPad(d.getHours())}:${calPad(d.getMinutes())}`, duration:30, manager:l.manager, manager_email:l.manager_email, status:"planned"};
+  }).filter(Boolean), [leads]);
+
+  const isMine = e => (e.manager_email && String(e.manager_email).toLowerCase() === myEmail) || (!e.manager_email && e.manager === myName);
+  const matchesManager = e => managerFilter === "all" ? true : managerFilter === "me" ? isMine(e) : e.manager === managerFilter;
+  const q = search.trim().toLowerCase();
+  const real = (events||[]).map(e => ({...e, status:e.status || "planned", duration:Number(e.duration) || 60}));
+  const all = [...real, ...(showTouches ? touches.filter(t => !real.some(e => String(e.leadId) === t.leadId && e.date === t.date && e.time === t.time)) : [])];
+  const shown = all.filter(e =>
+    (typeFilter.length === 0 || typeFilter.includes(e.type)) && matchesManager(e) &&
+    (!q || `${e.title} ${e.client} ${leadById.get(String(e.leadId))?.phone || ""} ${e.location || ""}`.toLowerCase().includes(q))
+  );
+  const byDay = {};
+  shown.forEach(e => { (byDay[e.date] = byDay[e.date] || []).push(e); });
+  Object.values(byDay).forEach(list => list.sort((a,b) => calMin(a) - calMin(b)));
+
+  const managerNames = isAdmin ? [...new Set([...(users||[]).map(u => u.full_name).filter(Boolean), ...real.map(e => e.manager).filter(Boolean)])].sort() : [];
+  const endOf = e => calStart(e).getTime() + (Number(e.duration)||60)*60000;
+  const waitingResult = real.filter(e => e.status === "planned" && endOf(e) < now.getTime() && (isAdmin ? matchesManager(e) : true)).sort((a,b) => endOf(b) - endOf(a));
+  const overdueTouches = touches.filter(t => calStart(t) < now && matchesManager(t)).sort((a,b) => calStart(a) - calStart(b));
+
+  const step = dir => {
+    const d = new Date(cursor);
+    if(view === "month") d.setMonth(d.getMonth()+dir, 1);
+    else if(view === "week") d.setDate(d.getDate()+7*dir);
+    else if(view === "3day") d.setDate(d.getDate()+3*dir);
+    else if(view === "agenda") d.setDate(d.getDate()+14*dir);
+    else d.setDate(d.getDate()+dir);
+    setCursor(d);
+  };
+  const gridDays = view === "day" ? [calDayStart(cursor)] : view === "3day" ? [0,1,2].map(i => calAddDays(calDayStart(cursor), i)) : Array.from({length:7}, (_,i) => calAddDays(calWeekStart(cursor), i));
+  const fmt = (d, o) => d.toLocaleDateString(loc, o);
+  const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+  const title = view === "month" ? cap(fmt(cursor, {month:"long", year:"numeric"}))
+    : view === "day" ? cap(fmt(cursor, {weekday:"short", day:"numeric", month:"long"}))
+    : view === "agenda" ? cap(fmt(cursor, {month:"long", year:"numeric"}))
+    : `${fmt(gridDays[0], {day:"numeric", month:"short"})} – ${fmt(gridDays[gridDays.length-1], {day:"numeric", month:"short"})}`;
+
+  useEffect(() => {
+    if(!gridRef.current) return;
+    const h = Math.max(CAL_START_H, Math.min(now.getHours() - 1, 18));
+    gridRef.current.scrollTop = (h - CAL_START_H) * CAL_HOUR_PX;
+  }, [view]);
+
+  const onTouchStart = ev => { const t = ev.touches[0]; touchRef.current = {x:t.clientX, y:t.clientY}; };
+  const onTouchEnd = ev => {
+    const s = touchRef.current; touchRef.current = null; if(!s) return;
+    const t = ev.changedTouches[0]; const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if(Math.abs(dx) > 70 && Math.abs(dy) < 45) step(dx < 0 ? 1 : -1);
+  };
+
+  const create = (date, time, extra={}) => {
+    const t = time || `${calPad(Math.min(21, Math.max(8, now.getHours()+1)))}:00`;
+    setLeadQuery(""); setShowNotify(false);
+    setOpen({leadId:"", propertyId:"", type:"Звонок", title:"", date:date || calIso(cursor), time:t, duration:30, reminder:30, sound:"classic", status:"planned", location:"", result:"", description:"", manager:myName, manager_email:currentProfile?.email || "", notified:false, ...extra});
+  };
+  const openEvent = e => {
+    if(e.virtual){ const l = leadById.get(String(e.leadId)); if(l && onOpenLead) onOpenLead(l); return; }
+    setLeadQuery(""); setShowNotify(false); setOpen({...e});
+  };
+
+  const canEditOpenEvent = open && (!open.id || isAdmin || String(open.manager_email || "").toLowerCase() === myEmail);
+  const selectedLead = open ? leadById.get(String(open.leadId)) : null;
+  const selectedProp = open ? propById.get(String(open.propertyId)) : null;
+  const saveEvent = () => {
+    const lead = leadById.get(String(open.leadId));
+    const ev = {...open, id:open.id || "EV-"+Date.now(), client:lead?.name || "", title:(open.title || "").trim() || `${open.type}${lead ? ` — ${lead.name}` : ""}`, manager:open.manager || myName, manager_email:open.manager_email || currentProfile?.email || ""};
+    setEvents(prev => open.id ? prev.map(e => e.id === open.id ? ev : e) : [ev, ...prev]);
+    setOpen(null);
+  };
+  const deleteOpenEvent = () => { if(!open || !canEditOpenEvent) return; if(!window.confirm(tr(lang,"Удалить событие?"))) return; setEvents(prev => prev.filter(e => String(e.id) !== String(open.id))); setOpen(null); };
+  const setQuickStatus = (e, status) => setEvents(prev => prev.map(x => String(x.id) === String(e.id) ? {...x, status} : x));
+  const conflicts = open ? real.filter(e => String(e.id) !== String(open.id) && e.date === open.date && e.status !== "canceled" && String(e.manager_email || e.manager) === String(open.manager_email || open.manager) && calMin(e) < calMin(open) + (Number(open.duration)||60) && calMin(open) < calMin(e) + (Number(e.duration)||60)) : [];
+  const leadMatches = (() => {
+    const qq = leadQuery.trim().toLowerCase().replace(/\s+/g,"");
+    if(!qq) return [];
+    return (leads||[]).filter(l => `${l.name||""}${l.phone||""}`.toLowerCase().replace(/\s+/g,"").includes(qq)).slice(0,8);
+  })();
+  const clientText = e => {
+    const d = calStart(e);
+    const when = `${fmt(d, {weekday:"long", day:"numeric", month:"long"})} ${tr(lang,"в")} ${e.time}`;
+    const first = (e.client || "").split(" ")[0];
+    return `${tr(lang,"Добрый день")}${first ? ", " + first : ""}! ${tr(lang,"Напоминаю о встрече")}: ${when}.${e.location ? ` ${tr(lang,"Адрес")}: ${e.location}.` : ""}${myName ? ` ${myName}` : ""}`;
+  };
+  const phoneDigits = p => String(p || "").replace(/[^\d]/g,"");
+  const copy = async text => { try { await navigator.clipboard.writeText(text); } catch {} };
+
+  // Напоминания: только по своим запланированным событиям
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const current = Date.now();
+      (events||[]).forEach(ev => {
+        if(!ev.date || !ev.time || ev.notified || (ev.status && ev.status !== "planned") || !isMine(ev)) return;
+        const start = calStart(ev).getTime();
+        const remindMs = (Number(ev.reminder) || 60) * 60 * 1000;
+        if(current >= start - remindMs && current <= start + 60 * 1000){
+          playReminderSound(ev.sound || "classic");
+          alert(`${tr(lang,"Напоминание")}: ${ev.title || ev.type}\n${ev.date} ${ev.time}${ev.location ? "\n" + ev.location : ""}`);
+          setEvents(prev => prev.map(x => x.id === ev.id ? {...x, notified:true} : x));
+        }
+      });
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [events]);
+
+  const EvLine = ({e}) => {
+    const lead = leadById.get(String(e.leadId));
+    const st = CAL_STATUSES.find(s => s[0] === e.status);
+    return <button className={cn("gcalAgendaEv", e.virtual && "touch", e.status !== "planned" && "st-"+e.status)} style={{"--ev":calColor(e)}} onClick={() => openEvent(e)}>
+      <div className="gcalAgTime"><b>{e.time}</b><small>{e.virtual ? tr(lang,"касание") : `${e.duration} ${tr(lang,"мин")}`}</small></div>
+      <div className="gcalAgBody">
+        <b>{calIcon(e)} {e.title}</b>
+        <span>{[e.virtual ? lead?.status : (e.client && e.client !== e.title ? e.client : ""), e.location, isAdmin && e.manager].filter(Boolean).join(" · ")}</span>
+      </div>
+      {!e.virtual && e.status !== "planned" && st && <span className="gcalStatus">{tr(lang, st[1])}</span>}
+    </button>;
+  };
+
+  const renderGrid = () => {
+    const hours = Array.from({length:CAL_END_H - CAL_START_H}, (_,i) => CAL_START_H + i);
+    const height = hours.length * CAL_HOUR_PX;
+    const cols = `46px repeat(${gridDays.length}, minmax(0,1fr))`;
+    const nowTop = (now.getHours()*60 + now.getMinutes() - CAL_START_H*60) / 60 * CAL_HOUR_PX;
+    return <div className="card gcalGridCard">
+      <div className="gcalGridHead" style={{gridTemplateColumns:cols}}>
+        <div/>
+        {gridDays.map(d => { const iso = calIso(d); const cnt = (byDay[iso]||[]).length; return <button key={iso} className={cn("gcalHeadDay", iso === todayIso && "today")} onClick={() => { setCursor(d); setView("day"); }}>
+          <span>{fmt(d, {weekday:"short"})}</span><b>{d.getDate()}</b>{view !== "day" && cnt > 0 && <i>{cnt}</i>}
+        </button>; })}
+      </div>
+      <div className="gcalGridBody" ref={gridRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="gcalGridInner" style={{gridTemplateColumns:cols, height}}>
+          <div className="gcalHours">{hours.map(h => <div key={h} style={{height:CAL_HOUR_PX}}><span>{calPad(h)}:00</span></div>)}</div>
+          {gridDays.map(d => {
+            const iso = calIso(d);
+            return <div key={iso} className={cn("gcalCol", iso === todayIso && "today")} style={{height, backgroundSize:`100% ${CAL_HOUR_PX}px`}} onClick={ev => {
+              if(ev.target !== ev.currentTarget) return;
+              const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+              const mins = CAL_START_H*60 + Math.max(0, Math.floor(y / CAL_HOUR_PX * 2)) * 30;
+              create(iso, `${calPad(Math.floor(mins/60))}:${calPad(mins%60)}`);
+            }}>
+              {iso === todayIso && nowTop >= 0 && nowTop <= height && <div className="gcalNow" style={{top:nowTop}}/>}
+              {calLayout(byDay[iso] || []).map(({e,lane,lanes}) => {
+                const top = Math.min(height - 22, Math.max(0, (calMin(e) - CAL_START_H*60) / 60 * CAL_HOUR_PX));
+                const h = Math.max(22, (Number(e.duration)||60) / 60 * CAL_HOUR_PX - 2);
+                return <button key={e.id} className={cn("gcalEv", e.virtual && "touch", e.status !== "planned" && "st-"+e.status)} style={{top, height:h, left:`calc(${lane/lanes*100}% + 2px)`, width:`calc(${100/lanes}% - 4px)`, "--ev":calColor(e)}} onClick={() => openEvent(e)}>
+                  <b>{e.status === "done" ? "✓ " : ""}{e.title}</b>
+                  {h > 36 && <span>{e.time}{e.location ? ` · ${e.location}` : e.client && e.client !== e.title ? ` · ${e.client}` : ""}</span>}
+                </button>;
+              })}
+            </div>;
+          })}
+        </div>
+      </div>
+    </div>;
+  };
+
+  const renderMonth = () => {
+    const days = monthGrid(cursor.getFullYear(), cursor.getMonth());
+    return <div className="card gcalMonth" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div className="gcalMonthHead">{week.map(w => <b key={w}>{tr(lang,w)}</b>)}</div>
+      <div className="gcalMonthGrid">{days.map(d => {
+        const evs = byDay[d.iso] || [];
+        return <div key={d.iso} className={cn("gcalMCell", !d.current && "other", d.iso === todayIso && "today")} onClick={() => { setCursor(new Date(d.iso + "T12:00:00")); setView("day"); }}>
+          <span className="gcalMNum">{d.day}</span>
+          {evs.slice(0, narrow ? 2 : 3).map(e => <span key={e.id} className={cn("gcalMEv", e.virtual && "touch")} style={{"--ev":calColor(e)}}>{narrow ? "" : e.time + " "}{e.title}</span>)}
+          {evs.length > (narrow ? 2 : 3) && <span className="gcalMore">+{evs.length - (narrow ? 2 : 3)}</span>}
+        </div>;
+      })}</div>
+    </div>;
+  };
+
+  const renderAgenda = () => {
+    const start = calDayStart(cursor);
+    const days = Array.from({length:14}, (_,i) => calAddDays(start, i));
+    const withEvents = days.filter(d => (byDay[calIso(d)] || []).length || calIso(d) === todayIso);
+    return <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {withEvents.length === 0 && <div className="card gcalEmpty">{tr(lang,"На эти две недели событий нет. Нажмите «+», чтобы добавить.")}</div>}
+      {withEvents.map(d => {
+        const iso = calIso(d); const evs = byDay[iso] || [];
+        const showings = evs.filter(e => e.type === "Показ" && e.location && e.status !== "canceled");
+        return <div key={iso} className="gcalAgDay">
+          <button className={cn("gcalAgDate", iso === todayIso && "today")} onClick={() => { setCursor(d); setView("day"); }}>
+            <small>{fmt(d, {weekday:"short"})}</small><b>{d.getDate()}</b>
+          </button>
+          <div className="gcalAgList">
+            {evs.length === 0 && <button className="gcalAgEmpty" onClick={() => create(iso)}>{tr(lang,"Свободный день — добавить событие")}</button>}
+            {evs.map(e => <EvLine key={e.id} e={e}/>)}
+            {showings.length > 1 && <a className="gcalRoute" href={calRouteLink(showings.map(e => e.location))} target="_blank" rel="noreferrer">🗺 {tr(lang,"Маршрут показов")} ({showings.length})</a>}
+          </div>
+        </div>;
+      })}
+      <Button className="full" variant="soft" onClick={() => step(1)}>{tr(lang,"Следующие 2 недели")} ›</Button>
+    </div>;
+  };
+
+  const dayShowings = view === "day" ? (byDay[calIso(cursor)] || []).filter(e => e.type === "Показ" && e.location && e.status !== "canceled") : [];
+  const rangeEvents = (view === "week" || view === "3day") ? gridDays.flatMap(d => (byDay[calIso(d)] || []).filter(e => !e.virtual)) : [];
+  const load = {};
+  rangeEvents.forEach(e => { const k = e.manager || tr(lang,"Не назначен"); load[k] = (load[k] || 0) + 1; });
+
+  return <main className="screen gcal" style={{maxWidth:"100%"}}>
+    <div className="card gcalTop">
+      <div className="gcalBar">
+        <button className="gcalToday" onClick={() => setCursor(new Date())}>{tr(lang,"Сегодня")}</button>
+        <button className="gcalNav" aria-label="prev" onClick={() => step(-1)}>‹</button>
+        <button className="gcalNav" aria-label="next" onClick={() => step(1)}>›</button>
+        <h2 className="gcalTitle">{title}</h2>
+      </div>
+      <div className="gcalViews">{[["agenda","Расписание"],["day","День"],["3day","3 дня"],["week","Неделя"],["month","Месяц"]].map(([id,label]) => <button key={id} className={cn(view === id && "active")} onClick={() => setView(id)}>{tr(lang,label)}</button>)}</div>
+      <div className="gcalChips">
+        {CAL_EVENT_TYPES.map(t => <button key={t} className={cn("gcalChip", typeFilter.includes(t) && "on")} style={{"--ev":CAL_TYPES[t].c}} onClick={() => setTypeFilter(f => f.includes(t) ? f.filter(x => x !== t) : [...f, t])}><i/>{tr(lang,t)}</button>)}
+        <button className={cn("gcalChip", showTouches && "on")} style={{"--ev":CAL_TYPES["Касание"].c}} onClick={() => setShowTouches(v => !v)}><i/>{tr(lang,"Касания из карточек")}</button>
+      </div>
+      <div className="gcalFilters">
+        <div className="search" style={{margin:0, flex:1}}>🔎 <input value={search} onChange={e => setSearch(e.target.value)} placeholder={tr(lang,"Поиск: клиент, телефон, адрес...")}/></div>
+        {isAdmin && <select className="input gcalMgr" value={managerFilter} onChange={e => setManagerFilter(e.target.value)}>
+          <option value="all">{tr(lang,"Все менеджеры")}</option><option value="me">{tr(lang,"Только мои")}</option>
+          {managerNames.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>}
+      </div>
+    </div>
+
+    {(waitingResult.length > 0 || overdueTouches.length > 0) && (view === "agenda" || view === "day") && calIso(cursor) === todayIso && <div className="card gcalAttention">
+      {waitingResult.length > 0 && <>
+        <h3>📝 {tr(lang,"Как прошло? Отметьте итог")} <span className="badge gold">{waitingResult.length}</span></h3>
+        {waitingResult.slice(0,4).map(e => <div key={e.id} className="gcalAttRow">
+          <button className="gcalAttMain" onClick={() => openEvent(e)}><b>{calIcon(e)} {e.title}</b><span>{e.date} · {e.time}</span></button>
+          <div className="gcalAttBtns"><button onClick={() => setQuickStatus(e,"done")}>✓ {tr(lang,"Проведено")}</button><button onClick={() => setQuickStatus(e,"noshow")}>✗ {tr(lang,"Не пришёл")}</button><button onClick={() => openEvent(e)}>↻</button></div>
+        </div>)}
+      </>}
+      {overdueTouches.length > 0 && <>
+        <h3>⏰ {tr(lang,"Просроченные касания")} <span className="badge">{overdueTouches.length}</span></h3>
+        {overdueTouches.slice(0,5).map(t => <div key={t.id} className="gcalAttRow">
+          <button className="gcalAttMain" onClick={() => openEvent(t)}><b>{t.client}</b><span>{t.date} · {t.time}{isAdmin && t.manager ? ` · ${t.manager}` : ""}</span></button>
+          <div className="gcalAttBtns"><button onClick={() => create(todayIso, null, {leadId:t.leadId, type:"Звонок"})}>+ {tr(lang,"Звонок")}</button></div>
+        </div>)}
+      </>}
+    </div>}
+
+    {view === "day" && dayShowings.length > 0 && <a className="card gcalRouteCard" href={calRouteLink(dayShowings.map(e => e.location))} target="_blank" rel="noreferrer">🗺 <b>{tr(lang,"Маршрут показов на день")}</b><span>{dayShowings.length} {tr(lang,"адр.")} · Google Maps</span></a>}
+    {isAdmin && Object.keys(load).length > 0 && <div className="gcalLoad">{tr(lang,"Загрузка за период")}: {Object.entries(load).sort((a,b) => b[1]-a[1]).map(([m,c]) => <span key={m}>{m} · <b>{c}</b></span>)}</div>}
+
+    {view === "agenda" && renderAgenda()}
+    {(view === "day" || view === "3day" || view === "week") && renderGrid()}
+    {view === "month" && renderMonth()}
+
+    <button className="gcalFab" onClick={() => create(calIso(cursor) < todayIso ? todayIso : calIso(cursor))} aria-label={tr(lang,"Новое событие")}>+</button>
+
+    {open && <Modal onClose={() => setOpen(null)} wide>
+      <div className="gcalSheetHead" style={{"--ev":calColor(open)}}>
+        <i/><h2>{open.id ? tr(lang,"Событие") : tr(lang,"Новое событие")}</h2>
+        <button className="icon" onClick={() => setOpen(null)}>×</button>
+      </div>
+      <input className="gcalTitleInput" placeholder={tr(lang,"Добавьте название")} value={open.title} onChange={e => setOpen({...open, title:e.target.value})} disabled={!canEditOpenEvent}/>
+      <div className="gcalTypeRow">{CAL_EVENT_TYPES.map(t => <button key={t} className={cn(open.type === t && "on")} style={{"--ev":CAL_TYPES[t].c}} onClick={() => setOpen({...open, type:t, duration:open.id ? open.duration : (t === "Звонок" ? 15 : t === "Задача" ? 30 : 60)})} disabled={!canEditOpenEvent}>{CAL_TYPES[t].i} {tr(lang,t)}</button>)}</div>
+
+      <div className="gcalFormRow">
+        <span className="gcalIco">🕒</span>
+        <div className="gcalWhen">
+          <input className="input" type="date" value={open.date} onChange={e => setOpen({...open, date:e.target.value})} disabled={!canEditOpenEvent}/>
+          <input className="input" type="time" step="300" value={open.time} onChange={e => setOpen({...open, time:e.target.value})} disabled={!canEditOpenEvent}/>
+          <select className="input" value={open.duration || 60} onChange={e => setOpen({...open, duration:Number(e.target.value)})} disabled={!canEditOpenEvent}>{CAL_DURATIONS.map(m => <option key={m} value={m}>{m < 60 ? `${m} ${tr(lang,"мин")}` : `${m/60} ${tr(lang,"ч")}`}</option>)}</select>
+        </div>
+      </div>
+      {conflicts.length > 0 && <div className="gcalWarn">⚠️ {tr(lang,"В это время уже есть")}: {conflicts.map(c => `${c.time} ${c.title}`).join(", ")}</div>}
+
+      <div className="gcalFormRow">
+        <span className="gcalIco">👤</span>
+        <div style={{flex:1}}>
+          {selectedLead ? <div className="gcalLeadPicked">
+            <section><b>{selectedLead.name}</b><span>{selectedLead.phone} · {tr(lang, selectedLead.status)}</span></section>
+            <button className="btn soft" onClick={() => onOpenLead && onOpenLead(selectedLead)}>{tr(lang,"Карточка")}</button>
+            {canEditOpenEvent && <button className="icon" onClick={() => setOpen({...open, leadId:""})}>×</button>}
+          </div> : <>
+            <input className="input" placeholder={tr(lang,"Клиент: имя или телефон (необязательно)")} value={leadQuery} onChange={e => setLeadQuery(e.target.value)} disabled={!canEditOpenEvent}/>
+            {leadMatches.length > 0 && <div className="gcalLeadList">{leadMatches.map(l => <button key={l.id} onClick={() => { setOpen({...open, leadId:String(l.id)}); setLeadQuery(""); }}><b>{l.name}</b><span>{l.phone} · {tr(lang,l.status)}</span></button>)}</div>}
+          </>}
+        </div>
+      </div>
+
+      {(open.type === "Показ" || open.propertyId) && <div className="gcalFormRow">
+        <span className="gcalIco">🏢</span>
+        <select className="input" style={{flex:1}} value={open.propertyId || ""} onChange={e => { const p = propById.get(e.target.value); setOpen({...open, propertyId:e.target.value, location:(!open.location || open.location === open._autoLoc) && p ? `${p.title}, ${p.district}` : open.location, _autoLoc:p ? `${p.title}, ${p.district}` : ""}); }} disabled={!canEditOpenEvent}>
+          <option value="">{tr(lang,"Объект из вторички (необязательно)")}</option>
+          {[...(properties||[])].sort((a,b) => String(a.title).localeCompare(String(b.title))).map(p => <option key={p.id} value={p.id}>{p.title} · {p.district}{p.price ? ` · $${Number(p.price).toLocaleString()}` : ""}</option>)}
+        </select>
+      </div>}
+
+      <div className="gcalFormRow">
+        <span className="gcalIco">📍</span>
+        <input className="input" style={{flex:1}} placeholder={tr(lang,"Адрес или место встречи")} value={open.location || ""} onChange={e => setOpen({...open, location:e.target.value})} disabled={!canEditOpenEvent}/>
+        {open.location && <a className="btn soft" href={calMapsLink(open.location)} target="_blank" rel="noreferrer">🗺</a>}
+      </div>
+
+      <div className="gcalFormRow">
+        <span className="gcalIco">🔔</span>
+        <div className="gcalWhen">
+          <select className="input" value={open.reminder || 60} onChange={e => setOpen({...open, reminder:Number(e.target.value)})}>{[[5,"За 5 минут"],[15,"За 15 минут"],[30,"За 30 минут"],[60,"За 1 час"],[120,"За 2 часа"],[1440,"За 1 день"]].map(([v,l]) => <option key={v} value={v}>{tr(lang,l)}</option>)}</select>
+          <select className="input" value={open.sound || "classic"} onChange={e => setOpen({...open, sound:e.target.value})}>{soundOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+          <button className="btn soft" onClick={() => playReminderSound(open.sound || "classic")}>▶</button>
+        </div>
+      </div>
+
+      {isAdmin && <div className="gcalFormRow">
+        <span className="gcalIco">🧑‍💼</span>
+        <select className="input" style={{flex:1}} value={open.manager_email || ""} onChange={e => { const u = (users||[]).find(x => x.email === e.target.value); setOpen({...open, manager_email:e.target.value, manager:u?.full_name || open.manager}); }}>
+          {!((users||[]).some(u => u.email === open.manager_email)) && <option value={open.manager_email || ""}>{open.manager || tr(lang,"Не назначен")}</option>}
+          {(users||[]).filter(u => u.email).map(u => <option key={u.id} value={u.email}>{u.full_name || u.email}</option>)}
+        </select>
+      </div>}
+
+      <div className="gcalFormRow">
+        <span className="gcalIco">≡</span>
+        <textarea className="input" style={{flex:1, minHeight:60}} placeholder={tr(lang,"Заметка к событию")} value={open.description || ""} onChange={e => setOpen({...open, description:e.target.value})} disabled={!canEditOpenEvent}/>
+      </div>
+
+      {open.id && <div className="gcalResult">
+        <b>{tr(lang,"Итог")}</b>
+        <div className="gcalStatusRow">{CAL_STATUSES.map(([id,label]) => <button key={id} className={cn(open.status === id && "on")} onClick={() => setOpen({...open, status:id})} disabled={!canEditOpenEvent}>{tr(lang,label)}</button>)}</div>
+        <textarea className="input" placeholder={tr(lang,"Что сказал клиент, следующий шаг...")} value={open.result || ""} onChange={e => setOpen({...open, result:e.target.value})} disabled={!canEditOpenEvent}/>
+      </div>}
+
+      <div className="gcalActions">
+        {canEditOpenEvent && <Button className="full" onClick={saveEvent}>{tr(lang,"Сохранить")}</Button>}
+        {canEditOpenEvent && open.id && <Button className="full" variant="danger" onClick={deleteOpenEvent}>{tr(lang,"Удалить событие")}</Button>}
+      </div>
+      <div className="gcalExtra">
+        <a href={calGoogleLink(open, selectedLead?.phone)} target="_blank" rel="noreferrer">📅 {tr(lang,"В Google Календарь")}</a>
+        <button onClick={() => calDownloadIcs({...open, id:open.id || "new"}, selectedLead?.phone)}>📲 {tr(lang,"В календарь телефона")}</button>
+        {selectedLead?.phone && <button onClick={() => setShowNotify(v => !v)}>💬 {tr(lang,"Напомнить клиенту")}</button>}
+      </div>
+      {showNotify && selectedLead?.phone && <div className="gcalNotify">
+        <p>{clientText({...open, client:selectedLead.name})}</p>
+        <div>
+          <a href={`https://wa.me/${phoneDigits(selectedLead.phone)}?text=${encodeURIComponent(clientText({...open, client:selectedLead.name}))}`} target="_blank" rel="noreferrer">WhatsApp</a>
+          <a href={`viber://chat?number=%2B${phoneDigits(selectedLead.phone)}`} onClick={() => copy(clientText({...open, client:selectedLead.name}))}>Viber</a>
+          <a href={`https://t.me/+${phoneDigits(selectedLead.phone)}`} target="_blank" rel="noreferrer" onClick={() => copy(clientText({...open, client:selectedLead.name}))}>Telegram</a>
+          <button onClick={() => copy(clientText({...open, client:selectedLead.name}))}>{tr(lang,"Скопировать")}</button>
+        </div>
+        <small>{tr(lang,"Для Viber и Telegram текст копируется — вставьте его в чат.")}</small>
+      </div>}
+    </Modal>}
+  </main>;
+}
+
+
+// Прежний календарь — оставлен для отката, не используется.
+function CalendarLegacy({events,setEvents,leads,setLeads,onOpenLead,currentProfile,role,lang}) {
   const [view,setView] = useState("month");
   const now = new Date();
   const [year,setYear] = useState(now.getFullYear());
@@ -6142,7 +6689,7 @@ export default function App(){
   const [posts,setPostsRaw] = useState([]);
   const [properties,setPropertiesRaw] = useState([]);
 
-  const [events,setEvents] = useStorage("events",initialEvents);
+  const [events,setEvents] = useCalendarEvents(currentProfile); // раньше: useStorage("events") — только в браузере
   const [help,setHelp] = useState([]);
   const [agencies,setAgencies] = useState([]);
   const [users,setUsers] = useState([]);
@@ -6519,6 +7066,7 @@ export default function App(){
   ).trim();
   const visibleEvents = events.filter(e => {
     if (isTech) return true;
+    if (String(e.manager_email || "").toLowerCase() === String(currentProfile?.email || "").toLowerCase() && e.manager_email) return true;
     return visibleLeads.some(l => String(l.id) === String(e.leadId));
   });
 
@@ -6529,14 +7077,15 @@ export default function App(){
         <Top page={page} setPage={setPage} agencyName={agencyName} lang={lang}/>
         {page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role} currentProfile={currentProfile} lang={lang} users={users}/>} 
         {page==="clients"&&<Clients leads={visibleLeads} setLeads={setLeads} onOpen={setLead} currentProfile={currentProfile} role={role} users={users} lang={lang}/>} 
-        {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang}/>} 
+        {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang} properties={properties} users={users}/>} 
         {page==="properties"&&<Properties properties={properties} setProperties={setProperties} onOpen={setProperty} users={users} currentProfile={currentProfile} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}   
         {page==="deals"&&<Deals leads={visibleLeads} properties={properties} currentProfile={currentProfile} role={role} lang={lang}/>} 
         {page==="analytics"&&<StatisticsReporting onOpenLead={openLeadById} leads={visibleLeads} properties={properties} events={visibleEvents} role={role} users={users} activities={activities} currentProfile={currentProfile}/>} 
         {page==="tools"&&<AnalyticsWorkspace lang={lang} currentProfile={currentProfile} properties={properties} leads={visibleLeads} onOpenProperty={setProperty} agencyName={agencyName} theme={theme}/>} 
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role}/>} 
         {page==="access"&&role==="Администратор тех отдел"&&<Access agencies={agencies} setAgencies={setAgencies} users={users} setUsers={setUsers}/>} 
-        {page==="newbuilds"&&<NewBuilds role={role} leads={visibleLeads} currentProfile={currentProfile}/>}
+        {/* Новобудови временно пустой раздел; компонент NewBuilds и данные ЖК сохранены, вернуть: <NewBuilds role={role} leads={visibleLeads} currentProfile={currentProfile}/> */}
+        {page==="newbuilds"&&<div className="screen"><div className="card" style={{textAlign:"center",padding:"40px 18px"}}><div style={{fontSize:42}}>🏗</div><h3>{tr(lang,"Новобудови")}</h3><p className="muted">{tr(lang,"Раздел в разработке. Скоро здесь появятся новостройки.")}</p></div></div>}
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
         {lead&&<LeadModal key={lead.id} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile}/>} 

@@ -11,3 +11,138 @@
 .week,.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.week{text-align:center;font-size:12px;color:#71717a;margin:10px 0}.day{min-height:58px;border:0;background:#f4f4f5;border-radius:13px;text-align:left;padding:6px;font-size:11px}.day:hover{background:#fff7d6}.mutedDay{opacity:.45}.mini{display:block;margin-top:4px;background:#fef3c7;color:#92400e;border-radius:6px;padding:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.yearGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.monthBox,.weekRow{border:0;border-radius:18px;background:#f4f4f5;padding:14px;text-align:left;font-weight:800}.monthBox span,.weekRow span{display:block;color:#71717a;font-size:12px;margin-top:4px}.weekRow{display:flex;justify-content:space-between;align-items:center;width:100%;margin:6px 0}.event{cursor:pointer}
 .propsGrid{display:grid;gap:14px}.property{overflow:hidden}.propCover{height:240px;border-radius:26px;background:linear-gradient(135deg,#111827,#71717a,var(--gold));color:white;padding:16px;display:flex;flex-direction:column;justify-content:space-between;margin:-16px -16px 14px}.propCover h3{margin:0}.propHero{height:280px;background:linear-gradient(135deg,#111827,#71717a,var(--gold));color:white;border-radius:0 0 28px 28px;margin:-16px -16px 14px;padding:145px 16px 16px;position:relative}.propHero input{background:transparent;border:0;color:white;outline:0;font-size:25px;font-weight:950;width:100%}.heroClose{position:absolute;right:14px;top:14px}.mediaGrid{display:grid;gap:10px}.mediaTile{background:white;border-radius:20px;padding:10px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:white;border-radius:24px;padding:18px;box-shadow:0 2px 13px #0000000a}.stat span{font-size:12px;color:#71717a}.stat b{display:block;font-size:30px;margin-top:4px}.stageRow{display:flex;justify-content:space-between;border-bottom:1px solid #f4f4f5;padding:9px 0}
 @media(min-width:900px){.layout{display:grid;grid-template-columns:270px 1fr}.sidebar{display:block;background:#08080a;color:white;padding:22px;position:sticky;top:0;height:100vh}.logo{display:flex;gap:10px;align-items:center;margin-bottom:18px}.logo>div{display:grid;place-items:center;width:46px;height:46px;background:#facc15;color:#08080a;border-radius:16px}.logo span{display:block;color:#a1a1aa;font-size:12px}.roleBox{background:#ffffff12;border-radius:18px;padding:12px;margin-bottom:18px;color:#f5d76e;font-weight:900;font-size:12px}.sideBtn{width:100%;border:0;background:transparent;color:#d4d4d8;border-radius:18px;padding:13px 12px;display:flex;align-items:center;gap:10px;font-weight:900;text-align:left;margin-bottom:6px}.sideBtn.active{background:white;color:#08080a}.mainWrap{padding:24px}.main{max-width:none;min-height:calc(100vh - 48px);border-radius:32px;box-shadow:none;padding-bottom:24px}.top{position:relative;border-radius:32px}.bottom{display:none}.screen{padding:18px}.feedList{max-width:720px}.hero{flex-direction:row;align-items:center;justify-content:space-between}.kanbanCol{min-width:370px}.propsGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.stats{grid-template-columns:repeat(4,1fr)}.calendarLayout{display:grid;grid-template-columns:1.4fr .8fr;gap:14px}.modal{align-items:center}.sheet{border-radius:30px}.formGrid{grid-template-columns:1fr 1fr}.mediaGrid{grid-template-columns:repeat(3,1fr)}.yearGrid{grid-template-columns:repeat(4,1fr)}}
+
+/* ===== Календарь в стиле Google Calendar ===== */
+.gcal{padding-bottom:110px}
+.gcal .card{margin-bottom:10px}
+.gcalTop{padding:12px!important;position:sticky;top:0;z-index:5}
+.gcalBar{display:flex;align-items:center;gap:6px}
+.gcalToday{border:1px solid var(--line);background:transparent;border-radius:999px;padding:7px 14px;font-weight:800;font-size:13px;color:inherit}
+.gcalNav{border:0;background:transparent;width:34px;height:34px;border-radius:50%;font-size:22px;line-height:1;color:inherit;cursor:pointer}
+.gcalNav:hover,.gcalToday:hover{background:#0000000d}
+.gcalTitle{margin:0 0 0 4px;font-size:19px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.gcalViews{display:flex;gap:4px;margin:10px 0 8px;background:#0000000a;border-radius:12px;padding:3px}
+.gcalViews button{flex:1;border:0;background:transparent;border-radius:9px;padding:7px 2px;font-size:12px;font-weight:800;color:inherit;opacity:.7;cursor:pointer}
+.gcalViews button.active{background:#fff;opacity:1;box-shadow:0 1px 3px #0000001f;color:#111}
+.gcalChips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.gcalChips::-webkit-scrollbar{display:none}
+.gcalChip{flex:0 0 auto;display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;color:inherit;cursor:pointer}
+.gcalChip i{width:10px;height:10px;border-radius:3px;border:2px solid var(--ev)}
+.gcalChip.on{border-color:var(--ev);background:color-mix(in srgb,var(--ev) 12%,transparent)}
+.gcalChip.on i{background:var(--ev)}
+.gcalFilters{display:flex;gap:8px;margin-top:8px;align-items:center}
+.gcalMgr{max-width:180px;margin:0!important}
+
+/* Сетка по часам */
+.gcalGridCard{padding:0!important;overflow:hidden}
+.gcalGridHead{display:grid;border-bottom:1px solid var(--line);padding:6px 0}
+.gcalHeadDay{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:2px;color:inherit;cursor:pointer;position:relative;padding:2px 0}
+.gcalHeadDay span{font-size:11px;font-weight:700;text-transform:uppercase;opacity:.6}
+.gcalHeadDay b{font-size:18px;width:34px;height:34px;display:grid;place-items:center;border-radius:50%}
+.gcalHeadDay.today span{color:#1a73e8;opacity:1}
+.gcalHeadDay.today b{background:#1a73e8;color:#fff}
+.gcalHeadDay i{position:absolute;top:0;right:4px;font-style:normal;font-size:9px;font-weight:800;background:#0000000f;border-radius:6px;padding:0 4px}
+.gcalGridBody{max-height:calc(100vh - 290px);min-height:360px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.gcalGridInner{display:grid;position:relative}
+.gcalHours div{position:relative;border-top:1px solid transparent}
+.gcalHours span{position:absolute;top:-7px;right:6px;font-size:10px;opacity:.55;font-weight:600}
+.gcalHours div:first-child span{display:none}
+.gcalCol{position:relative;border-left:1px solid var(--line);background-image:linear-gradient(to bottom,var(--line) 1px,transparent 1px);cursor:pointer}
+.gcalCol.today{background-color:#1a73e80a}
+.gcalNow{position:absolute;left:0;right:0;height:2px;background:#ea4335;z-index:3;pointer-events:none}
+.gcalNow:before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:#ea4335}
+.gcalEv{position:absolute;z-index:2;border:0;border-radius:6px;background:var(--ev);color:#fff;text-align:left;padding:3px 6px;font-size:11px;line-height:1.25;overflow:hidden;cursor:pointer;box-shadow:0 1px 2px #0000002e;display:flex;flex-direction:column}
+.gcalEv b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+.gcalEv span{opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gcalEv.touch{background:color-mix(in srgb,var(--ev) 14%,#fff);color:#334155;border:1px dashed var(--ev)}
+.gcalEv.st-done{opacity:.6}
+.gcalEv.st-canceled,.gcalEv.st-noshow{opacity:.45;text-decoration:line-through}
+
+/* Месяц */
+.gcalMonth{padding:0!important;overflow:hidden}
+.gcalMonthHead{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11px;padding:8px 0;opacity:.6;text-transform:uppercase}
+.gcalMonthGrid{display:grid;grid-template-columns:repeat(7,1fr)}
+.gcalMCell{min-height:92px;border-top:1px solid var(--line);border-left:1px solid var(--line);padding:3px;display:flex;flex-direction:column;gap:2px;cursor:pointer;overflow:hidden}
+.gcalMCell:nth-child(7n+1){border-left:0}
+.gcalMCell.other{opacity:.4}
+.gcalMNum{align-self:center;font-size:12px;font-weight:700;width:24px;height:24px;display:grid;place-items:center;border-radius:50%}
+.gcalMCell.today .gcalMNum{background:#1a73e8;color:#fff}
+.gcalMEv{display:block;background:var(--ev);color:#fff;border-radius:4px;font-size:10px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:14px}
+.gcalMEv.touch{background:transparent;color:inherit;border-left:3px solid var(--ev)}
+.gcalMore{font-size:10px;font-weight:800;opacity:.6;padding-left:3px}
+
+/* Расписание (agenda) */
+.gcalAgDay{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.gcalAgDate{flex:0 0 48px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;color:inherit;cursor:pointer;padding:4px 0}
+.gcalAgDate small{font-size:11px;text-transform:uppercase;opacity:.6;font-weight:700}
+.gcalAgDate b{font-size:22px;width:40px;height:40px;display:grid;place-items:center;border-radius:50%}
+.gcalAgDate.today small{color:#1a73e8;opacity:1}
+.gcalAgDate.today b{background:#1a73e8;color:#fff}
+.gcalAgList{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.gcalAgendaEv{display:flex;align-items:center;gap:10px;border:0;border-radius:12px;background:color-mix(in srgb,var(--ev) 12%,#fff);border-left:5px solid var(--ev);padding:10px 12px;text-align:left;color:#111;cursor:pointer;width:100%}
+.gcalAgendaEv.touch{background:transparent;border:1px dashed var(--ev);border-left:5px solid var(--ev);color:inherit}
+.gcalAgendaEv.st-done{opacity:.6}
+.gcalAgendaEv.st-canceled,.gcalAgendaEv.st-noshow{opacity:.5}
+.gcalAgendaEv.st-canceled b,.gcalAgendaEv.st-noshow b{text-decoration:line-through}
+.gcalAgTime{display:flex;flex-direction:column;min-width:46px}
+.gcalAgTime b{font-size:14px}
+.gcalAgTime small{font-size:10px;opacity:.6}
+.gcalAgBody{flex:1;min-width:0;display:flex;flex-direction:column}
+.gcalAgBody b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gcalAgBody span{font-size:12px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gcalStatus{font-size:10px;font-weight:800;background:#00000012;border-radius:8px;padding:3px 6px;white-space:nowrap}
+.gcalAgEmpty{border:1px dashed var(--line);background:transparent;border-radius:12px;padding:12px;text-align:left;opacity:.6;color:inherit;cursor:pointer}
+.gcalEmpty{text-align:center;opacity:.7}
+.gcalRoute{font-size:12px;font-weight:800;color:#1a73e8;text-decoration:none;padding:2px 4px}
+
+/* Блок «требуют внимания» */
+.gcalAttention h3{display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:15px}
+.gcalAttRow{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.gcalAttMain{flex:1;min-width:150px;border:0;background:transparent;text-align:left;display:flex;flex-direction:column;color:inherit;cursor:pointer;padding:0}
+.gcalAttMain span{font-size:12px;opacity:.65}
+.gcalAttBtns{display:flex;gap:4px}
+.gcalAttBtns button{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;color:inherit;cursor:pointer}
+.gcalRouteCard{display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit}
+.gcalRouteCard span{margin-left:auto;font-size:12px;opacity:.65}
+.gcalLoad{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;margin:0 0 10px;opacity:.85}
+.gcalLoad span{background:#0000000d;border-radius:999px;padding:3px 9px}
+
+/* Кнопка «+» */
+.gcalFab{position:fixed;right:18px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:40;width:58px;height:58px;border-radius:18px;border:0;background:#fff;color:#1a73e8;font-size:34px;line-height:1;box-shadow:0 4px 14px #00000040;cursor:pointer}
+@media(min-width:900px){.gcalFab{bottom:32px;right:32px}.gcalGridBody{max-height:calc(100vh - 260px)}.gcalMCell{min-height:110px}}
+
+/* Карточка события */
+.gcalSheetHead{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.gcalSheetHead i{width:14px;height:14px;border-radius:4px;background:var(--ev)}
+.gcalSheetHead h2{flex:1;margin:0;font-size:18px}
+.gcalTitleInput{width:100%;border:0;border-bottom:2px solid var(--line);background:transparent;font-size:22px;padding:8px 2px;margin-bottom:10px;color:inherit;outline:none}
+.gcalTitleInput:focus{border-bottom-color:#1a73e8}
+.gcalTypeRow{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:6px}
+.gcalTypeRow button{flex:0 0 auto;border:1px solid var(--line);background:transparent;border-radius:999px;padding:7px 12px;font-size:13px;font-weight:700;color:inherit;cursor:pointer}
+.gcalTypeRow button.on{background:var(--ev);border-color:var(--ev);color:#fff}
+.gcalFormRow{display:flex;align-items:flex-start;gap:10px;margin:8px 0}
+.gcalFormRow .input{margin:0}
+.gcalIco{flex:0 0 24px;text-align:center;font-size:18px;padding-top:10px;opacity:.75}
+.gcalWhen{flex:1;display:flex;gap:6px;flex-wrap:wrap}
+.gcalWhen .input{flex:1;min-width:96px}
+.gcalWarn{background:#fef3c7;color:#92400e;border-radius:10px;padding:8px 10px;font-size:13px;margin:4px 0 4px 34px}
+.gcalLeadPicked{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.gcalLeadPicked section{flex:1;display:flex;flex-direction:column;min-width:0}
+.gcalLeadPicked span{font-size:12px;opacity:.7}
+.gcalLeadList{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;margin-top:4px;overflow:hidden}
+.gcalLeadList button{border:0;border-top:1px solid var(--line);background:transparent;text-align:left;padding:8px 10px;display:flex;flex-direction:column;color:inherit;cursor:pointer}
+.gcalLeadList button:first-child{border-top:0}
+.gcalLeadList span{font-size:12px;opacity:.65}
+.gcalResult{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+.gcalStatusRow{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.gcalStatusRow button{border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;color:inherit;cursor:pointer}
+.gcalStatusRow button.on{background:#111;color:#fff;border-color:#111}
+.gcalActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.gcalActions .btn:only-child{grid-column:1/-1}
+.gcalExtra{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.gcalExtra a,.gcalExtra button,.gcalNotify a,.gcalNotify button{border:1px solid var(--line);background:transparent;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:700;color:inherit;text-decoration:none;cursor:pointer}
+.gcalNotify{margin-top:10px;border-radius:12px;background:#0000000a;padding:10px}
+.gcalNotify p{margin:0 0 8px;font-size:13px}
+.gcalNotify div{display:flex;flex-wrap:wrap;gap:6px}
+.gcalNotify small{display:block;margin-top:6px;opacity:.6;font-size:11px}
+@media(max-width:700px){.gcalTitle{font-size:16px}.gcalHeadDay b{font-size:15px;width:28px;height:28px}.gcalEv{font-size:10px;padding:2px 4px}.gcalMCell{min-height:64px}.gcalMgr{max-width:130px}}
