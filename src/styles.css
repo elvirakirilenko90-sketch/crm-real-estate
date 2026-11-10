@@ -293,3 +293,21 @@
 .matchSendBtns .btn{display:flex;align-items:center;justify-content:center;text-decoration:none;min-height:48px}
 .matchSendBtns .disabled{opacity:.4;pointer-events:none}
 .linkBtn{border:0;background:transparent;color:var(--accent,#d6a500);font-weight:800;cursor:pointer;padding:0}
+
+/* ===== Статистика менеджеров ===== */
+.mstatsPeriods{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.mstatsPeriods button{border:1px solid color-mix(in srgb,var(--text,#111) 14%,transparent);background:transparent;color:inherit;border-radius:999px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit}
+.mstatsPeriods button.on{background:var(--accent,#d6a500);border-color:var(--accent,#d6a500);color:#0B0B0C}
+.mstatsKpi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(min-width:700px){.mstatsKpi{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.mstatsKpi div{border:1px solid color-mix(in srgb,var(--text,#111) 10%,transparent);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:2px}
+.mstatsKpi span{font-size:12px;opacity:.65}
+.mstatsKpi b{font-size:24px}
+.mstatsKpi .hl{border-color:var(--accent,#d6a500)}
+.mstatsConv{margin:10px 0;font-size:13px;border-radius:12px;padding:10px 12px;background:color-mix(in srgb,var(--text,#111) 5%,transparent)}
+.mstatsList{display:flex;flex-direction:column;gap:8px}
+.mstatsRow{display:flex;align-items:center;gap:12px;border:1px solid color-mix(in srgb,var(--text,#111) 10%,transparent);border-radius:16px;padding:12px}
+.mstatsAva{width:38px;height:38px;border-radius:50%;background:var(--accent,#d6a500);color:#0B0B0C;font-weight:800;display:grid;place-items:center;flex:0 0 auto}
+.mstatsBody{flex:1;min-width:0;display:flex;flex-direction:column}
+.mstatsBody small{opacity:.65;font-size:12px}
+.mstatsRow em{font-style:normal;font-weight:800;white-space:nowrap}
