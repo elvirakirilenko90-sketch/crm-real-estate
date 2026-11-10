@@ -474,3 +474,28 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
   .igFeed.view-wide,.igFeed.view-grid{max-width:none!important;width:100%!important;margin:0!important}
   .screen:has(>.feedList.igFeed),.screen:has(.igFeed){max-width:none!important}
 }
+
+/* ===== Источники ленты ===== */
+.feedSrcAdd{border:1.5px dashed color-mix(in srgb,var(--text,#111) 25%,transparent);border-radius:16px;padding:14px;margin:12px 0;display:flex;flex-direction:column;gap:8px}
+.feedSrcKinds{display:flex;flex-wrap:wrap;gap:8px}
+.feedSrcKinds button{border:1.5px solid color-mix(in srgb,var(--text,#111) 25%,transparent);background:transparent;color:inherit;border-radius:12px;padding:10px 14px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit}
+.feedSrcKinds button.on{background:var(--accent,#d6a500);border-color:var(--accent,#d6a500);color:#0B0B0C}
+.feedSrcHint{font-size:13px;margin:0}
+.feedSrcBtns{display:flex;flex-wrap:wrap;gap:8px}
+.feedSrcCheck{border-radius:12px;padding:10px 12px;font-size:14px;display:flex;flex-direction:column;gap:4px}
+.feedSrcCheck.ok{background:rgba(34,197,94,.14);border:1.5px solid #22c55e}
+.feedSrcCheck.bad{background:rgba(239,68,68,.14);border:1.5px solid #ef4444}
+.feedSrcNote{border-radius:12px;padding:10px 12px;margin-bottom:10px;background:color-mix(in srgb,var(--accent,#d6a500) 14%,transparent);border:1.5px solid var(--accent,#d6a500);font-size:14px}
+.feedSrcList{display:flex;flex-direction:column;gap:8px}
+.feedSrcRow{display:flex;align-items:flex-start;gap:12px;border:1.5px solid color-mix(in srgb,var(--text,#111) 20%,transparent);border-radius:14px;padding:12px;flex-wrap:wrap}
+.feedSrcRow.off{opacity:.65}
+.feedSrcIcon{width:40px;height:40px;flex:0 0 40px;border-radius:12px;display:grid;place-items:center;background:var(--accent,#d6a500);color:#0B0B0C;font-size:18px;font-weight:900}
+.feedSrcBody{flex:1;min-width:180px;display:flex;flex-direction:column;gap:2px}
+.feedSrcBody b{font-size:15px}
+.feedSrcBody small{font-size:13px}
+.feedSrcUrl{word-break:break-all}
+.feedSrcErr{color:#fca5a5!important}
+.feedSrcActions{display:flex;align-items:center;gap:6px}
+.feedSrcActions button{width:40px;height:40px;border-radius:10px;border:1.5px solid color-mix(in srgb,var(--text,#111) 25%,transparent);background:transparent;color:inherit;font-size:16px;cursor:pointer}
+.feedSrcActions button.danger{border-color:#ef4444}
+.feedSrcToggle{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;margin-right:4px}
