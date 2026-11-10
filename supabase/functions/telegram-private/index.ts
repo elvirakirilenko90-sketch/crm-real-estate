@@ -226,6 +226,17 @@ Deno.serve(async (req) => {
   const cronSecret = req.headers.get("x-cron-secret");
   if (cronSecret) {
     if (cronSecret !== await setting("feed_sync_secret")) return json({ error: "forbidden" }, 403);
+    if (body.action === "diag") {
+      // Служебная проверка ключа приложения (без входа в аккаунт): подключение + запрос кода на заведомо несуществующий номер
+      const out: Record<string, unknown> = {};
+      let c: TelegramClient | undefined;
+      try {
+        const r = await makeClient(""); c = r.client; out.connect = "ok";
+        try { await c.invoke(new Api.help.GetNearestDc()); out.call = "ok"; } catch (e) { out.call = String((e as any)?.errorMessage || e); }
+        try { await c.sendCode({ apiId: r.apiId, apiHash: r.apiHash }, "+999000000000"); out.send_code = "ok?"; } catch (e) { out.send_code = String((e as any)?.errorMessage || (e as Error)?.message || e).slice(0, 300); }
+      } catch (e) { out.error = String((e as Error)?.message || e).slice(0, 300); } finally { await close(c); }
+      return json(out);
+    }
     const { data: rows } = await db.from("feed_sources").select("agency_id").eq("kind", "tg_private").eq("active", true);
     const agencies = [...new Set((rows || []).map((r: any) => r.agency_id))];
     const results = [];
@@ -325,6 +336,7 @@ Deno.serve(async (req) => {
 
     return json({ error: "Неизвестное действие" }, 400);
   } catch (e) {
+    console.error("telegram-private", action, String((e as any)?.errorMessage || (e as Error)?.message || e), (e as Error)?.stack?.slice(0, 600));
     return json({ ok: false, error: humanError(e) });
   }
 });
