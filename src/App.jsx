@@ -26,7 +26,8 @@ const soundOptions = [
 
 
 const themeOptions = [
-  {id:"classic", name:"Gold Black", vars:{"--accent":"#d6a500","--accent2":"#f3c21b","--dark":"#070707","--soft":"#f5f2ea","--card":"#ffffff","--text":"#111827"}},
+  {id:"nightGold", name:"Night Gold", dark:true, vars:{"--accent":"#F5C518","--accent2":"#FFD84D","--dark":"#0B0B0C","--soft":"#0E0E10","--card":"#18181B","--text":"#F4F2EC"}},
+  {id:"classic", name:"Gold Black (светлая)", vars:{"--accent":"#d6a500","--accent2":"#f3c21b","--dark":"#070707","--soft":"#f5f2ea","--card":"#ffffff","--text":"#111827"}},
   {id:"whiteGold", name:"White Gold", vars:{"--accent":"#d8a800","--accent2":"#f2d15b","--dark":"#111827","--soft":"#fff8df","--card":"#ffffff","--text":"#111827"}},
   {id:"graphite", name:"Graphite Amber", vars:{"--accent":"#f59e0b","--accent2":"#fbbf24","--dark":"#111827","--soft":"#f3f4f6","--card":"#ffffff","--text":"#111827"}},
   {id:"navy", name:"Navy Gold", vars:{"--accent":"#d4af37","--accent2":"#facc15","--dark":"#0f172a","--soft":"#eef2ff","--card":"#ffffff","--text":"#0f172a"}},
@@ -94,7 +95,7 @@ function themeStyle(themeId){
   const found = themeOptions.find(t => t.id === themeId) || themeOptions[0];
   return {
     ...found.vars,
-    background: `linear-gradient(135deg, ${found.vars["--soft"] || "#f5f2ea"}, #ffffff)`
+    background: found.dark ? found.vars["--soft"] : `linear-gradient(135deg, ${found.vars["--soft"] || "#f5f2ea"}, #ffffff)`
   };
 }
 
@@ -287,6 +288,63 @@ function globalThemeCss(themeId){
       transform:translateY(-1px);filter:brightness(1.03);
     }
     @media(max-width:700px){.leadInfoGrid{grid-template-columns:1fr}.calendarCardHeader{display:block}.dealsKanban .kanbanCol{min-width:290px;flex-basis:300px}.bottom{overflow-x:auto;justify-content:flex-start}.bottom button{min-width:74px;flex:0 0 74px}.analyticsMobileTable{min-width:980px}}
+  ` + (found.dark ? darkThemeCss(v) : "");
+}
+
+// Тёмная тема «Night Gold»: чёрный графит + наш жёлтый. Перекрывает светлые цвета базовых стилей.
+function darkThemeCss(v){
+  const accent = v["--accent"], bg = v["--soft"], card = v["--card"], text = v["--text"];
+  const card2 = "#202024", line = "#2C2C31", muted = "#A1A1AA";
+  return `
+    body,.layout,.mainWrap{background:${bg}!important;color:${text}!important;font-family:Manrope,Inter,system-ui,sans-serif!important;}
+    .main{background:${bg}!important;box-shadow:none!important;}
+    .top{background:${bg}!important;border-color:${line}!important;}
+    .top h1,.top p{color:${text}!important;}
+    .search{background:${card}!important;border:1px solid ${line}!important;}
+    .search input{color:${text}!important;background:transparent!important;}
+    .card,.sheet,.modal .sheet,.event,.stat,.mediaTile,.kanbanHead,.dealRow,.selectionBar,.igPost,.igPad{background:${card}!important;color:${text}!important;border-color:${line}!important;box-shadow:none!important;}
+    .card.dark,.sidebar,.propHero{background:#0B0B0C!important;color:${text}!important;border-color:${line}!important;}
+    .lead,.post,.propertyCard{background:${card}!important;color:${text}!important;border-color:${line}!important;box-shadow:none!important;}
+    .kanbanCol{background:#141417!important;border-color:${line}!important;box-shadow:none!important;}
+    .btn.soft,.soft,.chip,.badge,.icon,.day,.weekRow,.monthBox,.inner,.comments,.media,.phone{background:${card2}!important;color:${text}!important;border-color:${line}!important;}
+    .icon{color:${text}!important;}
+    .input,input,textarea,select,.field input,.field textarea,.field select,.roleSelect select{background:#121214!important;color:${text}!important;border:1px solid ${line}!important;}
+    input::placeholder,textarea::placeholder{color:#7C7C85!important;}
+    option{background:${card};color:${text};}
+    .btn.primary,.primary,.chip.active,.badge.gold,.logo>div,.sideBtn.active{background:${accent}!important;color:#0B0B0C!important;border-color:${accent}!important;}
+    .muted,.postHead span,p.muted,.card p.muted{color:${muted}!important;}
+    .link{background:${card2}!important;color:${accent}!important;}
+    .bottom{background:rgba(14,14,16,.94)!important;border-top:1px solid ${line}!important;}
+    .bottom button{color:#8E8E96!important;background:transparent!important;}
+    .bottom button.active{background:transparent!important;color:${accent}!important;}
+    .bottom button.active span{filter:none;}
+    .agencyTop{background:${card}!important;color:${text}!important;border:1px solid ${line}!important;}
+    .clientTable th,.dealTable th{background:${card2}!important;color:${text}!important;}
+    .clientTable td,.clientTable th,.dealTable td,.dealTable th{border-color:${line}!important;}
+    .clientTable tbody tr:hover,.dealTable tbody tr:hover{background:${card2}!important;}
+    .leadInfoCell,.leadNotesBox,.clientDetailsGrid .field,.calendarFormPanel,.calendarReminderPanel,.clientCalendarCard,.presentationSendPanel{background:${card2}!important;border-color:${line}!important;color:${text}!important;}
+    .card.amber,.amber{background:#211D10!important;border-color:#4A3E12!important;color:${text}!important;}
+    .mini{background:#2A2410!important;color:${text}!important;}
+    .modal{background:rgba(0,0,0,.6)!important;}
+    .gcalViews{background:${card2}!important;}
+    .gcalViews button.active{background:${accent}!important;color:#0B0B0C!important;}
+    .gcalToday,.gcalChip,.gcalTypeRow button,.gcalStatusRow button,.gcalAttBtns button,.gcalExtra a,.gcalExtra button,.gcalNotify a,.gcalNotify button,.igFilters button{border-color:${line}!important;color:${text}!important;}
+    .gcalStatusRow button.on,.igFilters button.on{background:${accent}!important;color:#0B0B0C!important;border-color:${accent}!important;}
+    .gcalHeadDay.today b,.gcalMCell.today .gcalMNum,.gcalAgDate.today b{background:${accent}!important;color:#0B0B0C!important;}
+    .gcalHeadDay.today span,.gcalAgDate.today small{color:${accent}!important;}
+    .gcalCol.today{background-color:rgba(245,197,24,.05)!important;}
+    .gcalFab{background:${accent}!important;color:#0B0B0C!important;}
+    .gcalAgendaEv{background:color-mix(in srgb,var(--ev) 18%,${card})!important;color:${text}!important;}
+    .gcalEv.touch{background:color-mix(in srgb,var(--ev) 20%,${card})!important;color:${text}!important;}
+    .gcalNotify{background:${card2}!important;}
+    .gcalWarn{background:#2A2410!important;color:#FDE68A!important;}
+    .igMenu{background:${card2}!important;color:${text}!important;}
+    .igMenu button{color:${text}!important;}
+    .igAvatar span{border-color:${card}!important;}
+    .igNewBtn{background:${accent}!important;color:#0B0B0C!important;box-shadow:none!important;}
+    .igCommentBox button{color:${accent}!important;}
+    .igTextCard{background:linear-gradient(135deg,#0B0B0C 0%,#2A2410 60%,#5C4A0E 130%)!important;}
+    .homeTile{background:${card}!important;border-color:${line}!important;}
   `;
 }
 
@@ -873,17 +931,17 @@ function LoginScreen({onLogin}) {
 
 function Sidebar({page,setPage,role,lang}) {
   const canSeeHelp = role === "Администратор директор" || role === "Администратор тех отдел";
-  const items = [["feed","Лента","⌂"],["clients","Канбан и клиенты","👥"],["calendar","Календарь","📅"],["properties","Вторичка","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["analytics","Статистика/Отчетность","📊"],["tools","Аналитика","⌁"],...(canSeeHelp ? [["help","Помощь менеджерам","🔔"]] : []),...(role === "Администратор тех отдел" ? [["access","Доступы","🔐"]] : []),["more","Ещё","☰"]];
+  const items = [["home","Главная","⌂"],["feed","Лента","▤"],["clients","Канбан и клиенты","👥"],["calendar","Календарь","📅"],["properties","Вторичка","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["analytics","Статистика/Отчетность","📊"],["tools","Аналитика","⌁"],...(canSeeHelp ? [["help","Помощь менеджерам","🔔"]] : []),...(role === "Администратор тех отдел" ? [["access","Доступы","🔐"]] : []),["more","Ещё","☰"]];
   return <aside className="sidebar"><div className="logo"><div>♛</div><section><b>CRM Real Estate</b><span>Premium SaaS</span></section></div><div className="roleBox">{role}</div>{items.map(([id,label,icon])=><button key={id} onClick={()=>setPage(id)} className={cn("sideBtn", page===id && "active")}><span>{icon}</span>{tr(lang,label)}</button>)}</aside>;
 }
 
 function Top({page,setPage,agencyName,lang}) {
-  const titles = {feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",properties:"Вторичка",deals:"Сделки",analytics:"Статистика/Отчетность",tools:"Аналитика",newbuilds:"Новобудови",help:"Помощь менеджерам",access:"Доступы",more:"Еще"};
+  const titles = {home:"Главная",feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",properties:"Вторичка",deals:"Сделки",analytics:"Статистика/Отчетность",tools:"Аналитика",newbuilds:"Новобудови",help:"Помощь менеджерам",access:"Доступы",more:"Еще"};
   return <div className="top"><div className="topLine"><div><p>♛ CRM Real Estate</p><h1>{tr(lang,titles[page])}</h1></div><button className="agencyTop" onClick={()=>setPage("more")}>{agencyName || tr(lang,"Моё агентство")}</button></div><div className="search">🔎 <input placeholder={tr(lang,"Поиск по CRM...")} /></div></div>;
 }
 
 function Bottom({page,setPage,lang}) {
-  const items = [["feed","Лента","⌂"],["clients","Клиенты","👥"],["calendar","Календарь","📅"],["properties","Объекты","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["tools","Аналитика","📊"],["more","Ещё","☰"]];
+  const items = [["home","Главная","⌂"],["feed","Лента","▤"],["clients","Клиенты","👥"],["calendar","Календарь","📅"],["properties","Объекты","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["tools","Аналитика","📊"],["more","Ещё","☰"]];
   return <nav className="bottom">{items.map(([id,label,icon])=><button key={id} className={page===id ? "active" : ""} onClick={()=>setPage(id)}><span>{icon}</span>{tr(lang,label)}</button>)}</nav>;
 }
 
@@ -934,6 +992,126 @@ function BirthdayBanner({users, currentProfile, onCongratulate}){
       </div>;
     })}
   </div>;
+}
+
+// ===== Главная: «сегодня» менеджера + логотип агентства (по макету, стиль Night Gold) =====
+function HomeIcon({name, size=22}){
+  const p = {
+    feed:<><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M8 9h8M8 13h8M8 17h5"></path></>,
+    deals:<><path d="M3 12l4-4 4 3 5-5 5 5"></path><path d="M3 20h18"></path></>,
+    analytics:<><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></>,
+    stats:<><circle cx="12" cy="12" r="9"></circle><path d="M12 3v9l6 4"></path></>,
+    clock:<><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></>,
+    crown:<><path d="M3 18h18l-2-10-5 4-2-7-2 7-5-4z"></path></>,
+    upload:<><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 20h16"></path></>,
+    users:<><circle cx="9" cy="8" r="4"></circle><path d="M2 21c0-4 3-6 7-6s7 2 7 6"></path></>,
+  }[name];
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{p}</svg>;
+}
+
+function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPage, onOpenLead, agency, agencyName, onAgencyLogo}){
+  const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
+  const now = new Date();
+  const todayIso = calIso(now);
+  const myEmail = String(currentProfile?.email || "").toLowerCase();
+  const firstName = String(currentProfile?.full_name || currentProfile?.name || "").trim().split(/\s+/)[0];
+  const hour = now.getHours();
+  const greet = hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
+  const loc = calLocale(lang);
+  const dateLine = now.toLocaleDateString(loc, {weekday:"long", day:"numeric", month:"long"});
+  const [uploading,setUploading] = useState(false);
+  const fileRef = useRef(null);
+
+  const active = leads.filter(l => !["Сделка","Отказ"].includes(l.status));
+  const newToday = leads.filter(l => String(l.created_at || "").slice(0,10) === todayIso).length;
+  const overdue = active.filter(l => { const d = calParseLeadNext(l.nextContact); return d && d < now; });
+  const todayEvents = (events || []).filter(e => e.date === todayIso && (e.status || "planned") !== "canceled")
+    .filter(e => isAdmin || String(e.manager_email || "").toLowerCase() === myEmail || !e.manager_email)
+    .sort((a,b) => calMin(a) - calMin(b));
+  const showingsToday = todayEvents.filter(e => e.type === "Показ").length;
+  const monthKey = todayIso.slice(0,7);
+  const dealsMonth = (deals || []).filter(d => String(d.date || "").startsWith(monthKey)).length;
+
+  const uploadLogo = async (file) => {
+    if(!file) return;
+    if(file.size > 3 * 1024 * 1024){ alert(tr(lang,"Логотип должен быть меньше 3 МБ")); return; }
+    setUploading(true);
+    try {
+      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g,"") || "png";
+      const path = `agency-logos/${currentProfile?.agency_id || "agency"}-${Date.now()}.${ext}`;
+      const up = await supabase.storage.from("property-media").upload(path, file, {upsert:true, contentType:file.type || undefined});
+      if(up.error) throw up.error;
+      const url = supabase.storage.from("property-media").getPublicUrl(path).data.publicUrl;
+      const {error} = await supabase.rpc("crm_set_agency_logo", {p_url:url});
+      if(error) throw error;
+      onAgencyLogo && onAgencyLogo(url);
+    } catch(e){ alert(tr(lang,"Не удалось загрузить логотип") + ": " + (e.message || e)); }
+    setUploading(false);
+  };
+  const removeLogo = async () => {
+    if(!window.confirm(tr(lang,"Убрать логотип агентства?"))) return;
+    const {error} = await supabase.rpc("crm_set_agency_logo", {p_url:""});
+    if(error){ alert(error.message); return; }
+    onAgencyLogo && onAgencyLogo(null);
+  };
+
+  const tiles = [
+    {label:"Новые лиды сегодня", value:newToday, go:"clients"},
+    {label:"Показы сегодня", value:showingsToday, go:"calendar"},
+    {label:"Просрочены касания", value:overdue.length, go:"calendar", alert:overdue.length > 0},
+    {label:"Сделки в этом месяце", value:dealsMonth, go:"deals"},
+  ];
+  const shortcuts = [
+    ["feed","Лента","feed"], ["deals","Сделки","deals"], ["tools","Аналитика","analytics"],
+    ...(isAdmin ? [["analytics","Статистика","stats"]] : []),
+  ];
+
+  return <main className="screen homeScreen">
+    <div className="homeHead">
+      {(agency?.logo_url || loadAgencyBrand(currentProfile?.agency_id).logo_url)
+        ? <img className="homeLogo" src={agency?.logo_url || loadAgencyBrand(currentProfile?.agency_id).logo_url} alt={agencyName || "Логотип агентства"}/>
+        : <div className="homeLogo empty"><HomeIcon name="crown" size={22}/></div>}
+      <div className="homeAgency"><b>{agencyName || "CRM Real Estate"}</b>{isAdmin && <span>{agency?.logo_url ? tr(lang,"Логотип агентства") : tr(lang,"Добавьте логотип агентства")}</span>}</div>
+      {isAdmin && <>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" style={{display:"none"}} onChange={e => { uploadLogo(e.target.files?.[0]); e.target.value = ""; }}/>
+        <button className="homeIconBtn" onClick={() => fileRef.current?.click()} disabled={uploading} aria-label={tr(lang,"Загрузить логотип")}>{uploading ? "…" : <HomeIcon name="upload" size={20}/>}</button>
+        {agency?.logo_url && <button className="homeIconBtn" onClick={removeLogo} aria-label={tr(lang,"Убрать логотип")}>×</button>}
+      </>}
+    </div>
+
+    <div className="homeHello">
+      <small>{dateLine}</small>
+      <h1>{tr(lang,greet)}{firstName ? `, ${firstName}` : ""}</h1>
+    </div>
+
+    <div className="homeTiles">
+      {tiles.map(t => <button key={t.label} className={cn("homeTile", t.alert && "alert")} onClick={() => setPage(t.go)}>
+        <span>{tr(lang,t.label)}</span><b>{t.value}</b>
+      </button>)}
+    </div>
+
+    <div className="homeSection">
+      <h2>{tr(lang,"Сегодня")}</h2>
+      <button className="homeLink" onClick={() => setPage("calendar")}>{tr(lang,"Календарь")} ›</button>
+    </div>
+    <div className="homeList">
+      {todayEvents.length === 0 && <button className="homeEmpty" onClick={() => setPage("calendar")}>{tr(lang,"На сегодня событий нет — запланируйте звонок или показ")}</button>}
+      {todayEvents.slice(0,6).map(e => <button key={e.id} className="homeEvent" style={{"--ev":calColor(e)}} onClick={() => { const l = leads.find(x => String(x.id) === String(e.leadId)); if(l && onOpenLead) onOpenLead(l); else setPage("calendar"); }}>
+        <b className="homeEvTime">{e.time}</b><i/>
+        <span className="homeEvBody"><b>{tr(lang,e.type)} · {e.client || e.title}</b><small>{[e.location, isAdmin && e.manager].filter(Boolean).join(" · ") || e.title}</small></span>
+      </button>)}
+    </div>
+
+    {overdue.length > 0 && <button className="homeAlert" onClick={() => setPage("calendar")}>
+      <HomeIcon name="clock" size={22}/>
+      <span><b>{tr(lang,"Просрочено касаний")}: {overdue.length}</b><small>{overdue.slice(0,3).map(l => l.name).join(", ")}{overdue.length > 3 ? "…" : ""}</small></span>
+      <em>{tr(lang,"Открыть")}</em>
+    </button>}
+
+    <div className="homeShortcuts">
+      {shortcuts.map(([id,label,icon]) => <button key={id} onClick={() => setPage(id)}><HomeIcon name={icon}/><span>{tr(lang,label)}</span></button>)}
+    </div>
+  </main>;
 }
 
 // ===== Пост ленты в стиле Instagram (только внешний вид; логика — в Feed) =====
@@ -1382,6 +1560,7 @@ function Contact({phone,onClose}) {
     <a className="btn purple full" href={`viber://chat?number=${viberEncoded}`}>Viber чат</a>
     <a className="btn purple full" href={`viber://add?number=${digits}`}>Viber открыть контакт</a>
     <a className="btn green full" href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
+    <a className="btn full" style={{background:"#229ED9",color:"#fff",border:0}} href={`https://t.me/+${digits}`} target="_blank" rel="noopener noreferrer">Telegram</a>
     <div className="card amber">Если Viber на компьютере не открылся, проверь Viber Desktop. На телефоне ссылка откроет приложение.</div>
   </Modal>;
 }
@@ -2353,8 +2532,13 @@ async function imageToPdfPage(url, title){
 
 
 function agencyBrandKey(agencyId){ return `crm_agency_brand_${agencyId || "default"}`; }
+// Логотип агентства хранится в базе (agencies.logo_url) и общий для всех устройств; локальная копия — запасной вариант.
+const sharedAgencyLogos = {};
 function loadAgencyBrand(agencyId){
-  try { return JSON.parse(localStorage.getItem(agencyBrandKey(agencyId)) || "{}"); } catch { return {}; }
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem(agencyBrandKey(agencyId)) || "{}"); } catch {}
+  const shared = sharedAgencyLogos[String(agencyId || "")];
+  return shared ? {...local, logo_url: shared} : local;
 }
 function saveAgencyBrand(agencyId, value){
   localStorage.setItem(agencyBrandKey(agencyId), JSON.stringify(value || {}));
@@ -3414,8 +3598,75 @@ function PropertyModal({property,setProperties,onClose,users,currentProfile,role
 }
 
 
-function Deals({leads,properties,currentProfile,role,lang}) {
-  const [deals,setDeals] = useStorage("crm_deals",[]);
+// ===== Сделки в Supabase (раньше — только в браузере одного телефона). API как у useStorage: [deals, setDeals] =====
+function dealFromDb(r){
+  return {id:r.local_id || ("DB-"+r.id), dbId:r.id, leadId:r.lead_id ? String(r.lead_id) : "", client:r.client || "", phone:r.phone || "",
+    manager:r.manager_name || "", manager_email:r.manager_email || "", propertyId:r.property_id ? String(r.property_id) : "",
+    amount:r.amount ?? "", commission:r.commission ?? "", date:r.deal_date || (r.created_at || "").slice(0,10), comment:r.comment || "", status:r.status || ""};
+}
+function dealToDb(d){
+  const num = v => { const n = Number(String(v ?? "").replace(/[^\d.]/g,"")); return String(v ?? "").trim() && Number.isFinite(n) ? n : null; };
+  return {local_id:String(d.id), lead_id:/^\d+$/.test(String(d.leadId||"")) ? Number(d.leadId) : null, client:d.client || null, phone:d.phone || null,
+    manager_name:d.manager || null, manager_email:d.manager_email || null, property_id:/^\d+$/.test(String(d.propertyId||"")) ? Number(d.propertyId) : null,
+    amount:num(d.amount), commission:num(d.commission), deal_date:/^\d{4}-\d{2}-\d{2}$/.test(String(d.date||"")) ? d.date : null, comment:d.comment || null,
+    status:d.status || null, title:d.client || "Сделка", updated_at:new Date().toISOString()};
+}
+function useDealsStore(profile){
+  const [deals,setRaw] = useState([]);
+  const [loaded,setLoaded] = useState(false);
+  const ref = useRef([]);
+  const timers = useRef({});
+  const load = async () => {
+    const {data,error} = await supabase.from("deals").select("*").order("created_at",{ascending:false});
+    if(error){ console.warn("deals load:", error.message); return; }
+    const pendingLocal = ref.current.filter(d => !d.dbId);
+    const loaded = (data||[]).map(dealFromDb);
+    ref.current = [...pendingLocal.filter(p => !loaded.some(x => x.id === p.id)), ...loaded];
+    setRaw(ref.current); setLoaded(true);
+  };
+  const migrate = async () => {
+    try {
+      if(localStorage.getItem("deals_migrated_v1")) return;
+      const old = JSON.parse(localStorage.getItem("crm_deals") || "[]");
+      const rows = (Array.isArray(old) ? old : []).map(dealToDb).filter(r => r.lead_id);
+      if(rows.length){ const {error} = await supabase.from("deals").upsert(rows,{onConflict:"local_id",ignoreDuplicates:true}); if(error){ console.warn("deals migrate:", error.message); return; } }
+      localStorage.setItem("deals_migrated_v1","1");
+    } catch(e){ console.warn(e); }
+  };
+  useEffect(() => {
+    if(!profile?.id) return;
+    (async () => { await migrate(); await load(); })();
+    let rt = null;
+    const ch = supabase.channel("crm-deals-live").on("postgres_changes",{event:"*",schema:"public",table:"deals"},() => {
+      if(rt) return; rt = setTimeout(() => { rt = null; if(document.visibilityState === "visible") load(); }, 1500);
+    }).subscribe();
+    return () => { if(rt) clearTimeout(rt); supabase.removeChannel(ch); };
+  }, [profile?.id]);
+  const setDeals = (next) => {
+    const prev = ref.current;
+    const arr = typeof next === "function" ? next(prev) : next;
+    ref.current = arr; setRaw(arr);
+    const prevById = new Map(prev.map(d => [String(d.id), d]));
+    arr.forEach(d => {
+      const old = prevById.get(String(d.id));
+      if(old && JSON.stringify(old) === JSON.stringify(d)) return;
+      const row = dealToDb(d);
+      if(!row.lead_id) return; // демо-клиенты без записи в базе не сохраняются
+      // Поля вводятся с клавиатуры — сохраняем через 0.8 сек после последнего изменения
+      clearTimeout(timers.current[d.id]);
+      timers.current[d.id] = setTimeout(async () => {
+        const {data,error} = await supabase.from("deals").upsert(row,{onConflict:"local_id"}).select().single();
+        if(error){ alert("Ошибка сохранения сделки: " + error.message); return; }
+        ref.current = ref.current.map(x => String(x.id) === String(d.id) ? {...x, dbId:data.id} : x); setRaw(ref.current);
+      }, old ? 800 : 0);
+    });
+  };
+  return [deals, setDeals, loaded];
+}
+
+function Deals({leads,properties,currentProfile,role,lang,dealsState}) {
+  const ownDeals = useDealsStore(dealsState ? null : currentProfile);
+  const [deals,setDeals,dealsLoaded] = dealsState || ownDeals; // раньше: useStorage("crm_deals") — только в браузере
   const [viewMode,setViewMode] = useStorage("deals_view_mode","kanban");
   const [statusFilter,setStatusFilter] = useState("Все");
   const [search,setSearch] = useState("");
@@ -3425,17 +3676,18 @@ function Deals({leads,properties,currentProfile,role,lang}) {
   const dealStages=["Новая сделка","Документы","Расчёт","Закрыта"];
 
   useEffect(()=>{
+    if(!dealsLoaded) return; // ждём загрузки из базы, иначе создадутся дубли
     const dealLeads=(leads||[]).filter(l=>l.status==="Сделка");
     setDeals(prev=>{
       const next=[...prev];
       dealLeads.forEach(l=>{
         if(!next.some(d=>String(d.leadId)===String(l.id))){
-          next.unshift({id:"D-"+Date.now()+"-"+l.id,leadId:l.id,client:l.name||"",phone:l.phone||"",manager:l.manager||"",manager_email:l.manager_email||"",propertyId:"",amount:"",commission:"",date:new Date().toISOString().slice(0,10),comment:"",status:"Новая сделка"});
+          next.unshift({id:"D-lead-"+l.id,leadId:l.id,client:l.name||"",phone:l.phone||"",manager:l.manager||"",manager_email:l.manager_email||"",propertyId:"",amount:"",commission:"",date:new Date().toISOString().slice(0,10),comment:"",status:"Новая сделка"});
         }
       });
       return next;
     });
-  },[leads]);
+  },[leads,dealsLoaded]);
 
   const scoped=deals.filter(d=>isTech||isDirector||String(d.manager_email||"").toLowerCase()===myEmail);
   const visible=scoped.filter(d=>{
@@ -5777,7 +6029,7 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
   const isTech = role === "Администратор тех отдел";
   const [agencyBrand,setAgencyBrand] = useState(()=>loadAgencyBrand(currentProfile?.agency_id));
   const updateBrand=(patch)=>{const next={...agencyBrand,...patch};setAgencyBrand(next);saveAgencyBrand(currentProfile?.agency_id,next);};
-  const uploadAgencyLogo=async(file)=>{if(!file)return;const path=`agency-brand/${currentProfile?.agency_id||"default"}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;const up=await uploadToFirstAvailableBucket(["agency-assets","presentations","property_media"],path,file,{upsert:true});if(up?.publicUrl)updateBrand({logo_url:up.publicUrl});else{const r=new FileReader();r.onload=()=>updateBrand({logo_url:r.result});r.readAsDataURL(file);}};
+  const uploadAgencyLogo=async(file)=>{if(!file)return;const path=`agency-brand/${currentProfile?.agency_id||"default"}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;const up=await uploadToFirstAvailableBucket(["agency-assets","presentations","property_media"],path,file,{upsert:true});if(up?.publicUrl){updateBrand({logo_url:up.publicUrl});supabase.rpc("crm_set_agency_logo",{p_url:up.publicUrl}).then(({error})=>{if(error)console.warn(error.message);else{sharedAgencyLogos[String(currentProfile?.agency_id||"")]=up.publicUrl;}});}else{const r=new FileReader();r.onload=()=>updateBrand({logo_url:r.result});r.readAsDataURL(file);}};
 
   const [manualLead,setManualLead] = useState({name:"",phone:"+380",source:sources[0],status:stages[0],manager:"",manager_email:"",notes:""});
   const [importText,setImportText] = useState("");
@@ -6760,9 +7012,9 @@ function MarketTools({lang,currentProfile,properties=[],initialTab="market",hide
 }
 
 export default function App(){
-  const [page,setPage] = useStorage("page","feed");
+  const [page,setPage] = useStorage("page","home");
   const [role,setRole] = useStorage("role","Администратор директор");
-  const [theme,setTheme] = useStorage("crm_theme","classic");
+  const [theme,setTheme] = useStorage("crm_theme","nightGold");
   const [lang,setLang] = useStorage("crm_lang","ru");
 
   const [session,setSession] = useState(null);
@@ -6773,7 +7025,8 @@ export default function App(){
   const [posts,setPostsRaw] = useState([]);
   const [properties,setPropertiesRaw] = useState([]);
 
-  const [events,setEvents] = useCalendarEvents(currentProfile); // раньше: useStorage("events") — только в браузере
+  const [events,setEvents] = useCalendarEvents(currentProfile);
+  const [deals,setDeals,dealsLoaded] = useDealsStore(currentProfile); // раньше: useStorage("events") — только в браузере
   const [help,setHelp] = useState([]);
   const [agencies,setAgencies] = useState([]);
   const [users,setUsers] = useState([]);
@@ -6813,7 +7066,12 @@ export default function App(){
 
     setCurrentProfile(data);
     setRole(data.role || "Менеджер по продажам");
-    if (data.theme) setTheme(data.theme);
+    if (data.theme) {
+      // Разово переводим всех со старой темы по умолчанию (classic) на новую Night Gold; выбор других тем не трогаем.
+      let migrated = false; try { migrated = !!localStorage.getItem("theme_night_v1"); localStorage.setItem("theme_night_v1","1"); } catch {}
+      if (data.theme === "classic" && !migrated) { setTheme("nightGold"); supabase.from("users").update({theme:"nightGold"}).eq("id", data.id).then(()=>{}); }
+      else setTheme(data.theme);
+    }
     if (data.language) setLang(data.language);
     return data;
   }
@@ -7154,6 +7412,7 @@ export default function App(){
   // открыть карточку клиента по номеру (из загрузки лидов и из пометки «дубль»)
   const openLeadById = (id) => { const l = leads.find(x => String(x.id) === String(id)); if (l) setLead(l); else alert("Карточка клиента не найдена"); };
   const currentAgency = agencies.find(a => String(a.id) === String(currentProfile?.agency_id));
+  (agencies || []).forEach(a => { if (a?.logo_url) sharedAgencyLogos[String(a.id)] = a.logo_url; else delete sharedAgencyLogos[String(a.id)]; });
   // SaaS: название агентства всегда определяется по agency_id текущего входа.
   // Оно используется в шапке CRM, VIP-презентациях, email/WhatsApp и системном Share.
   const agencyName = String(
@@ -7173,12 +7432,13 @@ export default function App(){
     <Sidebar page={page} setPage={setPage} role={role} lang={lang}/>
     <div className="mainWrap">
       <main className="main">
-        <Top page={page} setPage={setPage} agencyName={agencyName} lang={lang}/>
+        {page!=="home"&&<Top page={page} setPage={setPage} agencyName={agencyName} lang={lang}/>}
+        {page==="home"&&<Home leads={visibleLeads} events={visibleEvents} deals={deals} currentProfile={currentProfile} role={role} lang={lang} setPage={setPage} onOpenLead={setLead} agency={currentAgency} agencyName={agencyName} onAgencyLogo={url=>setAgencies(prev=>prev.map(a=>String(a.id)===String(currentProfile?.agency_id)?{...a,logo_url:url}:a))}/>}
         {page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role} currentProfile={currentProfile} lang={lang} users={users}/>} 
         {page==="clients"&&<Clients leads={visibleLeads} setLeads={setLeads} onOpen={setLead} currentProfile={currentProfile} role={role} users={users} lang={lang}/>} 
         {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang} properties={properties} users={users}/>} 
         {page==="properties"&&<Properties properties={properties} setProperties={setProperties} onOpen={setProperty} users={users} currentProfile={currentProfile} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}   
-        {page==="deals"&&<Deals leads={visibleLeads} properties={properties} currentProfile={currentProfile} role={role} lang={lang}/>} 
+        {page==="deals"&&<Deals leads={visibleLeads} properties={properties} currentProfile={currentProfile} role={role} lang={lang} dealsState={[deals,setDeals,dealsLoaded]}/>} 
         {page==="analytics"&&<StatisticsReporting onOpenLead={openLeadById} leads={visibleLeads} properties={properties} events={visibleEvents} role={role} users={users} activities={activities} currentProfile={currentProfile}/>} 
         {page==="tools"&&<AnalyticsWorkspace lang={lang} currentProfile={currentProfile} properties={properties} leads={visibleLeads} onOpenProperty={setProperty} agencyName={agencyName} theme={theme}/>} 
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role}/>} 
