@@ -1567,8 +1567,146 @@ function Contact({phone,onClose}) {
 
 
 
-function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile,onOpenLead}) {
+// ===== Подбор объектов под клиента: наша вторичка + объявления с площадок (Аналитика). Объявление с площадки — сначала прозвонить =====
+const MATCH_SOURCES = ["OLX","DIM.RIA Украина","RIELTOR.UA"];
+const CHECK_LABELS = {actual:"Актуально", not_actual:"Не актуально", no_answer:"Не дозвонился"};
+const matchRooms = p => { const m = String(p.type || p.property_type || "").match(/^(\d)/); return m ? Number(m[1]) : (Number(p.rooms) || 0); };
+const matchMoney = n => n ? `$${Math.round(Number(n)).toLocaleString("ru-RU")}` : "цена по запросу";
+
+function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onClose}){
+  const parsed = nbParseRequest(`${lead.notes || ""}`);
+  const [rooms,setRooms] = useState(parsed.rooms || "");
+  const [budget,setBudget] = useState(parsed.budget || "");
+  const [district,setDistrict] = useState("");
+  const [city,setCity] = useState("Одесса");
+  const [deal,setDeal] = useState(/аренд|оренд|снять|зняти/i.test(lead.notes || "") ? "Аренда" : "Продажа");
+  const [picked,setPicked] = useState({}); // key -> item
+  const [market,setMarket] = useState(null); // {bySource:[{source,total,items}], loading, error}
+  const [checks,setChecks] = useState({}); // source_url -> status
+  const [showAllOwn,setShowAllOwn] = useState(false);
+  const leadDbId = /^\d+$/.test(String(lead.id)) ? Number(lead.id) : null;
+  const myName = currentProfile?.full_name || currentProfile?.name || "";
+
+  useEffect(() => {
+    if(!leadDbId) return;
+    supabase.from("listing_checks").select("source_url,status,created_at").eq("lead_id", leadDbId).order("created_at",{ascending:true})
+      .then(({data}) => { const m = {}; (data || []).forEach(r => { m[r.source_url] = r.status; }); setChecks(m); });
+  }, [leadDbId]);
+
+  const b = Number(String(budget).replace(/[^\d]/g,"")) || 0;
+  const r = Number(rooms) || 0;
+  const d = district.trim().toLowerCase();
+  const own = (properties || []).filter(p => String(p.status || "").toLowerCase() !== "продан")
+    .map(p => {
+      let score = 0;
+      if(b){ if(Number(p.price) > b * 1.07) return null; score += 1 - Math.abs(b - Number(p.price || 0)) / b; }
+      if(r){ const pr = matchRooms(p); if(pr && pr !== r) return null; if(pr === r) score += 1; }
+      if(d){ if(!String(p.district || "").toLowerCase().includes(d) && !String(p.title || "").toLowerCase().includes(d)) return null; score += 1; }
+      return {p, score};
+    }).filter(Boolean).sort((a,b2) => b2.score - a.score);
+  const ownShown = showAllOwn ? own : own.slice(0,8);
+
+  const searchMarket = async () => {
+    setMarket({loading:true, bySource:[]});
+    const {data,error} = await supabase.functions.invoke("analytics-live-search-v3", {body:{
+      country:"Украина", region:"", city, district:district.trim(), property_type:"", deal_type:deal,
+      rooms:r || null, price_from:null, price_to:b || null, area_from:null, area_to:null, floor_from:null, floor_to:null,
+      complex:"", programs:false, page:1, pages:1, sources:MATCH_SOURCES
+    }});
+    if(error){ setMarket({loading:false, bySource:[], error:error.message || String(error)}); return; }
+    const results = Array.isArray(data?.results) ? data.results : [];
+    setMarket({loading:false, bySource:results.map(x => ({source:x.source, total:x.total, ok:x.ok !== false, url:x.url || "", items:(x.items || []).filter(it => it.source_url).slice(0,12)}))});
+  };
+
+  const setCheck = async (item, status) => {
+    setChecks(prev => ({...prev, [item.source_url]:status}));
+    if(status !== "actual") setPicked(prev => { const n = {...prev}; delete n["m:" + item.source_url]; return n; });
+    if(!leadDbId) return;
+    const {error} = await supabase.from("listing_checks").insert({lead_id:leadDbId, source_name:item.source_name, source_url:item.source_url, title:item.title || null,
+      price:Number(item.price) || null, status, checked_by_email:currentProfile?.email || null, checked_by_name:myName || null});
+    if(error) console.warn("listing_checks:", error.message);
+  };
+  const togglePick = (key, item) => setPicked(prev => { const n = {...prev}; if(n[key]) delete n[key]; else n[key] = item; return n; });
+
+  const pickedList = Object.values(picked);
+  const lineFor = (it) => {
+    const parts = [it.rooms ? `${it.rooms}-к` : "", it.area ? `${Math.round(it.area)} м²` : "", it.district || ""].filter(Boolean).join(", ");
+    return `${it.title && !parts ? it.title : parts}${it.floor ? ` · ${it.floor} эт.` : ""} — ${matchMoney(it.price)}`;
+  };
+  const messageText = () => {
+    const first = String(lead.name || "").split(" ")[0];
+    const lines = pickedList.map((it,i) => `${i+1}. ${lineFor(it)}`);
+    return `${tr(lang,"Добрый день")}${first ? ", " + first : ""}! ${tr(lang,"Подобрал(а) для вас варианты")}:\n${lines.join("\n")}\n\n${tr(lang,"Когда удобно посмотреть?")}${myName ? `\n${myName}` : ""}${agencyName ? `, ${agencyName}` : ""}`;
+  };
+  const digits = String(lead.phone || "").replace(/[^\d]/g,"");
+  const copyText = async () => { try { await navigator.clipboard.writeText(messageText()); } catch {} };
+
+  return <Modal onClose={onClose} wide>
+    <div className="row"><h2>{tr(lang,"Подбор объектов")}</h2><button className="icon" onClick={onClose}>×</button></div>
+    <p className="muted" style={{marginTop:0}}>{lead.name} · {tr(lang,"запрос из заметки клиента — можно поправить")}</p>
+    <div className="matchCriteria">
+      <Field label={tr(lang,"Комнат")}><select className="input" value={rooms} onChange={e => setRooms(e.target.value)}><option value="">{tr(lang,"Любое")}</option>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}</select></Field>
+      <Field label={tr(lang,"Бюджет до, $")}><input className="input" inputMode="numeric" value={budget} onChange={e => setBudget(e.target.value)} placeholder="80000"/></Field>
+      <Field label={tr(lang,"Район")}><input className="input" value={district} onChange={e => setDistrict(e.target.value)} placeholder={tr(lang,"Аркадия, Центр…")}/></Field>
+      <Field label={tr(lang,"Город")}><input className="input" value={city} onChange={e => setCity(e.target.value)}/></Field>
+      <Field label={tr(lang,"Сделка")}><select className="input" value={deal} onChange={e => setDeal(e.target.value)}><option>Продажа</option><option>Аренда</option></select></Field>
+    </div>
+
+    <div className="matchBlock">
+      <div className="matchBlockHead"><h3>{tr(lang,"Наша вторичка")}</h3><span className="badge gold">{own.length}</span></div>
+      {own.length === 0 && <p className="muted">{tr(lang,"В нашей базе подходящих объектов нет — посмотрите площадки ниже.")}</p>}
+      {ownShown.map(({p}) => { const key = "o:" + p.id; return <label key={key} className={cn("matchItem", picked[key] && "on")}>
+        <input type="checkbox" checked={!!picked[key]} onChange={() => togglePick(key, {title:p.title, rooms:matchRooms(p), area:p.area, district:p.district, floor:p.floor, price:p.price, own:true})}/>
+        <span><b>{p.title}</b><small>{[p.type, p.area ? `${p.area} м²` : "", p.district, p.floor ? `${p.floor} эт.` : ""].filter(Boolean).join(" · ")}</small></span>
+        <em>{matchMoney(p.price)}</em>
+      </label>; })}
+      {own.length > 8 && !showAllOwn && <Button variant="soft" onClick={() => setShowAllOwn(true)}>{tr(lang,"Показать все")} ({own.length})</Button>}
+    </div>
+
+    <div className="matchBlock">
+      <div className="matchBlockHead"><h3>{tr(lang,"На площадках")}</h3><span className="muted">OLX · DIM.RIA · RIELTOR</span></div>
+      <div className="matchNotice">☎ {tr(lang,"Объявления с площадок сначала прозвоните: отметьте «Актуально» — только тогда объект можно добавить в подборку.")}</div>
+      {!market && <Button className="full" onClick={searchMarket}>{tr(lang,"Найти на площадках")}</Button>}
+      {market?.loading && <p className="muted">{tr(lang,"Ищем на площадках…")}</p>}
+      {market?.error && <p className="muted">{tr(lang,"Площадки не ответили")}: {market.error} · <button className="linkBtn" onClick={searchMarket}>{tr(lang,"Повторить")}</button></p>}
+      {market && !market.loading && !market.error && <>
+        <div className="matchSummary">{market.bySource.map(s => <span key={s.source}>{s.source}: <b>{s.ok ? (s.total ?? s.items.length) : "—"}</b></span>)}</div>
+        {market.bySource.map(s => <div key={s.source} className="matchSource">
+          <h4>{s.source}{s.url && <a href={s.url} target="_blank" rel="noopener noreferrer"> · {tr(lang,"все на площадке")} ›</a>}</h4>
+          {s.items.length === 0 && <p className="muted">{tr(lang,"Нет объявлений по этому запросу")}</p>}
+          {s.items.map(it => { const key = "m:" + it.source_url; const st = checks[it.source_url]; return <div key={key} className={cn("matchItem","market", st && "st-"+st, picked[key] && "on")}>
+            <input type="checkbox" disabled={st !== "actual"} checked={!!picked[key]} onChange={() => togglePick(key, it)} aria-label={tr(lang,"В подборку")}/>
+            <span>
+              <b>{lineFor(it)}</b>
+              <small>{it.title}</small>
+              <span className="matchActions">
+                <a href={it.source_url} target="_blank" rel="noopener noreferrer">{tr(lang,"Открыть объявление")} ›</a>
+                {["actual","not_actual","no_answer"].map(k => <button key={k} className={cn(st === k && "on")} onClick={() => setCheck(it, k)}>{tr(lang,CHECK_LABELS[k])}</button>)}
+              </span>
+            </span>
+          </div>; })}
+        </div>)}
+        <Button variant="soft" onClick={searchMarket}>↻ {tr(lang,"Обновить")}</Button>
+      </>}
+    </div>
+
+    <div className="matchSend">
+      <h3>{tr(lang,"Подборка")}: {pickedList.length}</h3>
+      {pickedList.length > 0 && <pre className="matchPreview">{messageText()}</pre>}
+      <div className="matchSendBtns">
+        <a className={cn("btn sendViber", !pickedList.length && "disabled")} href={pickedList.length ? `viber://chat?number=%2B${digits}` : undefined} onClick={copyText}>Viber</a>
+        <a className={cn("btn", !pickedList.length && "disabled")} style={{background:"#229ED9",color:"#fff",border:0}} href={pickedList.length ? `https://t.me/+${digits}` : undefined} target="_blank" rel="noopener noreferrer" onClick={copyText}>Telegram</a>
+        <a className={cn("btn sendWhatsApp", !pickedList.length && "disabled")} href={pickedList.length ? `https://wa.me/${digits}?text=${encodeURIComponent(messageText())}` : undefined} target="_blank" rel="noopener noreferrer">WhatsApp</a>
+        <Button variant="soft" onClick={copyText} disabled={!pickedList.length}>{tr(lang,"Скопировать")}</Button>
+      </div>
+      <p className="muted" style={{fontSize:12}}>{tr(lang,"Для Viber и Telegram текст копируется — вставьте его в чат. Контакты и ссылки площадок клиенту не отправляются.")}</p>
+    </div>
+  </Modal>;
+}
+
+function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile,onOpenLead,properties=[],agencyName="",lang="ru"}) {
   const [local,setLocal] = useState(lead);
+  const [showMatch,setShowMatch] = useState(false);
   // Связи «дубль ↔ исходный клиент» — только для администраторов (менеджеру таблица недоступна)
   const isAdminRole = role === "Администратор директор" || role === "Администратор тех отдел";
   const [dupLinks,setDupLinks] = useState([]);
@@ -1684,6 +1822,8 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
     </div>
 
     <Field label="Заметки менеджера"><textarea value={local.notes} onChange={e=>setLocal({...local,notes:e.target.value})}/></Field>
+    <Button className="full matchOpenBtn" onClick={()=>setShowMatch(true)}>🔎 Подобрать объекты</Button>
+    {showMatch && <ClientMatch lead={local} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setShowMatch(false)}/>}
 
     <div className="card">
       <h3>История работы с клиентом</h3>
@@ -6025,6 +6165,122 @@ function NewBuilds({ role, leads = [], currentProfile }) {
   </main>;
 }
 
+// ===== «Менеджер ушёл — база осталась»: передача базы, выгрузка базы и журнал действий (только администраторы) =====
+const AUDIT_TABLES = {leads:"Клиент", properties:"Объект", deals:"Сделка", calendar:"Событие", users:"Сотрудник"};
+const AUDIT_ACTIONS = {insert:"создал(а)", update:"изменил(а)", delete:"удалил(а)"};
+const AUDIT_FIELDS = {stage:"Этап", name:"Имя", phone:"Телефон", notes:"Заметка", source:"Источник", manager_name:"Менеджер", manager_email:"Email менеджера",
+  next_contact_at:"След. контакт", price:"Цена", status:"Статус", title:"Название", district:"Район", owner_name:"Собственник", owner_phone:"Тел. собственника",
+  property_manager_name:"Менеджер объекта", start_at:"Начало", end_at:"Конец", event_type:"Тип", location:"Адрес", result:"Итог", amount:"Сумма", commission:"Комиссия",
+  access:"Доступ", role:"Роль", full_name:"Имя", email:"Email", birth_date:"Дата рождения", director_comment:"Комментарий директора"};
+function auditValue(v){
+  if(v === null || v === undefined || v === "") return "—";
+  if(typeof v === "boolean") return v ? "да" : "нет";
+  const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+  if(/^\d{4}-\d{2}-\d{2}T/.test(s)){ const d = new Date(s); if(!isNaN(d)) return d.toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+  return s.length > 60 ? s.slice(0,60) + "…" : s;
+}
+
+function AgencyBaseAdmin({users=[], leads=[], currentProfile, role, lang, onChanged}){
+  const isTech = role === "Администратор тех отдел";
+  const myAgency = String(currentProfile?.agency_id || "");
+  const staff = (users || []).filter(u => u.email && (isTech || String(u.agency_id || "") === myAgency));
+  const [fromEmail,setFromEmail] = useState("");
+  const [toEmail,setToEmail] = useState("");
+  const [busy,setBusy] = useState(false);
+  const [result,setResult] = useState(null);
+  const [log,setLog] = useState([]);
+  const [logOpen,setLogOpen] = useState(false);
+  const [logLoading,setLogLoading] = useState(false);
+  const [logTable,setLogTable] = useState("all");
+  const [logWho,setLogWho] = useState("all");
+  const [logSearch,setLogSearch] = useState("");
+
+  const fromUser = staff.find(u => u.email === fromEmail);
+  const toUser = staff.find(u => u.email === toEmail);
+  const fromLeads = fromUser ? (leads || []).filter(l => String(l.manager_email || "").toLowerCase() === fromUser.email.toLowerCase() || (fromUser.full_name && String(l.manager || "").trim().toLowerCase() === fromUser.full_name.trim().toLowerCase())).length : 0;
+
+  const transfer = async () => {
+    if(!fromUser || !toUser || fromUser.email === toUser.email) return;
+    if(!window.confirm(`${tr(lang,"Передать всю базу")} ${fromUser.full_name || fromUser.email} → ${toUser.full_name || toUser.email}?\n${tr(lang,"Клиенты, объекты, запланированные события и сделки перейдут новому менеджеру. История сохранится.")}`)) return;
+    setBusy(true); setResult(null);
+    const {data,error} = await supabase.rpc("crm_transfer_manager_base", {p_from_email:fromUser.email, p_to_email:toUser.email});
+    setBusy(false);
+    if(error){ alert(tr(lang,"Не удалось передать базу") + ": " + error.message); return; }
+    setResult(data); onChanged && onChanged();
+  };
+
+  const exportBase = async () => {
+    try {
+      const XLSX = await import(/* @vite-ignore */ "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+      const rows = (leads || []).map(l => ({"Имя":l.name, "Телефон":l.phone, "Источник":l.source, "Этап":l.status, "Менеджер":l.manager, "Email менеджера":l.manager_email,
+        "Следующий контакт":l.nextContact, "Заметки":l.notes, "Создан":String(l.created_at || "").slice(0,10)}));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Клиенты");
+      XLSX.writeFile(wb, `CRM-klienty-${new Date().toISOString().slice(0,10)}.xlsx`);
+    } catch(e){ alert(tr(lang,"Не удалось выгрузить базу") + ": " + (e.message || e)); }
+  };
+
+  const loadLog = async () => {
+    setLogLoading(true);
+    const {data,error} = await supabase.from("audit_log").select("*").order("created_at",{ascending:false}).limit(300);
+    setLogLoading(false);
+    if(error){ alert(tr(lang,"Журнал недоступен") + ": " + error.message); return; }
+    setLog(data || []);
+  };
+  useEffect(() => { if(logOpen && !log.length) loadLog(); }, [logOpen]);
+
+  const actors = [...new Set(log.map(r => r.actor_name || r.actor_email).filter(Boolean))].sort();
+  const q = logSearch.trim().toLowerCase();
+  const shownLog = log.filter(r => (logTable === "all" || r.table_name === logTable) && (logWho === "all" || (r.actor_name || r.actor_email) === logWho)
+    && (!q || `${r.row_label || ""} ${r.actor_name || ""} ${JSON.stringify(r.changes || {})}`.toLowerCase().includes(q)));
+
+  return <div className="card adminBase">
+    <h3>{tr(lang,"Менеджер ушёл — база осталась")}</h3>
+    <p className="muted">{tr(lang,"Клиенты, объекты и сделки принадлежат агентству. Передайте базу уволенного менеджера другому в один клик, затем закройте ему доступ в разделе «Доступы».")}</p>
+    <div className="grid2">
+      <Field label={tr(lang,"От кого")}><select className="input" value={fromEmail} onChange={e => { setFromEmail(e.target.value); setResult(null); }}>
+        <option value="">{tr(lang,"Выберите менеджера")}</option>
+        {staff.map(u => <option key={u.id} value={u.email}>{u.full_name || u.email}{(u.access === false || u.status === "blocked") ? ` · ${tr(lang,"доступ закрыт")}` : ""}</option>)}
+      </select></Field>
+      <Field label={tr(lang,"Кому")}><select className="input" value={toEmail} onChange={e => { setToEmail(e.target.value); setResult(null); }}>
+        <option value="">{tr(lang,"Выберите менеджера")}</option>
+        {staff.filter(u => u.email !== fromEmail && u.access !== false && u.status !== "blocked").map(u => <option key={u.id} value={u.email}>{u.full_name || u.email}</option>)}
+      </select></Field>
+    </div>
+    {fromUser && <p className="muted">{tr(lang,"Клиентов у менеджера")}: <b>{fromLeads}</b> · {tr(lang,"также перейдут его объекты, запланированные события и сделки")}</p>}
+    <Button className="full" onClick={transfer} disabled={busy || !fromUser || !toUser}>{busy ? tr(lang,"Передаём…") : tr(lang,"Передать базу")}</Button>
+    {result && <div className="card amber" style={{marginTop:10}}>
+      ✓ {tr(lang,"Передано")} {result.to}: {tr(lang,"клиентов")} {result.leads}, {tr(lang,"объектов")} {result.properties}, {tr(lang,"событий")} {result.events}, {tr(lang,"сделок")} {result.deals}.
+    </div>}
+
+    <div className="adminBaseRow">
+      <Button variant="soft" onClick={exportBase}>{tr(lang,"Выгрузить базу клиентов (Excel)")}</Button>
+      <Button variant="soft" onClick={() => setLogOpen(v => !v)}>{logOpen ? tr(lang,"Скрыть журнал") : tr(lang,"Журнал действий")}</Button>
+    </div>
+    <p className="muted" style={{fontSize:12}}>{tr(lang,"Выгрузка базы и журнал доступны только директору и тех. администратору. Записи журнала нельзя изменить или удалить.")}</p>
+
+    {logOpen && <div className="auditBox">
+      <div className="auditFilters">
+        <select className="input" value={logTable} onChange={e => setLogTable(e.target.value)}><option value="all">{tr(lang,"Все разделы")}</option>{Object.entries(AUDIT_TABLES).map(([k,v]) => <option key={k} value={k}>{tr(lang,v)}</option>)}</select>
+        <select className="input" value={logWho} onChange={e => setLogWho(e.target.value)}><option value="all">{tr(lang,"Все сотрудники")}</option>{actors.map(a => <option key={a} value={a}>{a}</option>)}</select>
+        <input className="input" placeholder={tr(lang,"Поиск в журнале")} value={logSearch} onChange={e => setLogSearch(e.target.value)}/>
+        <Button variant="soft" onClick={loadLog}>{logLoading ? "…" : "↻"}</Button>
+      </div>
+      {!logLoading && shownLog.length === 0 && <p className="muted">{tr(lang,"Записей пока нет. Журнал ведётся с момента включения.")}</p>}
+      {shownLog.map(r => {
+        const ch = r.changes || {};
+        const fields = r.action === "update" ? Object.entries(ch).filter(([k]) => AUDIT_FIELDS[k]).slice(0,4) : [];
+        return <div key={r.id} className="auditRow">
+          <div className="auditHead"><b>{r.actor_name || r.actor_email || tr(lang,"Система")}</b> {tr(lang, AUDIT_ACTIONS[r.action] || r.action)} {tr(lang, (AUDIT_TABLES[r.table_name] || r.table_name).toLowerCase())} <b>«{r.row_label || "#" + r.row_id}»</b></div>
+          {fields.map(([k,[a,b]]) => <div key={k} className="auditChange">{tr(lang,AUDIT_FIELDS[k])}: <s>{auditValue(a)}</s> → {auditValue(b)}</div>)}
+          {r.action === "update" && !fields.length && <div className="auditChange">{Object.keys(ch).slice(0,4).join(", ")}</div>}
+          <small>{new Date(r.created_at).toLocaleString("ru-RU")}</small>
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
 function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,users,currentProfile,onLogout,agencyName,onLeadsImported,onOpenLead}) {
   const isTech = role === "Администратор тех отдел";
   const [agencyBrand,setAgencyBrand] = useState(()=>loadAgencyBrand(currentProfile?.agency_id));
@@ -6152,6 +6408,8 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
         {themeOptions.map(t=><Button key={t.id} variant={theme===t.id ? "primary" : "soft"} onClick={()=>{setTheme(t.id); if(currentProfile?.id) supabase.from("users").update({theme:t.id}).eq("id", currentProfile.id);}}>{t.name}</Button>)}
       </div>
     </div>
+
+    {(isTech || role === "Администратор директор") && <AgencyBaseAdmin users={users} leads={leads} currentProfile={currentProfile} role={role} lang={lang} onChanged={onLeadsImported}/>}
 
     {isTech && <div className="card">
       <h3>Брендинг и названия агентства</h3>
@@ -7447,7 +7705,7 @@ export default function App(){
         {page==="newbuilds"&&<div className="screen"><div className="card" style={{textAlign:"center",padding:"40px 18px"}}><div style={{fontSize:42}}>🏗</div><h3>{tr(lang,"Новобудови")}</h3><p className="muted">{tr(lang,"Раздел в разработке. Скоро здесь появятся новостройки.")}</p></div></div>}
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
-        {lead&&<LeadModal key={lead.id} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile}/>} 
+        {lead&&<LeadModal key={lead.id} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang}/>} 
         {property&&<PropertyModal property={property} setProperties={setProperties} onClose={()=>setProperty(null)} users={users} currentProfile={currentProfile} role={role} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}  
       </main>
     </div>

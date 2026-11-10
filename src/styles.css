@@ -246,3 +246,50 @@
 .homeShortcuts button{border:1px solid color-mix(in srgb,var(--text,#111) 10%,transparent);background:var(--card,#fff);color:inherit;border-radius:16px;padding:14px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit}
 .homeShortcuts svg{color:var(--accent,#d6a500)}
 @media(min-width:900px){.homeScreen{max-width:760px;padding:24px}.homeTiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* ===== База агентства: передача, выгрузка, журнал ===== */
+.adminBase .grid2{margin:8px 0}
+.adminBaseRow{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.auditBox{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.auditFilters{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.auditFilters .input{margin:0}
+@media(min-width:700px){.auditFilters{grid-template-columns:1fr 1fr 2fr auto}}
+.auditRow{border-top:1px solid color-mix(in srgb,var(--text,#111) 10%,transparent);padding:8px 0;font-size:13px;line-height:1.4}
+.auditChange{font-size:12px;opacity:.8;padding-left:8px}
+.auditChange s{opacity:.6}
+.auditRow small{font-size:11px;opacity:.55}
+
+/* ===== Подбор объектов ===== */
+.matchOpenBtn{margin:6px 0 12px}
+.matchCriteria{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(min-width:700px){.matchCriteria{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.matchBlock{margin-top:14px;border-top:1px solid color-mix(in srgb,var(--text,#111) 10%,transparent);padding-top:12px;display:flex;flex-direction:column;gap:8px}
+.matchBlockHead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.matchBlockHead h3{margin:0}
+.matchItem{display:flex;align-items:flex-start;gap:10px;border:1px solid color-mix(in srgb,var(--text,#111) 10%,transparent);border-radius:14px;padding:10px 12px;cursor:pointer}
+.matchItem.on{border-color:var(--accent,#d6a500);background:color-mix(in srgb,var(--accent,#d6a500) 8%,transparent)}
+.matchItem input[type=checkbox]{width:22px;height:22px;margin-top:2px;accent-color:var(--accent,#d6a500);flex:0 0 auto}
+.matchItem>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.matchItem small{opacity:.65;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.matchItem em{font-style:normal;font-weight:800;white-space:nowrap}
+.matchItem.market{cursor:default}
+.matchItem.st-not_actual{opacity:.5}
+.matchItem.st-actual{border-color:#22c55e}
+.matchActions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
+.matchActions a{font-size:12px;font-weight:800;color:var(--accent,#d6a500);text-decoration:none;margin-right:4px}
+.matchActions button{border:1px solid color-mix(in srgb,var(--text,#111) 16%,transparent);background:transparent;color:inherit;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;min-height:32px}
+.matchActions button.on{background:var(--accent,#d6a500);color:#0B0B0C;border-color:var(--accent,#d6a500)}
+.matchNotice{background:color-mix(in srgb,var(--accent,#d6a500) 12%,transparent);border-radius:12px;padding:10px 12px;font-size:13px}
+.matchSummary{display:flex;flex-wrap:wrap;gap:6px}
+.matchSummary span{background:color-mix(in srgb,var(--text,#111) 6%,transparent);border-radius:999px;padding:5px 10px;font-size:12px}
+.matchSource h4{margin:8px 0 6px;font-size:14px}
+.matchSource h4 a{font-size:12px;color:var(--accent,#d6a500);text-decoration:none}
+.matchSource .matchItem{margin-bottom:6px}
+.matchSend{margin-top:16px;border-top:2px solid var(--accent,#d6a500);padding-top:12px}
+.matchSend h3{margin:0 0 8px}
+.matchPreview{white-space:pre-wrap;font-family:inherit;font-size:13px;background:color-mix(in srgb,var(--text,#111) 5%,transparent);border-radius:12px;padding:10px;margin:0 0 10px}
+.matchSendBtns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(min-width:700px){.matchSendBtns{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.matchSendBtns .btn{display:flex;align-items:center;justify-content:center;text-decoration:none;min-height:48px}
+.matchSendBtns .disabled{opacity:.4;pointer-events:none}
+.linkBtn{border:0;background:transparent;color:var(--accent,#d6a500);font-weight:800;cursor:pointer;padding:0}
