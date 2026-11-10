@@ -323,6 +323,59 @@ Deno.serve(async (req) => {
       } finally { await close(client); }
     }
 
+    // Вход по QR-коду одним соединением (как Telegram Desktop): поток событий в CRM, вход дожидается подтверждения
+    // на сервере даже если телефон оборвал соединение (EdgeRuntime.waitUntil).
+    if (action === "qr_stream") {
+      const { apiId, apiHash } = await apiCreds();
+      const enc = new TextEncoder();
+      let ctrl: ReadableStreamDefaultController | null = null;
+      const stream = new ReadableStream({ start(c) { ctrl = c; }, cancel() { ctrl = null; } });
+      const send = (o: unknown) => { try { ctrl?.enqueue(enc.encode(JSON.stringify(o) + "\n")); } catch { ctrl = null; } };
+      const end = () => { try { ctrl?.close(); } catch { /* */ } ctrl = null; };
+      const work = (async () => {
+        const client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 2, timeout: 20 });
+        client.setLogLevel("none");
+        let timer: number | undefined;
+        try {
+          await client.connect();
+          await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "qr_wait", temp_session: null, phone_code_hash: null, connected_by_email: me || null, updated_at: new Date().toISOString() });
+          const login = client.signInUserWithQrCode({ apiId, apiHash }, {
+            qrCode: async ({ token }: any) => {
+              const bytes = new Uint8Array(token); let bin = ""; for (const x of bytes) bin += String.fromCharCode(x);
+              const url = "tg://login?token=" + btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+              const svg = await QRCode.toString(url, { type: "svg", margin: 1, width: 240, color: { dark: "#000000", light: "#ffffff" } });
+              console.log("telegram-private qr_stream token");
+              send({ qr: true, url, svg });
+            },
+            password: async () => {
+              // Вход подтверждён, нужен облачный пароль: сохраняем эту же сессию — пароль введут в CRM
+              await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "password_needed", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
+              console.log("telegram-private qr_stream password_needed");
+              send({ need_password: true });
+              throw new Error("NEED_PASSWORD");
+            },
+            onError: async (e: any) => { console.log("telegram-private qr_stream onError", String(e?.errorMessage || e?.message || e)); return true; },
+          } as any);
+          const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("QR_TIMEOUT")), 140000); });
+          await Promise.race([login, timeout]);
+          const me2: any = await client.getMe();
+          const name = [me2?.firstName, me2?.lastName].filter(Boolean).join(" ") || me2?.username || "Telegram";
+          await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, phone: me2?.phone ? "+" + me2.phone : null, tg_name: name, connected_by_email: me || null, updated_at: new Date().toISOString() });
+          console.log("telegram-private qr_stream connected");
+          send({ connected: true, name });
+        } catch (e) {
+          const m = String((e as any)?.errorMessage || (e as Error)?.message || e);
+          console.log("telegram-private qr_stream end", m);
+          const { data: now } = await db.from("telegram_accounts").select("status").eq("agency_id", agencyId).maybeSingle();
+          if (now?.status === "password_needed") send({ need_password: true });
+          else if (m.includes("QR_TIMEOUT")) send({ timeout: true });
+          else send({ error: humanError(e) });
+        } finally { clearTimeout(timer); await close(client); end(); }
+      })();
+      try { (globalThis as any).EdgeRuntime?.waitUntil?.(work); } catch { /* */ }
+      return new Response(stream, { headers: { ...CORS, "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });
+    }
+
     // Вход по QR-коду / подтверждению в приложении Telegram (без кода из СМС/чата)
     if (action === "qr_start" || action === "qr_check") {
       const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();

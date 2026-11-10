@@ -7,3 +7,7 @@ export const supabase = createClient(
   supabaseUrl,
   supabaseKey
 );
+
+// для прямых запросов (потоковый вход в Telegram по QR)
+export const SUPABASE_URL = supabaseUrl;
+export const SUPABASE_KEY = supabaseKey;
