@@ -1635,8 +1635,15 @@ function useCalendarEvents(profile){
     (async () => { await migrate(); await load(); })();
     const onVis = () => { if(document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", onVis);
-    const t = setInterval(load, 60000);
-    return () => { document.removeEventListener("visibilitychange", onVis); clearInterval(t); };
+    const t = setInterval(load, 180000); // запасной вариант, основное — живое обновление ниже
+    let rt = null;
+    const channel = supabase.channel("crm-calendar-live")
+      .on("postgres_changes", {event:"*", schema:"public", table:"calendar"}, () => {
+        if (rt) return;
+        rt = setTimeout(() => { rt = null; if (document.visibilityState === "visible") load(); }, 1000);
+      })
+      .subscribe();
+    return () => { document.removeEventListener("visibilitychange", onVis); clearInterval(t); if (rt) clearTimeout(rt); supabase.removeChannel(channel); };
   }, [profile?.id]);
 
   const setEvents = (next) => {
@@ -6960,30 +6967,34 @@ export default function App(){
     return (!!myEmail && managerEmail === myEmail) || (!!myName && manager === myName);
   }
 
-  async function loadFromSupabase(profile = currentProfile){
+  async function loadFromSupabase(profile = currentProfile, only = null){
+    // only — набор разделов для частичной перезагрузки при живом обновлении (null = всё)
+    const want = g => !only || only.has(g);
+    const SKIP = {skip:true, data:null, error:null};
+    const fail = (msg) => { if (only) console.warn(msg); else alert(msg); };
     const agencyId = profile?.agency_id ? String(profile.agency_id) : profileAgencyId;
     const roleForLoad = profile?.role || role;
 
-    const leadsRes = await supabase.from("leads").select("*").order("id", { ascending: false }); // последние добавленные — сверху (у загруженных из заметок дата лида может быть старой)
-    const postsRes = await supabase.from("news").select("*").order("created_at", { ascending: false });
-    const newsMediaRes = await supabase.from("news_media").select("*").order("created_at", { ascending: false });
-    const propsRes = await supabase.from("properties").select("*").order("created_at", { ascending: false });
-    const propertyMediaRes = await supabase.from("property_media").select("*");
-    const commentsRes = await supabase.from("comments").select("*");
-    const agenciesRes = await supabase.from("agencies").select("*").order("created_at", { ascending: false });
-    const usersRes = await supabase.from("users").select("*").order("created_at", { ascending: false });
-    const helpRes = await supabase.from("manager_help_requests").select("*").order("created_at", { ascending: false });
-    const activitiesRes = await supabase.from("activities").select("*").order("created_at", { ascending: false });
+    const leadsRes = want("leads") ? await supabase.from("leads").select("*").order("id", { ascending: false }) : SKIP; // последние добавленные — сверху (у загруженных из заметок дата лида может быть старой)
+    const postsRes = want("posts") ? await supabase.from("news").select("*").order("created_at", { ascending: false }) : SKIP;
+    const newsMediaRes = want("posts") ? await supabase.from("news_media").select("*").order("created_at", { ascending: false }) : SKIP;
+    const propsRes = want("props") ? await supabase.from("properties").select("*").order("created_at", { ascending: false }) : SKIP;
+    const propertyMediaRes = want("props") ? await supabase.from("property_media").select("*") : SKIP;
+    const commentsRes = want("posts") ? await supabase.from("comments").select("*") : SKIP;
+    const agenciesRes = want("users") ? await supabase.from("agencies").select("*").order("created_at", { ascending: false }) : SKIP;
+    const usersRes = want("users") ? await supabase.from("users").select("*").order("created_at", { ascending: false }) : SKIP;
+    const helpRes = want("help") ? await supabase.from("manager_help_requests").select("*").order("created_at", { ascending: false }) : SKIP;
+    const activitiesRes = want("activities") ? await supabase.from("activities").select("*").order("created_at", { ascending: false }) : SKIP;
 
-    if (leadsRes.error) {
-      alert("Ошибка загрузки клиентов: " + leadsRes.error.message);
+    if (leadsRes.skip) {} else if (leadsRes.error) {
+      fail("Ошибка загрузки клиентов: " + leadsRes.error.message);
     } else {
       const mapped = (leadsRes.data || []).map(leadFromDb);
       setLeadsRaw(mapped);
     }
 
-    if (postsRes.error) {
-      alert("Ошибка загрузки ленты: " + postsRes.error.message);
+    if (postsRes.skip) {} else if (postsRes.error) {
+      fail("Ошибка загрузки ленты: " + postsRes.error.message);
     } else {
       const mediaRows = newsMediaRes.error ? [] : (newsMediaRes.data || []);
       const commentRows = commentsRes.error ? [] : (commentsRes.data || []);
@@ -6991,18 +7002,18 @@ export default function App(){
       setPostsRaw(roleForLoad === "Администратор тех отдел" ? mappedPosts : mappedPosts.filter(p => !agencyId || !p.agency_id || String(p.agency_id) === String(agencyId)));
     }
 
-    if (propsRes.error) {
-      alert("Ошибка загрузки вторички: " + propsRes.error.message);
+    if (propsRes.skip) {} else if (propsRes.error) {
+      fail("Ошибка загрузки вторички: " + propsRes.error.message);
     } else {
       const propertyMediaRows = propertyMediaRes.error ? [] : (propertyMediaRes.data || []);
       const mappedProps = (propsRes.data || []).map(row => propertyFromDb(row, propertyMediaRows));
       setPropertiesRaw(roleForLoad === "Администратор тех отдел" ? mappedProps : mappedProps.filter(p => !agencyId || !p.agency_id || String(p.agency_id) === String(agencyId)));
     }
 
-    if (!agenciesRes.error) setAgencies(agenciesRes.data || []);
-    if (!usersRes.error) setUsers(usersRes.data || []);
-    if (!helpRes.error) setHelp((helpRes.data || []).map(h => ({...h, id:String(h.id), leadId:h.lead_id, text:h.question || h.text || ""})));
-    if (!activitiesRes.error) setActivities(activitiesRes.data || []);
+    if (!agenciesRes.skip && !agenciesRes.error) setAgencies(agenciesRes.data || []);
+    if (!usersRes.skip && !usersRes.error) setUsers(usersRes.data || []);
+    if (!helpRes.skip && !helpRes.error) setHelp((helpRes.data || []).map(h => ({...h, id:String(h.id), leadId:h.lead_id, text:h.question || h.text || ""})));
+    if (!activitiesRes.skip && !activitiesRes.error) setActivities(activitiesRes.data || []);
   }
 
   useEffect(() => {
@@ -7011,17 +7022,28 @@ export default function App(){
 
   useEffect(() => {
     if (!currentProfile) return;
-    const channel = supabase.channel("crm-realtime-refresh")
-      .on("postgres_changes", {event:"*", schema:"public", table:"leads"}, () => loadFromSupabase(currentProfile))
-      .on("postgres_changes", {event:"*", schema:"public", table:"news"}, () => loadFromSupabase(currentProfile))
-      .on("postgres_changes", {event:"*", schema:"public", table:"news_media"}, () => loadFromSupabase(currentProfile))
-      .on("postgres_changes", {event:"*", schema:"public", table:"comments"}, () => loadFromSupabase(currentProfile))
-      .on("postgres_changes", {event:"*", schema:"public", table:"properties"}, () => loadFromSupabase(currentProfile))
-      .on("postgres_changes", {event:"*", schema:"public", table:"property_media"}, () => loadFromSupabase(currentProfile))
-      .on("postgres_changes", {event:"*", schema:"public", table:"manager_help_requests"}, () => loadFromSupabase(currentProfile))
-      .on("postgres_changes", {event:"*", schema:"public", table:"activities"}, () => loadFromSupabase(currentProfile))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    // Живое обновление: перезагружаем только изменившийся раздел, изменения собираем в пачку (не чаще раза в ~2 сек),
+    // пока приложение свёрнуто — копим и обновляем при возврате. Так массовая загрузка лидов не «кладёт» телефоны.
+    const groupOf = {leads:"leads", news:"posts", news_media:"posts", comments:"posts", properties:"props", property_media:"props", manager_help_requests:"help", activities:"activities", users:"users", agencies:"users"};
+    const pending = new Set(); let timer = null; let last = 0;
+    const flush = () => {
+      timer = null;
+      if (!pending.size) return;
+      if (document.visibilityState !== "visible") return;
+      const only = new Set(pending); pending.clear(); last = Date.now();
+      loadFromSupabase(currentProfile, only);
+    };
+    const schedule = (table) => {
+      pending.add(groupOf[table] || "leads");
+      if (timer) return;
+      timer = setTimeout(flush, Math.max(1200, 2500 - (Date.now() - last)));
+    };
+    const onVisible = () => { if (document.visibilityState === "visible" && pending.size && !timer) timer = setTimeout(flush, 300); };
+    document.addEventListener("visibilitychange", onVisible);
+    let channel = supabase.channel("crm-realtime-refresh");
+    Object.keys(groupOf).forEach(table => { channel = channel.on("postgres_changes", {event:"*", schema:"public", table}, () => schedule(table)); });
+    channel.subscribe();
+    return () => { if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisible); supabase.removeChannel(channel); };
   }, [currentProfile?.id]);
 
   async function recordManagerActivity(activity={}){
