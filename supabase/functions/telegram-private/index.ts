@@ -135,7 +135,7 @@ async function channelPosts(client: TelegramClient, meta: any, limit = 30) {
     const compl = prev && ((!prev.mediaCount && p.mediaCount && !p.text) || (prev.mediaCount && !prev.text && p.text && !p.mediaCount) || (prev.mediaCount && !prev.text && p.mediaCount && !p.text));
     if (close && compl && prev.mediaCount + p.mediaCount <= MAX_FILES_PER_POST) {
       prev.text = [prev.text, p.text].filter(Boolean).join("\n\n");
-      prev.msgs = prev.msgs.concat(p.msgs); prev.mediaCount += p.mediaCount; prev.ids.push(...p.ids);
+      prev.msgs = prev.msgs.concat(p.msgs); prev.mediaCount += p.mediaCount; prev.ids.push(p.external_id);
     } else merged.push({ ...p, ids: [p.external_id] });
   }
   return merged;
