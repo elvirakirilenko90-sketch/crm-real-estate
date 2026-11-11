@@ -559,7 +559,7 @@ async function dimApiSearch(f:Filters,pageUrl:string){
     const addr=[d.street_name_uk||d.street_name,d.building_number_str].filter(Boolean).join(", ");
     const title=[addr,d.district_name_uk||d.district_name,d.city_name_uk||d.city_name].filter(Boolean).join(" · ")||`DIM.RIA ${d.realty_id}`;
     return {external_id:String(d.realty_id),source_name:"DIM.RIA Украина",source_url:listingUrlInUsd(url,"DIM.RIA Украина"),title,description:desc.slice(0,1800),
-      country:"Украина",region:g.region||String(d.state_name_uk||""),city:String(d.city_name_uk||d.city_name||g.city||""),district:String(d.district_name_uk||d.district_name||""),
+      country:"Украина",region:g.region||String(d.state_name_uk||""),city:String(d.city_name_uk||d.city_name||g.city||""),district:districtCanon(String(d.district_name_uk||d.district_name||"")),
       property_type:propertyLabel(f),deal_type:rent?"Аренда":"Продажа",rooms:Number(d.rooms_count||0)||null,price:usd,area:Number(d.total_square_meters||0),currency:"USD",
       complex_name:String(d.user_newbuild_name_uk||d.user_newbuild_name||""),main_photo_url:photos[0]||dimPhoto(d.main_photo),photo_urls:photos.slice(0,12),
       published_at:d.publishing_date?new Date(String(d.publishing_date).replace(" ","T")+"+02:00").toISOString():null,
