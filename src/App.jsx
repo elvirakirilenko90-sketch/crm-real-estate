@@ -8504,7 +8504,7 @@ export default function App(){
   const [page,setPage] = useStorage("page","home");
   const [role,setRole] = useStorage("role","Администратор директор");
   const [theme,setTheme] = useStorage("crm_theme","nightGold");
-  const [lang,setLang] = useStorage("crm_lang","ru");
+  const [lang,setLang] = useStorage("crm_lang","uk");
 
   const [session,setSession] = useState(null);
   const [currentProfile,setCurrentProfile] = useState(null);
@@ -8561,7 +8561,7 @@ export default function App(){
       if (data.theme !== "nightGold" && !migrated) { setTheme("nightGold"); supabase.from("users").update({theme:"nightGold"}).eq("id", data.id).then(()=>{}); }
       else setTheme(data.theme);
     }
-    if (data.language) setLang(data.language);
+    setLang(data.language || "uk");
     return data;
   }
 
