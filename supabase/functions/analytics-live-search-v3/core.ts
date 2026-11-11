@@ -960,9 +960,12 @@ async function hydrateComplexFilter(f:Filters,req:Request){
     if(!scoped.length)return;
     const score=(item:any)=>
       (String(item.source_url||"")===sourceUrl?128:0)+
-      (complexCanon(String(item.official_name||""))===exactName?64:0)+
+      (complexCanon(String(item.official_name||"")).replace(/\s+/g," ").trim()===exactName.replace(/\s+/g," ").trim()?64:0)+
       (geoComparable(item.city,"city")===geoComparable(requestedCity,"city")?32:0)+
-      (geoComparable(item.region,"region")===geoComparable(requestedRegion,"region")?16:0);
+      (geoComparable(item.region,"region")===geoComparable(requestedRegion,"region")?16:0)+
+      // жилой комплекс важнее бизнес-центра с тем же названием (ЖК Kadorr City / БЦ Kadorr City)
+      (/\/novostroyka-zhk-/i.test(String(item.source_url||""))&&!/\b(?:бц|bc|бізнес|бизнес)/i.test(String(f.complex||""))?8:0)-
+      (/\/novostroyka-bts-/i.test(String(item.source_url||""))&&!/\b(?:бц|bc|бізнес|бизнес)/i.test(String(f.complex||""))?8:0);
     const hit=[...scoped].sort((a,b)=>score(b)-score(a))[0];if(!hit)return;
     f.complex_source_url=String(hit.source_url||f.complex_source_url||"");
     (f as any)._complex_official_name=String(hit.official_name||f.complex||"");
