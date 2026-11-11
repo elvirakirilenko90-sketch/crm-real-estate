@@ -4828,7 +4828,8 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     });
     // REM всегда читаем живьём с сайта (в базе REM-записей нет — раньше пустая база подменяла живой REM и он пропадал)
     const storedSources=isForeign?[]:[wantsStored("Telegram")&&"ПБН"].filter(Boolean);
-    const edgeCall=dealType=>supabase.functions.invoke("analytics-live-search-v3",{body:{
+    // Каждая площадка запрашивается отдельно: медленная или упавшая площадка не обнуляет остальные
+    const edgeCallOne=(dealType,src)=>supabase.functions.invoke("analytics-live-search-v3",{body:{
       country:country==="Все"?"Украина":country,
       region:region==="Все"?"":region,
       city:city==="Все"?"":city,
@@ -4853,8 +4854,9 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       period:period==="1"?"per_day":period==="day"?"per_allday":period==="custom"?"custom":"",
       date_from:period==="custom"&&dateFrom?dateFrom:null,
       date_to:period==="custom"&&dateTo?dateTo:null,
-      page:livePage,pages:1,sources:wanted
-    }});
+      page:livePage,pages:1,sources:[src]
+    }}).then(r=>r.error?{data:{results:[{source:src,ok:false,error:`${src}: площадка не ответила вовремя — обновите поиск`,items:[]}]},error:null}:r).catch(()=>({data:{results:[{source:src,ok:false,error:`${src}: площадка не ответила`,items:[]}]},error:null}));
+    const edgeCall=dealType=>Promise.all(wanted.map(src=>edgeCallOne(dealType,src))).then(list=>({data:{results:list.flatMap(r=>r?.data?.results||[])},error:null}));
     // «Все» = продажа и аренда одновременно; ответы одной площадки складываем.
     const edgePromise=!wanted.length?Promise.resolve({data:{results:[]},error:null})
       :dealFilter==="Все"
