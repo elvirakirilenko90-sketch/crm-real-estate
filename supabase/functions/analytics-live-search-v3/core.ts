@@ -352,7 +352,7 @@ async function resolvedRieltorComplexUrl(f:Filters){
 }
 
 function parseOlx(html:string,f:Filters){
-  const original=geo(f),g={...original,city:String((f as any)._requested_city||original.city||""),district:districtCanon(String((f as any)._requested_district||original.district||""))},nativeComplexSearch=!!f.complex&&f.complex!=="Все",nativeFilters=nativeComplexSearch?{...f,complex:"",city:g.city,district:g.district}:f,marks=[...html.matchAll(/data-cy=["']l-card["']/gi)].map(m=>m.index||0),out:Item[]=[];
+  const original=geo(f),g={...original,city:String((f as any)._requested_city||original.city||""),district:districtCanon(String((f as any)._requested_district||original.district||""))},nativeComplexSearch=!!f.complex&&f.complex!=="Все",olxNativeRooms=propertyGroup(f)==="apartment"&&/^[1-4]\+?$/.test(String(f.rooms||"")),nativeFilters={...f,complex:nativeComplexSearch?"":f.complex,city:g.city,district:g.district,price_from:undefined,price_to:undefined,area_from:undefined,area_to:undefined,rooms:olxNativeRooms?"":f.rooms},marks=[...html.matchAll(/data-cy=["']l-card["']/gi)].map(m=>m.index||0),out:Item[]=[];
   for(let i=0;i<marks.length;i++){
     const seg=html.slice(marks[i],i+1<marks.length?marks[i+1]:marks[i]+15000);
     const href=seg.match(/href=["']([^"']*\/d\/(?:uk\/)?obyavlenie\/[^"']+)["']/i)?.[1];
