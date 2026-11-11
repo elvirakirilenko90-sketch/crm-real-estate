@@ -4826,7 +4826,8 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       const v=String(x||"").toLowerCase();
       return name==="REM"?v.includes("rem"):v.includes("telegram")||v.includes("пбн");
     });
-    const storedSources=isForeign?[]:[wantsStored("REM")&&"REM",wantsStored("Telegram")&&"ПБН"].filter(Boolean);
+    // REM всегда читаем живьём с сайта (в базе REM-записей нет — раньше пустая база подменяла живой REM и он пропадал)
+    const storedSources=isForeign?[]:[wantsStored("Telegram")&&"ПБН"].filter(Boolean);
     const edgeCall=dealType=>supabase.functions.invoke("analytics-live-search-v3",{body:{
       country:country==="Все"?"Украина":country,
       region:region==="Все"?"":region,
@@ -4887,7 +4888,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     const [{data,error},storedResults]=await Promise.all([edgePromise,storedPromise]);
     if(error)throw error;
     const results=Array.isArray(data?.results)?data.results:[];
-    const mergedResults=[...results.filter(x=>!(x.source==="REM"&&storedResults.some(s=>s.source==="REM"&&s.ok))),...storedResults];
+    const mergedResults=[...results,...storedResults];
     setLiveSourceMeta(mergedResults.map(x=>({source:x.source,total:x.total,exact:x.count_is_exact!==false,ok:x.ok!==false,error:x.error||"",url:x.url||"",pageItemCount:Number(x.page_item_count||(x.items||[]).length||0),totalPages:Number(x.total_pages||0),hasMore:x.has_more!==false,storedReadonly:!!x.stored_readonly})));
     return mergedResults.flatMap(x=>(x.items||[]).map((row,index)=>({...row,
       id:`live-${x.source}-${row.external_id||row.id||index}`,origin:row.origin||"live",live_total:x.total,
