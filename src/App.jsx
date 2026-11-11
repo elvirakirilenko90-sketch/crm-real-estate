@@ -4604,6 +4604,9 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const [landAreaFrom,setLandAreaFrom]=useState("");
   const [landAreaTo,setLandAreaTo]=useState("");
   const [verifiedOnly,setVerifiedOnly]=useState(false);
+  // доп. фильтры ТЗ: этажность, не первый/последний, кухня, жилая, фото, рынок
+  const [floorsFrom,setFloorsFrom]=useState("");const [floorsTo,setFloorsTo]=useState("");const [notFirstFloor,setNotFirstFloor]=useState(false);const [notLastFloor,setNotLastFloor]=useState(false);
+  const [kitchenFrom,setKitchenFrom]=useState("");const [livingFrom,setLivingFrom]=useState("");const [withPhoto,setWithPhoto]=useState(false);const [marketFilter,setMarketFilter]=useState("Все");
   // Дубли нужны менеджеру: по умолчанию показываем каждое объявление каждого источника.
   const [noDuplicates,setNoDuplicates]=useState(false);
   const [groupDuplicates,setGroupDuplicates]=useState(true);
@@ -4855,6 +4858,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       area_to:areaTo?Number(areaTo):null,
       floor_from:floorFrom?Number(floorFrom):null,
       floor_to:floorTo?Number(floorTo):null,
+      floors_from:floorsFrom?Number(floorsFrom):null,floors_to:floorsTo?Number(floorsTo):null,not_first_floor:!!notFirstFloor,not_last_floor:!!notLastFloor,kitchen_from:kitchenFrom?Number(kitchenFrom):null,living_from:livingFrom?Number(livingFrom):null,with_photo:!!withPhoto,market:marketFilter==="Все"?"":marketFilter,
       complex:complexFilter==="Все"?"":complexFilter,
       programs:governmentPrograms,
       condition:conditionFilter==="Все"||conditionFilter==="Не указано"?"":conditionFilter,
@@ -4903,7 +4907,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     if(error)throw error;
     const results=Array.isArray(data?.results)?data.results:[];
     const mergedResults=[...results,...storedResults];
-    setLiveSourceMeta(mergedResults.map(x=>({source:x.source,total:x.total,exact:x.count_is_exact!==false,capped:!!x.count_capped,ok:x.ok!==false,error:x.error||"",url:x.url||"",pageItemCount:Number(x.page_item_count||(x.items||[]).length||0),totalPages:Number(x.total_pages||0),hasMore:x.has_more!==false,storedReadonly:!!x.stored_readonly})));
+    setLiveSourceMeta(mergedResults.map(x=>({source:x.source,total:x.total,exact:x.count_is_exact!==false,capped:!!x.count_capped,note:x.count_note||"",ok:x.ok!==false,error:x.error||"",url:x.url||"",pageItemCount:Number(x.page_item_count||(x.items||[]).length||0),totalPages:Number(x.total_pages||0),hasMore:x.has_more!==false,storedReadonly:!!x.stored_readonly})));
     return mergedResults.flatMap(x=>(x.items||[]).map((row,index)=>({...row,
       id:`live-${x.source}-${row.external_id||row.id||index}`,origin:row.origin||"live",live_total:x.total,
       last_seen_at:row.last_seen_at||new Date().toISOString(),
@@ -4918,7 +4922,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     if(!agencyId)return;
     const seq=++marketLoadSeq.current;
     lastActivityRef.current=Date.now();
-    {const key=JSON.stringify([activeSourceTab,country,region,city,districtFilter,dealFilter,roomsFilter,priceFrom,priceTo,areaFrom,areaTo,period,dateFrom,dateTo,complexFilter,propertyKindFilter,constructionYearFrom,constructionYearTo,conditionFilter,landAreaFrom,landAreaTo,verifiedOnly,floorFrom,floorTo]);
+    {const key=JSON.stringify([activeSourceTab,country,region,city,districtFilter,dealFilter,roomsFilter,priceFrom,priceTo,areaFrom,areaTo,period,dateFrom,dateTo,complexFilter,propertyKindFilter,constructionYearFrom,constructionYearTo,conditionFilter,landAreaFrom,landAreaTo,verifiedOnly,floorFrom,floorTo,floorsFrom,floorsTo,notFirstFloor,notLastFloor,kitchenFrom,livingFrom,withPhoto,marketFilter]);
      if(searchSessionRef.current.key!==key){closeSearchSession("new_search");searchSessionRef.current={id:newSearchSessionId(),key};}}
     setLoadingMarket(true);setMarketError("");
     try{
@@ -4955,7 +4959,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     // Не спамим Supabase новым запросом на каждую введённую цифру.
     const t=setTimeout(()=>{loadMarket();},650);
     return()=>clearTimeout(t);
-  },[agencyId,activeSourceTab,country,region,city,districtFilter,dealFilter,roomsFilter,priceFrom,priceTo,areaFrom,areaTo,period,dateFrom,dateTo,complexFilter,propertyKindFilter,constructionYearFrom,constructionYearTo,governmentPrograms.join("|"),conditionFilter,landAreaFrom,landAreaTo,verifiedOnly,floorFrom,floorTo,livePage]);
+  },[agencyId,activeSourceTab,country,region,city,districtFilter,dealFilter,roomsFilter,priceFrom,priceTo,areaFrom,areaTo,period,dateFrom,dateTo,complexFilter,propertyKindFilter,constructionYearFrom,constructionYearTo,governmentPrograms.join("|"),conditionFilter,landAreaFrom,landAreaTo,verifiedOnly,floorFrom,floorTo,floorsFrom,floorsTo,notFirstFloor,notLastFloor,kitchenFrom,livingFrom,withPhoto,marketFilter,livePage]);
   // Уход из раздела Аналитики — сессия поиска закрывается.
   useEffect(()=>()=>closeSearchSession("leave"),[]);
   // 30 минут без действий — результаты прошлого поиска очищаются (менеджер нажмёт «Обновить» и получит свежую выдачу).
@@ -5546,7 +5550,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const liveTotals=liveSourceMeta.filter(x=>x.ok&&Number(x.total)>0);
   const liveTotal=liveTotals.reduce((sum,x)=>sum+Number(x.total||0),0);
   const maxLivePages=Math.max(1,...liveSourceMeta.filter(x=>x.ok).map(x=>Number(x.totalPages||0)).filter(Boolean));
-  const sourceSummary=(()=>{const m=new Map();liveSourceMeta.filter(x=>x.ok).forEach(x=>m.set(x.source,[x.source,Number(x.total||x.pageItemCount||0),x.exact,x.capped]));Object.entries(sourceCounts).forEach(([name,count])=>{if(!m.has(name))m.set(name,[name,count,true]);});return [...m.values()].filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);})();
+  const sourceSummary=(()=>{const m=new Map();liveSourceMeta.filter(x=>x.ok).forEach(x=>m.set(x.source,[x.source,Number(x.total||x.pageItemCount||0),x.exact,x.capped,x.note||""]));Object.entries(sourceCounts).forEach(([name,count])=>{if(!m.has(name))m.set(name,[name,count,true]);});return [...m.values()].filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);})();
 
   const normalizeUrl=v=>String(v||"").trim();
   const sourceUrlInUsd=(value,source="")=>{
@@ -5798,7 +5802,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     finally{setCreatingSelection(false);}
   };
 
-  const resetFilters=()=>{closeSearchSession("reset");marketLoadSeq.current++;setMarketListings([]);setLiveSourceMeta([]);setLivePage(1);setActiveSourceTab("ALL");setPeriod("all");setDateFrom("");setDateTo("");setCountry("Все");setRegion("Все");setCity("Все");setDistrictFilter("Все");setComplexFilter("Все");setPropertyKindFilter("Все");setSellerFilter("Все");setConditionFilter("Все");setFloorFrom("");setFloorTo("");setLandAreaFrom("");setLandAreaTo("");setVerifiedOnly(false);setNoDuplicates(false);setGroupDuplicates(true);setConstructionYearFrom("");setConstructionYearTo("");setGovernmentPrograms([]);setDealFilter("Продажа");setSelectedSources([]);setSourceCountry("Все");setSearchQuery("");setRoomsFilter("Все");setPriceFrom("");setPriceTo("");setAreaFrom("");setAreaTo("");setPriceSort("none");setSelected([]);clearAnalyticsMarketCache();};
+  const resetFilters=()=>{closeSearchSession("reset");marketLoadSeq.current++;setMarketListings([]);setLiveSourceMeta([]);setLivePage(1);setActiveSourceTab("ALL");setPeriod("all");setDateFrom("");setDateTo("");setCountry("Все");setRegion("Все");setCity("Все");setDistrictFilter("Все");setComplexFilter("Все");setPropertyKindFilter("Все");setSellerFilter("Все");setConditionFilter("Все");setFloorFrom("");setFloorTo("");setFloorsFrom("");setFloorsTo("");setNotFirstFloor(false);setNotLastFloor(false);setKitchenFrom("");setLivingFrom("");setWithPhoto(false);setMarketFilter("Все");setLandAreaFrom("");setLandAreaTo("");setVerifiedOnly(false);setNoDuplicates(false);setGroupDuplicates(true);setConstructionYearFrom("");setConstructionYearTo("");setGovernmentPrograms([]);setDealFilter("Продажа");setSelectedSources([]);setSourceCountry("Все");setSearchQuery("");setRoomsFilter("Все");setPriceFrom("");setPriceTo("");setAreaFrom("");setAreaTo("");setPriceSort("none");setSelected([]);clearAnalyticsMarketCache();};
 
   const filterBox={padding:16,border:"1px solid rgba(148,163,184,.24)",borderRadius:18,background:"rgba(255,255,255,.72)"};
   const actionStyle={minHeight:46,fontWeight:800,borderRadius:14};
@@ -5893,6 +5897,13 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       <div className="grid4" style={{marginTop:12}}>
         <Field label="Этаж от"><input className="input" type="number" min="0" value={floorFrom} onChange={e=>setFloorFrom(e.target.value)} placeholder="любой"/></Field>
         <Field label="Этаж до"><input className="input" type="number" min="0" value={floorTo} onChange={e=>setFloorTo(e.target.value)} placeholder="любой"/></Field>
+        <Field label="Этажность от"><input className="input" type="number" min="1" value={floorsFrom} onChange={e=>setFloorsFrom(e.target.value)} placeholder="любая"/></Field>
+        <Field label="Этажность до"><input className="input" type="number" min="1" value={floorsTo} onChange={e=>setFloorsTo(e.target.value)} placeholder="любая"/></Field>
+      </div>
+      <div className="grid4" style={{marginTop:12}}>
+        <Field label="Кухня от, м²"><input className="input" type="number" min="0" value={kitchenFrom} onChange={e=>setKitchenFrom(e.target.value)} placeholder="0"/></Field>
+        <Field label="Жилая площадь от, м²"><input className="input" type="number" min="0" value={livingFrom} onChange={e=>setLivingFrom(e.target.value)} placeholder="0"/></Field>
+        <Field label="Рынок"><select className="input" value={marketFilter} onChange={e=>setMarketFilter(e.target.value)}><option value="Все">Все</option><option value="Новостройка">Новостройка</option><option value="Вторичка">Вторичка</option></select></Field>
         <Field label="Участок от, соток"><input className="input" type="number" min="0" step="0.1" value={landAreaFrom} onChange={e=>setLandAreaFrom(e.target.value)} placeholder="0"/></Field>
         <Field label="Участок до, соток"><input className="input" type="number" min="0" step="0.1" value={landAreaTo} onChange={e=>setLandAreaTo(e.target.value)} placeholder="без лимита"/></Field>
       </div>
@@ -5902,6 +5913,9 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
         <div style={{...filterBox,gridColumn:"span 2"}}><Field label="Государственные программы · можно выбрать несколько"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>{["єОселя","єВідновлення / сертификат","Постановление №280","Постановление №719","Постановление №1176","Другие госпрограммы"].map(program=><label key={program} className={cn("chip","govChip",governmentPrograms.includes(program)&&"active")} style={{justifyContent:"flex-start"}}><input type="checkbox" checked={governmentPrograms.includes(program)} onChange={()=>setGovernmentPrograms(current=>current.includes(program)?current.filter(x=>x!==program):[...current,program])}/>{program}</label>)}</div></Field></div>
       </div>
       <div className="chips" style={{marginTop:14}}>
+        <label className={cn("chip",notFirstFloor&&"active")}><input type="checkbox" checked={notFirstFloor} onChange={e=>setNotFirstFloor(e.target.checked)}/> Не первый этаж</label>
+        <label className={cn("chip",notLastFloor&&"active")}><input type="checkbox" checked={notLastFloor} onChange={e=>setNotLastFloor(e.target.checked)}/> Не последний этаж</label>
+        <label className={cn("chip",withPhoto&&"active")}><input type="checkbox" checked={withPhoto} onChange={e=>setWithPhoto(e.target.checked)}/> Только с фото</label>
         <label className={cn("chip",verifiedOnly&&"active")}><input type="checkbox" checked={verifiedOnly} onChange={e=>setVerifiedOnly(e.target.checked)}/> Только проверенные объявления</label>
         <label className={cn("chip",groupDuplicates&&"active")}><input type="checkbox" checked={groupDuplicates} onChange={e=>setGroupDuplicates(e.target.checked)}/> Сгруппировать дубли</label>
         <label className={cn("chip",noDuplicates&&"active")}><input type="checkbox" checked={noDuplicates} onChange={e=>setNoDuplicates(e.target.checked)}/> Скрыть дубли</label>
@@ -5945,7 +5959,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       <div className="stat" style={{minHeight:110}}><span>{tr(lang,"ВАЛЮТА")}</span><div style={{display:"flex",gap:6,marginTop:6}}>{[["USD","$"],["UAH","₴"]].map(([c,l])=><button key={c} className={cn("chip",displayCurrency===c&&"active")} style={{fontWeight:900,minWidth:54}} onClick={()=>setDisplayCurrency(c)}>{l} {c}</button>)}</div><small className="muted">{fxRates.UAH_PER_USD>0?<>{tr(lang,"Курс НБУ")} {fxRates.date}: 1 $ = {fxRates.UAH_PER_USD.toFixed(2)} ₴</>:tr(lang,"Курс НБУ загружается…")}</small></div>
       <div className="stat" style={{minHeight:110}}><span>НОВЫХ ЗА 7 ДНЕЙ</span><b style={{fontSize:34}}>{newCount}</b></div>
       <div className="stat" style={{minHeight:110}}><span>ИСЧЕЗЛО / НЕАКТИВНО</span><b style={{fontSize:34}}>{inactiveCount}</b></div>
-      {sourceSummary.map(([name,count,exact,capped])=><div className="stat" key={name} style={{minHeight:110}}><span>{name}</span><b style={{fontSize:34}}>{capped?`${count}+`:exact?count:`≈ ${count}`}</b></div>)}
+      {sourceSummary.map(([name,count,exact,capped,note])=><div className="stat" key={name} style={{minHeight:110}}><span>{name}</span><b style={{fontSize:34}}>{capped?`${count}+`:exact?count:`≈ ${count}`}</b>{note&&<small className="muted" style={{display:"block",marginTop:6,lineHeight:1.35}}>{note}</small>}</div>)}
     </div>
     {liveSourceMeta.some(x=>x.error)&&<div className="card" style={{padding:"12px 16px",borderRadius:18,marginBottom:16}}>
       <small className="muted">Площадки без результатов по этому запросу:</small>

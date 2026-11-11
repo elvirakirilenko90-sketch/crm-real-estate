@@ -64,7 +64,7 @@ const yearFromText=(text:string)=>num(text.match(/["']?(?:construction_year|buil
 const verifiedFromText=(text:string)=>/перевірен|проверен|verified/i.test(text);
 const programTags=(text:string)=>{const t=text.toLowerCase(),a=[] as string[];if(/єосел|еосел/.test(t))a.push("єОселя");if(/євіднов|евіднов|житлов(?:ий|ой) сертифікат|сертификат на жиль/.test(t))a.push("єВідновлення / сертификат");for(const n of [280,719,1176])if(new RegExp(`(?:постанова|постановление)[^0-9]{0,20}${n}`).test(t))a.push(`Постановление №${n}`);return a};
 
-type Filters={country?:string;region?:string;city?:string;district?:string;property_type?:string;deal_type?:string;rooms?:string|number;price_from?:number;price_to?:number;area_from?:number;area_to?:number;complex?:string;complex_source_url?:string;condition?:string;floor_from?:number;floor_to?:number;land_area_from?:number;land_area_to?:number;construction_year_from?:number;construction_year_to?:number;verified_only?:boolean;programs?:string[];page?:number;pages?:number;sources?:string[];_uahPerUsd?:number;_complex_year?:number};
+type Filters={country?:string;region?:string;city?:string;district?:string;property_type?:string;deal_type?:string;rooms?:string|number;price_from?:number;price_to?:number;area_from?:number;area_to?:number;complex?:string;complex_source_url?:string;condition?:string;floor_from?:number;floor_to?:number;land_area_from?:number;land_area_to?:number;construction_year_from?:number;construction_year_to?:number;verified_only?:boolean;floors_from?:number;floors_to?:number;not_first_floor?:boolean;not_last_floor?:boolean;kitchen_from?:number;kitchen_to?:number;living_from?:number;living_to?:number;with_photo?:boolean;market?:string;programs?:string[];page?:number;pages?:number;sources?:string[];_uahPerUsd?:number;_complex_year?:number};
 type Item={external_id:string;source_name:string;source_url:string;title:string;description:string;country:string;region:string;city:string;district:string;property_type:string;deal_type:string;rooms:number|null;price:number;area:number;currency:string;complex_name:string;main_photo_url:string;photo_urls:string[];published_at:string|null;raw_data:any};
 
 async function proxyPresentationImage(value:string){
@@ -676,7 +676,10 @@ async function dimApiSearch(f:Filters,pageUrl:string){
   const rooms=String(f.rooms||"");if(/^\d/.test(rooms)){const n=parseInt(rooms);u.set("characteristic[209][from]",String(n));if(!/\+/.test(rooms))u.set("characteristic[209][to]",String(n));}
   if(f.price_from||f.price_to){if(f.price_from)u.set("characteristic[234][from]",String(f.price_from));if(f.price_to)u.set("characteristic[234][to]",String(f.price_to));u.set("characteristic[242]","239");}
   if(f.area_from)u.set("characteristic[214][from]",String(f.area_from));if(f.area_to)u.set("characteristic[214][to]",String(f.area_to));
-  if(f.floor_from)u.set("characteristic[227][from]",String(f.floor_from));if(f.floor_to)u.set("characteristic[227][to]",String(f.floor_to));
+  {const ff=Math.max(Number(f.floor_from||0),f.not_first_floor?2:0);if(ff)u.set("characteristic[227][from]",String(ff));}if(f.floor_to)u.set("characteristic[227][to]",String(f.floor_to));
+  if(f.floors_from)u.set("characteristic[228][from]",String(f.floors_from));if(f.floors_to)u.set("characteristic[228][to]",String(f.floors_to));
+  if(f.living_from)u.set("characteristic[216][from]",String(f.living_from));if(f.living_to)u.set("characteristic[216][to]",String(f.living_to));
+  if(f.kitchen_from)u.set("characteristic[218][from]",String(f.kitchen_from));if(f.kitchen_to)u.set("characteristic[218][to]",String(f.kitchen_to));
   dimPeriodParams(f,u);
   const searchUrl=`https://dom.ria.com/node/searchEngine/v2/?${u.toString()}`;
   const sr=await politeFetch(searchUrl);if(!sr.ok)return null;
@@ -750,6 +753,70 @@ function rieltorNative(url:string,f:Filters){
     return u.toString();
   }catch{return url}
 }
+
+// ===== Дополнительные фильтры: родные параметры каждой площадки (проверено по счётчикам сайтов 11.11.2026) =====
+// OLX: этажность, кухня, рынок (primary/secondary), этаж; DIM.RIA: 228 этажность, 216 жилая, 218 кухня, 227 этаж;
+// REM: floorCountMin/Max, isNotFirstFloor, isNotLastFloor, areaKitchen*, areaLiving*, hasPhotos, newBuilding/oldBuilding;
+// ЛУН: floorMin; RIELTOR.UA: ремонт renovation_full/part/no. Остального площадки не умеют — помечаем «приблизительно».
+const marketOf=(f:Filters)=>{const m=String(f.market||"").toLowerCase();return /нов|new|primary|перв/.test(m)?"new":/втор|second|old/.test(m)?"secondary":""};
+const conditionOf=(f:Filters)=>{const c=String(f.condition||"");return /без/i.test(c)?"no":/с ремонт|з ремонт|ремонт/i.test(c)?"yes":""};
+function applyExtraFilters(source:string,base:string,f:Filters){
+  if(!base)return base;let u:URL;try{u=new URL(base)}catch{return base}
+  const apt=propertyGroup(f)==="apartment";const floorFrom=Math.max(Number(f.floor_from||0),f.not_first_floor?2:0);
+  if(source==="OLX"&&apt){
+    if(f.floors_from)u.searchParams.set("search[filter_float_total_floors:from]",String(f.floors_from));if(f.floors_to)u.searchParams.set("search[filter_float_total_floors:to]",String(f.floors_to));
+    if(f.kitchen_from)u.searchParams.set("search[filter_float_kitchen_area:from]",String(f.kitchen_from));if(f.kitchen_to)u.searchParams.set("search[filter_float_kitchen_area:to]",String(f.kitchen_to));
+    if(floorFrom)u.searchParams.set("search[filter_float_floor:from]",String(floorFrom));
+    const m=marketOf(f);if(m&&!isRent(f))u.searchParams.set("search[filter_enum_apartments_object_type][0]",m==="new"?"primary_market":"secondary_market");
+  }
+  if(source==="REM"&&apt){
+    if(f.floors_from)u.searchParams.set("floorCountMin",String(f.floors_from));if(f.floors_to)u.searchParams.set("floorCountMax",String(f.floors_to));
+    if(f.not_first_floor)u.searchParams.set("isNotFirstFloor","1");if(f.not_last_floor)u.searchParams.set("isNotLastFloor","1");
+    if(f.kitchen_from)u.searchParams.set("areaKitchenMin",String(f.kitchen_from));if(f.kitchen_to)u.searchParams.set("areaKitchenMax",String(f.kitchen_to));
+    if(f.living_from)u.searchParams.set("areaLivingMin",String(f.living_from));if(f.living_to)u.searchParams.set("areaLivingMax",String(f.living_to));
+    if(f.with_photo)u.searchParams.set("hasPhotos","1");
+    const m=marketOf(f);if(m)u.searchParams.set(m==="new"?"newBuilding":"oldBuilding","1");
+  }
+  if((source==="ЛУН"||source==="LUN")&&apt&&floorFrom)u.searchParams.set("floorMin",String(floorFrom));
+  if(source==="RIELTOR.UA"){const c=conditionOf(f);if(c==="no")u.searchParams.set("renovation_no","1");else if(c==="yes"){u.searchParams.set("renovation_full","1");u.searchParams.set("renovation_part","1");}}
+  return u.toString();
+}
+// фильтры CRM, которые конкретная площадка сама не применяет (счётчик площадки их не учитывает)
+function unsupportedFilters(source:string,f:Filters){
+  const apt=propertyGroup(f)==="apartment";const out:string[]=[];
+  const has=(v:any)=>v!==undefined&&v!==null&&v!==""&&v!==false&&v!==0;
+  const native:any={
+    "OLX":{area:1,floor_from:1,floor_to:1,floors:apt,kitchen:apt,not_first:apt,market:apt},
+    "DIM.RIA Украина":{area:1,floor_from:1,floor_to:1,floors:1,kitchen:1,living:1,not_first:1},
+    "REM":{area:1,floor_from:apt,floor_to:apt,floors:apt,kitchen:apt,living:apt,not_first:apt,not_last:apt,photo:apt,market:apt},
+    "ЛУН":{floor_from:apt,not_first:apt},
+    "RIELTOR.UA":{condition:1}
+  }[source]||{};
+  const want:[string,boolean,string][]=[
+    ["area",has(f.area_from)||has(f.area_to),"площадь"],["floor_from",has(f.floor_from),"этаж от"],["floor_to",has(f.floor_to),"этаж до"],
+    ["floors",has(f.floors_from)||has(f.floors_to),"этажность дома"],["kitchen",has(f.kitchen_from)||has(f.kitchen_to),"площадь кухни"],
+    ["living",has(f.living_from)||has(f.living_to),"жилая площадь"],["not_first",!!f.not_first_floor,"не первый этаж"],["not_last",!!f.not_last_floor,"не последний этаж"],
+    ["photo",!!f.with_photo,"только с фото"],["market",!!marketOf(f),"новостройка/вторичка"],["condition",!!conditionOf(f),"состояние/ремонт"],
+    ["year",has(f.construction_year_from)||has(f.construction_year_to),"год постройки"],["land",has(f.land_area_from)||has(f.land_area_to),"площадь участка"],["verified",!!f.verified_only,"только проверенные"]
+  ];
+  for(const [k,on,label] of want)if(on&&!native[k])out.push(label);
+  return out;
+}
+// отбор на странице по данным карточки, где площадка фильтр не применяет (неизвестное значение — не отбрасываем)
+function itemPassesExtra(x:any,f:Filters){
+  const text=`${x.title||""} ${x.description||""}`;
+  const pair=text.match(/(\d{1,2})\s*(?:\/|з|из|of)\s*(\d{1,2})\s*(?:поверх|этаж|эт\.?|floor)?/i);
+  const floor=Number(x.raw_data?.floor||x.floor||(pair?pair[1]:0))||0,floors=Number(x.raw_data?.floors_count||x.raw_data?.total_floors||(pair?pair[2]:0))||0;
+  if(f.with_photo&&!(x.main_photo_url||(x.photo_urls||[]).length))return false;
+  if(floors&&f.floors_from&&floors<Number(f.floors_from))return false;if(floors&&f.floors_to&&floors>Number(f.floors_to))return false;
+  if(f.not_first_floor&&floor===1)return false;if(f.not_last_floor&&floor&&floors&&floor===floors)return false;
+  const kitchen=Number((text.match(/кухн[яіи]\s*[:\-–]?\s*(\d{1,3}(?:[.,]\d)?)/i)||[])[1]?.replace(",",".")||0);
+  if(kitchen&&f.kitchen_from&&kitchen<Number(f.kitchen_from))return false;if(kitchen&&f.kitchen_to&&kitchen>Number(f.kitchen_to))return false;
+  const living=Number((text.match(/житлова\s+площа\s*[:\-–]?\s*(\d{1,3}(?:[.,]\d)?)|жилая\s+площадь\s*[:\-–]?\s*(\d{1,3}(?:[.,]\d)?)/i)||[]).slice(1).find(Boolean)?.replace(",",".")||0);
+  if(living&&f.living_from&&living<Number(f.living_from))return false;if(living&&f.living_to&&living>Number(f.living_to))return false;
+  const m=marketOf(f);if(m==="new"&&/вторин|вторичн/i.test(text)&&!/новобуд|новострой|новый дом|новий будинок/i.test(text))return false;if(m==="secondary"&&/від забудовника|от застройщика|новобудов|новострой/i.test(text))return false;
+  return true;
+}
 async function one(source:string,f:Filters){
   // Город, которого нет на площадке: не подменяем его общей выдачей по Украине
   {const wantCity=String(geo(f).city||"").trim();const portal:any={"OLX":"olx","DIM.RIA Украина":"dim","RIELTOR.UA":"rieltor"}[source];
@@ -796,7 +863,7 @@ async function one(source:string,f:Filters){
       return{source,ok:true,status:200,url:pageUrl,search_url:api.searchUrl,page:requestedPage,pages_loaded:1,total:extra?items.length:api.count,count_is_exact:!extra,page_item_count:items.length,total_pages:totalPages,has_more:requestedPage<totalPages,items};
     }
   }
-  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=rieltorNative(await resolvedRieltorComplexUrl(f),f);else if(source==="REM"){base=remUrl(f);}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if((f as any)._district_native)f={...f,district:"",district_uk:"",_requested_district:""} as any;if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,unsupported_category:true,error:`На ${source} нет раздела «${propertyLabel(f)}»${isDaily(f)?" (посуточно)":isRent(f)?" (аренда)":""} для этого запроса`,items:[]};
+  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=rieltorNative(await resolvedRieltorComplexUrl(f),f);else if(source==="REM"){base=remUrl(f);}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if((f as any)._district_native)f={...f,district:"",district_uk:"",_requested_district:""} as any;base=applyExtraFilters(source,base,f);if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,unsupported_category:true,error:`На ${source} нет раздела «${propertyLabel(f)}»${isDaily(f)?" (посуточно)":isRent(f)?" (аренда)":""} для этого запроса`,items:[]};
   // DIM.RIA: one CRM page is a block of five native DIM.RIA pages (up to about
   // 100 listings). The frontend sends pages:1, but DIM.RIA must still return a
   // full page comparable to the other sources.
@@ -1032,6 +1099,13 @@ export async function handler(req:Request):Promise<Response>{
     if(isRent(f))await loadUah();
     const sessionId=String(body?.search_session_id||"");const startedAt=Date.now();if(sessionId)await touchSession(sessionId,req,{city:f.city,district:f.district,complex:f.complex,property_type:f.property_type,deal_type:f.deal_type,sources});
     const results=(await Promise.all(sources.map(s=>one(s,f)))).map((r:any)=>isRent(f)?{...r,items:(r.items||[]).map((i:any)=>({...i,deal_type:"Аренда"}))}:r);
+    for(const r of results as any[]){
+      if(!r||r.ok===false||r.unsupported_city||r.unsupported_category)continue;
+      const miss=unsupportedFilters(String(r.source),f);if(!miss.length)continue;
+      const before=(r.items||[]).length;r.items=(r.items||[]).filter((x:any)=>itemPassesExtra(x,f));
+      r.approximate_filters=miss;r.count_is_exact=false;r.count_approximate=true;
+      r.count_note=`${r.source} не фильтрует: ${miss.join(", ")}. Число — по фильтрам, которые площадка применила сама; на странице отобрано ${r.items.length} из ${before}.`;
+    }
     // No exchange-rate conversion is performed. Every returned price is the
     // USD amount printed by the advertising source itself.
     if(sessionId)await journalResults(sessionId,req,results,Date.now()-startedAt);
