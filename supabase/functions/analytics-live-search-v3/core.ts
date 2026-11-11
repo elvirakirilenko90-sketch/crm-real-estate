@@ -1102,7 +1102,7 @@ export async function handler(req:Request):Promise<Response>{
     const sessionId=String(body?.search_session_id||"");const startedAt=Date.now();if(sessionId)await touchSession(sessionId,req,{city:f.city,district:f.district,complex:f.complex,property_type:f.property_type,deal_type:f.deal_type,sources});
     const results=(await Promise.all(sources.map(s=>one(s,f)))).map((r:any)=>isRent(f)?{...r,items:(r.items||[]).map((i:any)=>({...i,deal_type:"Аренда"}))}:r);
     for(const r of results as any[]){
-      if(r&&r.source==="RIELTOR.UA"&&!String(f.complex||"").trim()&&Array.isArray(r.items)&&r.url){const m=String(r.url).match(/^https:\/\/rieltor\.ua\/([a-z0-9-]+)\/(?:flats|houses|areas|commercials|rooms)-/);if(m){const own=r.items.filter((x:any)=>new RegExp(`rieltor\\.ua\\/${m[1]}\\/`).test(String(x.source_url||"")));if(own.length<r.items.length){r.items=own;r.page_item_count=own.length;}}}
+      if(r&&r.source==="RIELTOR.UA"&&!String(f.complex||"").trim()&&Array.isArray(r.items)&&r.url){const m=String(r.url).match(/^https:\/\/rieltor\.ua\/([a-z0-9-]+)\/(?:flats|houses|areas|commercials|rooms)-/);if(m&&m[1]!=="kiev"){const own=r.items.filter((x:any)=>new RegExp(`rieltor\\.ua\\/${m[1]}\\/`).test(String(x.source_url||"")));if(own.length<r.items.length){r.items=own;r.page_item_count=own.length;}}}
     }
     for(const r of results as any[]){
       if(!r||r.ok===false||r.unsupported_city||r.unsupported_category)continue;
