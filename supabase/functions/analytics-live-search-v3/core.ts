@@ -558,6 +558,22 @@ async function dimApiSearch(f:Filters,pageUrl:string){
   return {count,items,searchUrl,PER};
 }
 
+
+// REM: фильтры сайта rem.ua (комнаты — в адресе, цена/площадь/этаж/ЖК — параметрами формы поиска)
+function remUrl(f:Filters){
+  const group=propertyGroup(f);if(group!=="apartment"&&group!=="house")return "";
+  if(group==="house")return remParams("https://rem.ua/ua/prodazha-domov-odessa",f,false);
+  const r=parseInt(String(f.rooms||""))||0;const slug=({1:"odnokomnatnye",2:"dvuhkomnatnye",3:"trehkomnatnye",4:"chetyrehkomnatnye"} as any)[Math.min(r,4)]||"";
+  return remParams(`https://rem.ua/ua/prodazha-kvartir-${slug?slug+"-":""}odessa`,f,true);
+}
+function remParams(base:string,f:Filters,apartment:boolean){
+  const u=new URL(base);
+  if(f.price_from||f.price_to){if(f.price_from)u.searchParams.set("priceMin",String(f.price_from));if(f.price_to)u.searchParams.set("priceMax",String(f.price_to));u.searchParams.set("currency","usd");}
+  if(f.area_from)u.searchParams.set("areaTotalMin",String(f.area_from));if(f.area_to)u.searchParams.set("areaTotalMax",String(f.area_to));
+  if(apartment&&f.floor_from)u.searchParams.set("floorMin",String(f.floor_from));if(apartment&&f.floor_to)u.searchParams.set("floorMax",String(f.floor_to));
+  const cx=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк)(?=\s|$)/g," ").trim();if(apartment&&cx&&cx!=="Все")u.searchParams.set("textQuery",cx);
+  return u.toString();
+}
 async function one(source:string,f:Filters){
   // Город, которого нет на площадке: не подменяем его общей выдачей по Украине
   {const wantCity=String(geo(f).city||"").trim();const portal:any={"OLX":"olx","DIM.RIA Украина":"dim","RIELTOR.UA":"rieltor"}[source];
@@ -578,7 +594,7 @@ async function one(source:string,f:Filters){
       return{source,ok:true,status:200,url:pageUrl,search_url:api.searchUrl,page:requestedPage,pages_loaded:1,total:extra?items.length:api.count,count_is_exact:!extra,page_item_count:items.length,total_pages:totalPages,has_more:requestedPage<totalPages,items};
     }
   }
-  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=await resolvedRieltorComplexUrl(f);else if(source==="REM"){const group=propertyGroup(f);base=group==="house"?"https://rem.ua/ua/prodazha-domov-odessa":group==="apartment"?(f.complex&&complexMatches(f.complex,"ЖК Калейдоскоп")?"https://rem.ua/ua/prodazha-kvartir-odnokomnatnye-odessa-stroiteley":"https://rem.ua/ua/prodazha-kvartir-odessa"):"";}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,items:[]};
+  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=await resolvedRieltorComplexUrl(f);else if(source==="REM"){base=remUrl(f);}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,items:[]};
   // DIM.RIA: one CRM page is a block of five native DIM.RIA pages (up to about
   // 100 listings). The frontend sends pages:1, but DIM.RIA must still return a
   // full page comparable to the other sources.
@@ -609,7 +625,7 @@ async function one(source:string,f:Filters){
     }
   }else{const conc=source==="OLX"?3:2;for(let offset=0;offset<pageCount;offset+=conc){const size=Math.min(conc,pageCount-offset);pages.push(...await Promise.all(Array.from({length:size},(_,i)=>{const page=firstPage+offset+i;return page===1&&firstProbe?firstProbe:fetchPage(page)})));if(offset+conc<pageCount&&source!=="OLX")await sleep(250)}}
   const successful=pages.filter(x=>x.status>=200&&x.status<300&&x.html);
-  if(!successful.length)return{source,ok:false,status:pages[0]?.status||0,url:pages[0]?.url||base,items:[]};
+  if(!successful.length){const st=pages[0]?.status||0;return{source,ok:false,status:st,url:pages[0]?.url||base,error:st===403||st===429?`${source} сейчас закрыл доступ для автоматического поиска (защита сайта). Откройте этот же поиск на сайте по ссылке — CRM повторит запрос при следующем обновлении.`:`${source} не ответил (код ${st||"нет связи"}). Откройте поиск на сайте по ссылке.`,items:[]}}
   const scanFilters={...f,condition:"",floor_from:undefined,floor_to:undefined,construction_year_from:undefined,construction_year_to:undefined,verified_only:false,programs:[]};
   const parseFilters=(exactComplexCatalog||exactRieltorCatalog)?{...scanFilters,complex:""}:scanFilters;
   let parsed=successful.flatMap(p=>source==="OLX"?parseOlx(p.html,scanFilters):source==="DIM.RIA Украина"?parseDom(p.html,parseFilters):source==="REM"?parseRem(p.html,scanFilters):source==="ЛУН"?parseLun(p.html,parseFilters):exactRieltorCatalog?parseExactRieltorPage(p.html,parseFilters):parseGeneric(p.html,source,"https://rieltor.ua",parseFilters));
@@ -672,8 +688,9 @@ async function one(source:string,f:Filters){
   // Advertising-site headline counters may include promoted, inaccessible or
   // merely keyword-related listings, so never present them as filtered cards.
   const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
-  const total=olxAllNative?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
-  const countExact=olxAllNative||!postParseFilterActive||!!f.complex;
+  const remAllNative=source==="REM"&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&!f.district&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const total=(olxAllNative||remAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
+  const countExact=olxAllNative||remAllNative||!postParseFilterActive||!!f.complex;
   const pageItemCount=items.length;
   // ЛУН не сообщает общее число объявлений: страница полная — значит, есть следующая
   const lunOpenEnded=source==="ЛУН"&&!exactComplexCatalog&&!f.complex&&pageItemCount>=20;
