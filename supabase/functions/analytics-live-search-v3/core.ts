@@ -676,7 +676,7 @@ function rieltorNative(url:string,f:Filters){
 async function one(source:string,f:Filters){
   // Город, которого нет на площадке: не подменяем его общей выдачей по Украине
   {const wantCity=String(geo(f).city||"").trim();const portal:any={"OLX":"olx","DIM.RIA Украина":"dim","RIELTOR.UA":"rieltor"}[source];
-   if(wantCity&&portal==="olx"&&!portalSlug("olx",wantCity)&&(REM_LUN_CITIES as any)[wantCity.toLowerCase()]){const sl=await olxCitySlugLive(wantCity);if(sl)f={...f,_olx_slug:sl} as any;}
+   if(wantCity&&portal==="olx"&&(REM_LUN_CITIES as any)[wantCity.toLowerCase()]){const sl=await olxCitySlugLive(wantCity);if(sl)f={...f,_olx_slug:sl} as any;}
    if(wantCity&&portal==="dim"&&portalSlug("dim",wantCity)===""){const ids=await dimCityIds(wantCity);if(ids)f={...f,_dim_ids:ids} as any;}
    if(wantCity&&portal&&!(portal==="dim"&&(f as any)._dim_ids)&&!(portal==="olx"&&(f as any)._olx_slug)){const s=portalSlug(portal,wantCity)??(portal==="rieltor"?rieltorCitySlug(wantCity):citySlug(wantCity));if(!s)return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ${source} нет отдельной выдачи по городу «${wantCity}»`,items:[]}}
    if(source==="REM"&&wantCity&&!remCitySlug(wantCity))return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На REM нет отдельной выдачи по городу «${wantCity}»`,items:[]};
