@@ -231,6 +231,7 @@ async function presentationDetail(value:string){
 function passes(x:Item,f:Filters){const roomsPlus=/\+/.test(String(f.rooms||"")),room=parseInt(String(f.rooms||0))||0,text=`${x.title||""} ${x.description||""} ${JSON.stringify(x.raw_data||{})}`,floor=num(x.raw_data?.floor)||floorFromText(text).floor,land=num(x.raw_data?.land_area)||landAreaFromText(text),year=num(x.raw_data?.construction_year)||yearFromText(text),condition=(["С ремонтом","Без ремонта"].includes(String(x.raw_data?.condition||""))?String(x.raw_data?.condition):conditionTag(text));return(!f.district||f.district==="Все"||districtCanon(x.district)===districtCanon(f.district))&&(!room||(roomsPlus?Number(x.rooms||0)>=room:Number(x.rooms||0)===room))&&(!f.price_from||x.price>=Number(f.price_from))&&(!f.price_to||x.price<=Number(f.price_to))&&(!f.area_from||x.area>=Number(f.area_from))&&(!f.area_to||x.area<=Number(f.area_to))&&(!f.complex||f.complex==="Все"||complexMatches(`${x.complex_name} ${x.title} ${x.description}`,f.complex))&&(!f.condition||f.condition==="Все"||condition===f.condition)&&(!f.floor_from||floor>=Number(f.floor_from))&&(!f.floor_to||floor>0&&floor<=Number(f.floor_to))&&(!f.land_area_from||land>=Number(f.land_area_from))&&(!f.land_area_to||land>0&&land<=Number(f.land_area_to))&&(!f.construction_year_from||year>=Number(f.construction_year_from))&&(!f.construction_year_to||year>0&&year<=Number(f.construction_year_to))&&(!f.verified_only||verifiedFromText(text))&&(!(f.programs||[]).length||(f.programs||[]).some(p=>programTags(text).includes(p)));}
 
 function countFrom(html:string,source:string){
+  if(source==="ЛУН"){const m=html.match(/>\s*(\d[\d\s\u00a0]{0,9})\s*квартир[аи]?\s*</i);if(m)return num(m[1]);}
   const t=clean(html);
   // DIM.RIA prints the exact catalog total in the filter button, for example
   // "Показати 8 885 оголошень". Prefer this explicit value over the number of
@@ -385,10 +386,20 @@ function parseDom(html:string,f:Filters){
 
 const lunCitySlug=(value="")=>{const c=String(value||"").toLowerCase();if(/одес|odes/.test(c))return"odesa";if(/ки[еї]в|kyiv|kiev/.test(c))return"kyiv";if(/льв[іо]в|lviv/.test(c))return"lviv";if(/дн[іе]пр|dnipr/.test(c))return"dnipro";return latin(c)||"odesa"};
 const lunComplexSlug=(value="")=>normalizeComplexNumbers(String(value||"")).replace(/^\s*(?:жк\s+|жил(?:ой|ого)?\s+комплекс\s+|житлов(?:ий|ого)?\s+комплекс\s+)/i," ").split(/[^a-zа-яіїєґ0-9]+/i).map(part=>latin(part)).filter(Boolean).join("-");
-const lunUrl=(f:Filters)=>{const city=lunCitySlug(f.city||"Одесса"),group=propertyGroup(f);if(group!=="apartment")return"";const rent=isRent(f),slug=!rent&&f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):"flats";return `https://lun.ua/${rent?"rent":"sale"}/${city}/${slug}`};
+const lunUrl=(f:Filters)=>{const city=lunCitySlug(f.city||"Одесса"),group=propertyGroup(f);if(group!=="apartment")return"";const rent=isRent(f),slug=!rent&&f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):"flats";const lunDistricts:any={"Киевский":"kyivskyi","Приморский":"prymorskyi","Хаджибейский":"khadzhybeiskyi","Пересыпский":"peresypskyi"};const g=geo(f),dSlug=slug==="flats"&&city==="odesa"?lunDistricts[g.district]:"";const u=new URL(`https://lun.ua/${rent?"rent":"sale"}/${city}/${slug}${dSlug?`-${dSlug}-district`:""}`);
+  // родные фильтры ЛУН: комнаты и цена в $ (счётчик «N квартир» на странице учитывает их)
+  const r=parseInt(String(f.rooms||""))||0;if(r>=1&&r<=3&&/^[1-3]$/.test(String(f.rooms)))u.searchParams.set("roomCount",String(r));
+  if(f.price_from||f.price_to){if(f.price_from)u.searchParams.set("priceMin",String(f.price_from));if(f.price_to)u.searchParams.set("priceMax",String(f.price_to));u.searchParams.set("currency","USD");}
+  return u.toString()};
 
 function parseLun(html:string,f:Filters){
   const exactUrls=new Map([...html.matchAll(/\\\"id\\\":(\d+),\\\"groupId\\\":\\\"[^\\\"]*\\\",\\\"urlRaw\\\":\\\"([^\\\"]+)/g)].map(m=>[String(m[1]),decodeHtml(m[2]).replace(/\\\\\//g,"/")]));
+  // скрытые данные карточек ЛУН: комнаты, площадь, этаж, год, дата появления (в тексте карточки их нет)
+  const lunMeta=new Map<string,any>();
+  for(const m of html.matchAll(/\\"id\\":(\d+),\\"groupId\\"/g)){
+    const s=html.slice(m.index||0,(m.index||0)+2500),v=(k:string)=>s.match(new RegExp('\\\\"'+k+'\\\\":\\\\?"?([\\d.T:-]+)'))?.[1]||"";
+    if(!lunMeta.has(m[1]))lunMeta.set(m[1],{rooms:num(v("roomCount")),area:num(v("areaTotal")),floor:num(v("floor")),floors:num(v("floorCount")),year:num(v("builtYear")),inserted:v("insertTime")});
+  }
   const starts=[...html.matchAll(/<div class=["']RealtiesLayout[^"']*__resultsItem["']/gi)].map(m=>m.index||0),out:Item[]=[],g=geo(f);
   for(let i=0;i<starts.length;i++){
     const seg=html.slice(starts[i],i+1<starts.length?starts[i+1]:starts[i]+50000),text=clean(seg);
@@ -402,10 +413,10 @@ function parseLun(html:string,f:Filters){
     const priceMatch=text.match(/\$\s*([\d\s\u00a0.,]+)\s*(тис\.?|млн)?/i);
     let price=num(priceMatch?.[1]||0);if(/тис/i.test(priceMatch?.[2]||""))price*=1000;else if(/млн/i.test(priceMatch?.[2]||""))price*=1000000;
     const title=clean(seg.match(/<h3[^>]*RealtyCard[^>]*__title[^>]*>([\s\S]*?)<\/h3>/i)?.[1]||seg.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)?.[1]||"ЛУН");
-    const floorPair=text.match(/поверх\s*(\d{1,3})\s*з\s*(\d{1,3})/i),rooms=num(text.match(/(\d+)\s*кімнат/i)?.[1]),area=areaFromCard(text,seg);
+    const floorPair=text.match(/поверх\s*(\d{1,3})\s*з\s*(\d{1,3})/i),meta=lunMeta.get(pageId)||{},rooms=num(text.match(/(\d+)\s*кімнат/i)?.[1])||meta.rooms||0,area=meta.area||areaFromCard(text,seg);
     const complex=clean(text.match(/ЖК\s+([^\n]{2,80}?)(?=(?:Молдаванка|Приморськ|Київськ|Хаджибейськ|Пересипськ|Одеса|Скопіювати))/i)?.[1]||"");
     const imgs=[...seg.matchAll(/(?:src|data-src|content)=["']([^"']*lunstatic\.net[^"']+)["']/gi)].map(m=>decodeHtml(m[1]).replace(/\\\//g,"/")).filter(v=>/^https:\/\//i.test(v)&&!/avatar|logo/i.test(v));
-    const x:Item={external_id:pageId||rawUrl.match(/(\d{5,})(?:\/?(?:[?#]|$))/)?.[1]||rawUrl,source_name:"ЛУН",source_url:rawUrl,title,description:text.slice(0,3500),country:g.country,region:g.region,city:g.city||"Одесса",district:districtCanon(text.match(/(Київський|Киевский|Приморський|Приморский|Хаджибейський|Хаджибейский|Пересипський|Пересыпский)/i)?.[1]||g.district),property_type:propertyLabel(f),deal_type:"Продажа",rooms:rooms||null,price,area,currency:"USD",complex_name:String(f.complex||complex),main_photo_url:imgs[0]||"",photo_urls:[...new Set(imgs)].slice(0,8),published_at:listingDateFrom(clean(seg)),raw_data:{live:true,upstream_source_url:upstreamUrl,source_price:price,source_currency:"USD",price_kind:"total_object",floor:num(floorPair?.[1]),total_floors:num(floorPair?.[2]),construction_year:yearFromText(text),condition:conditionTag(text),converted:false}};
+    const x:Item={external_id:pageId||rawUrl.match(/(\d{5,})(?:\/?(?:[?#]|$))/)?.[1]||rawUrl,source_name:"ЛУН",source_url:rawUrl,title,description:text.slice(0,3500),country:g.country,region:g.region,city:g.city||"Одесса",district:districtCanon(text.match(/(Київський|Киевский|Приморський|Приморский|Хаджибейський|Хаджибейский|Пересипський|Пересыпский)/i)?.[1]||g.district),property_type:propertyLabel(f),deal_type:"Продажа",rooms:rooms||null,price,area,currency:"USD",complex_name:String(f.complex||complex),main_photo_url:imgs[0]||"",photo_urls:[...new Set(imgs)].slice(0,8),published_at:listingDateFrom(clean(seg))||(meta.inserted?String(meta.inserted).slice(0,10):null),raw_data:{live:true,upstream_source_url:upstreamUrl,source_price:price,source_currency:"USD",price_kind:"total_object",floor:num(floorPair?.[1])||meta.floor||0,total_floors:num(floorPair?.[2])||meta.floors||0,construction_year:yearFromText(text)||meta.year||0,condition:conditionTag(text),converted:false}};
     if(price>0&&passes(x,{...f,complex:""}))out.push(x);
   }
   return out;
@@ -705,11 +716,12 @@ async function one(source:string,f:Filters){
   const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&!f.district&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const rieltorAllNative=source==="RIELTOR.UA"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-d\d+\/?/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
-  const total=(olxAllNative||remAllNative||rieltorAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
-  const countExact=olxAllNative||remAllNative||rieltorAllNative||!postParseFilterActive||!!f.complex;
+  const lunAllNative=source==="ЛУН"&&!f.complex&&!exactComplexCatalog&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-district/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const total=(olxAllNative||remAllNative||rieltorAllNative||lunAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
+  const countExact=olxAllNative||remAllNative||rieltorAllNative||lunAllNative||!postParseFilterActive||!!f.complex;
   const pageItemCount=items.length;
   // ЛУН не сообщает общее число объявлений: страница полная — значит, есть следующая
-  const lunOpenEnded=source==="ЛУН"&&!exactComplexCatalog&&!f.complex&&pageItemCount>=20;
+  const lunOpenEnded=source==="ЛУН"&&!lunAllNative&&!(Number(nativeTotal)>0)&&!exactComplexCatalog&&!f.complex&&pageItemCount>=20;
   const cardsPerNativePage=source==="DIM.RIA Украина"?20:source==="REM"?25:Math.max(1,Math.ceil(pageItemCount/Math.max(1,successful.length)));
   const nativePages=Number(nativeTotal)>0?Math.max(1,Math.ceil(Number(nativeTotal)/(cardsPerNativePage*pageCount))):null;
   const totalPages=f.complex&&source!=="REM"?1:postParseFilterActive?(nativePages||1):(Number(total)>0?Math.max(1,Math.ceil(Number(total)/(cardsPerNativePage*pageCount))):null);
