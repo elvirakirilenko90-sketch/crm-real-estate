@@ -291,8 +291,10 @@ async function rieltorComplexFromIndex(f:Filters){
   if(!cands.length&&!letters.includes("a-z")){for(const x of await rieltorIndexLetter(slug,"a-z")){if(complexMatches(x.name,raw))cands.push({...x,score:1})}}
   if(!cands.length)return"";
   cands.sort((a,b)=>b.score-a.score);cands=cands.filter(c=>c.score===cands[0].score).slice(0,5);
+  const urlOf=(c:{name:string,id:string})=>`https://rieltor.ua/${slug}/flats-sale/${encodeURIComponent(c.name).replace(/%20/g,"+")}-n${c.id}/`;
+  if(cands.length===1)return urlOf(cands[0]);
   let best="",bestCount=0;
-  for(const c of cands){const url=`https://rieltor.ua/${slug}/flats-sale/${encodeURIComponent(c.name).replace(/%20/g,"+")}-n${c.id}/`;const r=await politeFetch(url);if(!r.ok)continue;const html=await r.text();const n=Number(countFrom(html,"RIELTOR.UA")||0)||[...new Set([...html.matchAll(/flats-sale\/view\/(\d+)/g)].map(m=>m[1]))].length;if(n>bestCount){best=url;bestCount=n}}
+  for(const c of cands){const url=urlOf(c);await sleep(400);const r=await politeFetch(url);if(!r.ok)continue;const html=await r.text();const n=Number(countFrom(html,"RIELTOR.UA")||0)||[...new Set([...html.matchAll(/flats-sale\/view\/(\d+)/g)].map(m=>m[1]))].length;if(n>bestCount){best=url;bestCount=n}}
   return best;
 }
 async function resolvedRieltorComplexUrl(f:Filters){
@@ -681,9 +683,9 @@ async function one(source:string,f:Filters){
       const size=Math.min(3,pageCount-offset);
       pages.push(...await Promise.all(Array.from({length:size},(_,i)=>{const page=firstPage+offset+i;return page===1&&firstProbe?firstProbe:fetchPage(page)})));
     }
-  }else{const conc=source==="OLX"?3:2;for(let offset=0;offset<pageCount;offset+=conc){const size=Math.min(conc,pageCount-offset);pages.push(...await Promise.all(Array.from({length:size},(_,i)=>{const page=firstPage+offset+i;return page===1&&firstProbe?firstProbe:fetchPage(page)})));if(offset+conc<pageCount&&source!=="OLX")await sleep(250)}}
+  }else{const conc=source==="OLX"?3:exactRieltorCatalog?1:2;for(let offset=0;offset<pageCount;offset+=conc){const size=Math.min(conc,pageCount-offset);pages.push(...await Promise.all(Array.from({length:size},(_,i)=>{const page=firstPage+offset+i;return page===1&&firstProbe?firstProbe:fetchPage(page)})));if(offset+conc<pageCount&&source!=="OLX")await sleep(exactRieltorCatalog?500:250)}}
   // страницы, которые площадка не отдала с первого раза (429/403), запрашиваем ещё раз по одной
-  for(let i=0;i<pages.length;i++){const x=pages[i];if(x&&x.status>=200&&x.status<300&&x.html)continue;if(!x?.page||![0,403,429,500,502,503].includes(Number(x.status)))continue;await sleep(1200);pages[i]=await fetchPage(x.page)}
+  for(let i=0;i<pages.length;i++){const x=pages[i];if(x&&x.status>=200&&x.status<300&&x.html)continue;if(!x?.page||![0,403,429,500,502,503].includes(Number(x.status)))continue;for(let t=0;t<3;t++){await sleep(1500*(t+1));pages[i]=await fetchPage(x.page);if(pages[i].status>=200&&pages[i].status<300&&pages[i].html)break}}
   const successful=pages.filter(x=>x.status>=200&&x.status<300&&x.html);
   if(!successful.length){const st=pages[0]?.status||0;return{source,ok:false,status:st,url:pages[0]?.url||base,error:st===403||st===429?`${source} сейчас закрыл доступ для автоматического поиска (защита сайта). Откройте этот же поиск на сайте по ссылке — CRM повторит запрос при следующем обновлении.`:`${source} не ответил (код ${st||"нет связи"}). Откройте поиск на сайте по ссылке.`,items:[]}}
   const scanFilters={...f,condition:"",floor_from:undefined,floor_to:undefined,construction_year_from:undefined,construction_year_to:undefined,verified_only:false,programs:[]};
@@ -751,7 +753,9 @@ async function one(source:string,f:Filters){
   const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/textQuery=/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const rieltorAllNative=source==="RIELTOR.UA"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-d\d+\/?/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const lunAllNative=source==="ЛУН"&&!f.complex&&!exactComplexCatalog&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-district/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
-  const total=(olxAllNative||remAllNative||rieltorAllNative||lunAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
+  // каталог ЖК на RIELTOR.UA без дополнительных фильтров: счётчик площадки («63 оголошення») — точный
+  const rieltorComplexNative=exactRieltorCatalog&&!postParseFilterActive&&Number(nativeTotal)>0&&Number(nativeTotal)<5000;
+  const total=rieltorComplexNative?Math.max(Number(nativeTotal),items.length):(olxAllNative||remAllNative||rieltorAllNative||lunAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
   const countExact=olxAllNative||remAllNative||rieltorAllNative||lunAllNative||!postParseFilterActive||!!f.complex;
   const pageItemCount=items.length;
   // ЛУН не сообщает общее число объявлений: страница полная — значит, есть следующая
