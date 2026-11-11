@@ -717,8 +717,9 @@ async function one(source:string,f:Filters){
     }
   }
   const olxRoomsNative=source==="OLX"&&propertyGroup(f)==="apartment"&&/^[1-4]\+?$/.test(String(f.rooms||""));
-  parsed=parsed.map(item=>Number(item.rooms||0)>0?item:{...item,rooms:roomsFromText(item.title||"")||roomsFromText(String(item.description||"").slice(0,400))||(olxRoomsNative?parseInt(String(f.rooms)):null)});
-  const finalFilters=source==="OLX"?{...f,complex:"",city:String((f as any)._requested_city||f.city||""),district:String((f as any)._requested_district||f.district||""),floor_from:undefined,floor_to:undefined}:(exactRieltorCatalog?{...f,complex:""}:f);
+  // комнаты на OLX отфильтрованы самой площадкой — берём значение фильтра, а не догадку по тексту
+  parsed=parsed.map(item=>olxRoomsNative&&!/\+/.test(String(f.rooms))?{...item,rooms:parseInt(String(f.rooms))}:Number(item.rooms||0)>0?item:{...item,rooms:roomsFromText(item.title||"")||roomsFromText(String(item.description||"").slice(0,400))||(olxRoomsNative?parseInt(String(f.rooms)):null)});
+  const finalFilters=source==="OLX"?{...f,complex:"",price_from:undefined,price_to:undefined,area_from:undefined,area_to:undefined,rooms:olxRoomsNative?"":f.rooms,city:String((f as any)._requested_city||f.city||""),district:String((f as any)._requested_district||f.district||""),floor_from:undefined,floor_to:undefined}:(exactRieltorCatalog?{...f,complex:""}:f);
   parsed=parsed.filter(item=>passes(item,finalFilters));
   // Період подачі — как на DIM.RIA: за сьогодні / за добу / дата від–до (без даты объявление не проходит)
   const pf:any=f;const periodActive=pf.period==="per_day"||pf.period==="per_allday"||!!pf.date_from||!!pf.date_to;
