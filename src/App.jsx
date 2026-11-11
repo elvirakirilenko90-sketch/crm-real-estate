@@ -2997,79 +2997,198 @@ function extractPropertyPhotos(property){
   }).map(m=>({...m,url:m.url||m.media_url}));
 }
 
-function addFullDescriptionPages(pages,{text,title,agencyName,brand,themeId,visualId,lang}){
-  const pal=presentationPalette(visualId,themeId), txt=vipPresentationText(lang);
-  const body=String(text||txt.noDescription).trim()||txt.noDescription;
-  const probe=document.createElement("canvas");probe.width=1240;probe.height=1754;const px=probe.getContext("2d");
-  px.font='25px Georgia, "Times New Roman", serif';
-  const lines=canvasTextLines(px,body,1010);
-  // Safe amount per page: leaves generous luxury margins and guarantees no clipping.
-  const perPage=27;
-  const total=Math.max(1,Math.ceil(lines.length/perPage));
-  for(let pageNo=0; pageNo<total; pageNo++){
-    const offset=pageNo*perPage;
-    const c=document.createElement("canvas");c.width=1240;c.height=1754;const ctx=c.getContext("2d");
-    ctx.fillStyle=pal.paper;ctx.fillRect(0,0,1240,1754);
-    ctx.fillStyle=pal.dark;ctx.fillRect(0,0,1240,185);
-    ctx.fillStyle=pal.accent;ctx.fillRect(80,180,1080,3);
-    ctx.fillStyle="#fff";ctx.font='600 25px Arial';ctx.fillText(agencyName||"CRM Real Estate",90,62);
-    ctx.font='bold 40px Georgia, "Times New Roman", serif';ctx.fillText(txt.description,90,132);
-    ctx.fillStyle=pal.ink;ctx.font='bold 34px Georgia, "Times New Roman", serif';
-    const titleBottom=pdfDrawWrapped(ctx,title||txt.property,90,255,1020,44);
-    let y=Math.max(370,titleBottom+55);
-    ctx.fillStyle=pal.ink;ctx.font='25px Georgia, "Times New Roman", serif';
-    for(const line of lines.slice(offset,offset+perPage)){
-      if(line===""){y+=22;continue;}
-      ctx.fillText(line,90,y);y+=42;
-    }
-    ctx.strokeStyle=pal.line;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(90,1618);ctx.lineTo(1150,1618);ctx.stroke();
-    ctx.fillStyle=pal.muted;ctx.font='18px Arial';ctx.fillText(`${formatPresentationDate(lang)}  ·  ${pageNo+1}/${total}`,90,1665);
-    pages.push({bytes:pdfDataUrlToBytes(c.toDataURL("image/jpeg",.97)),width:1240,height:1754});
+// ===== Оформление PDF-презентаций (общий стиль для «Вторички», подборок и Аналитики) =====
+// Лист A4 1240×1754. Содержимое страниц прежнее, меняется только вёрстка: крупный читаемый шрифт,
+// поля 96 px, фото со скруглением, цена — отдельной плашкой, характеристики — сеткой карточек.
+const PRES_W=1240, PRES_H=1754, PRES_M=96, PRES_IN=PRES_W-PRES_M*2;
+const PRES_SANS='Manrope, "Segoe UI", Roboto, Arial, sans-serif';
+const PRES_SERIF='"Playfair Display", Georgia, "Times New Roman", serif';
+async function presEnsureFonts(){
+  try{ await Promise.all(['400 26px Manrope','600 26px Manrope','700 26px Manrope','800 26px Manrope','600 48px "Playfair Display"','700 48px "Playfair Display"'].map(f=>document.fonts.load(f))); }catch{}
+}
+function presHex(h){const s=String(h||"").replace("#","");const f=s.length===3?s.split("").map(c=>c+c).join(""):s.padEnd(6,"0");return [0,2,4].map(i=>parseInt(f.slice(i,i+2),16)||0);}
+function presMix(a,b,t){const x=presHex(a),y=presHex(b);return "#"+x.map((v,i)=>Math.round(v+(y[i]-v)*t).toString(16).padStart(2,"0")).join("");}
+function presLum(h){const [r,g,b]=presHex(h).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);});return .2126*r+.7152*g+.0722*b;}
+function presPal(visualId,themeId){
+  const v=currentThemeVars(themeId), accent=v["--accent"]||"#C9A24A";
+  // Акцент для текста на светлой бумаге: жёлтый темнеет до читаемого золотого
+  const accentInk=presLum(accent)>.35?presMix(accent,"#000000",.42):accent;
+  if(visualId==="editorialLight") return {coverBg:"#F4F2ED",coverInk:"#141414",coverMuted:"#5E5A53",paper:"#FFFFFF",ink:"#141414",muted:"#5E5A53",soft:"#F4F2ED",line:"#E3DED4",accent,accentInk,band:"#141414",bandInk:"#FFFFFF",darkCover:false};
+  if(visualId==="ivoryGold") return {coverBg:"#F3ECDD",coverInk:"#231E17",coverMuted:"#6E6456",paper:"#FFFDF8",ink:"#231E17",muted:"#6E6456",soft:"#F6F0E3",line:"#E2D6C1",accent:presLum(accent)>.35?"#B8913A":accent,accentInk:"#8A6A22",band:"#2B251D",bandInk:"#FFFDF8",darkCover:false};
+  return {coverBg:"#0E0E10",coverInk:"#FFFFFF",coverMuted:"#C9C4BA",paper:"#FBFAF7",ink:"#141414",muted:"#5E5A53",soft:"#F2EFE8",line:"#E4DFD5",accent,accentInk,band:"#121214",bandInk:"#FFFFFF",darkCover:true};
+}
+function presCanvas(bg){const c=document.createElement("canvas");c.width=PRES_W;c.height=PRES_H;const ctx=c.getContext("2d");ctx.fillStyle=bg;ctx.fillRect(0,0,PRES_W,PRES_H);ctx.textBaseline="alphabetic";return {c,ctx};}
+function presPush(pages,c,q=.93){pages.push({bytes:pdfDataUrlToBytes(c.toDataURL("image/jpeg",q)),width:PRES_W,height:PRES_H});}
+function presRound(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function presSpaced(ctx,text,x,y,spacing=2){let cx=x;for(const ch of String(text||"")){ctx.fillText(ch,cx,y);cx+=ctx.measureText(ch).width+spacing;}return cx;}
+// Перенос строк с ограничением числа строк (последняя — с многоточием). Возвращает y под текстом.
+function presText(ctx,text,x,y,maxW,lineH,maxLines=99){
+  let lines=canvasTextLines(ctx,String(text||""),maxW);
+  if(lines.length>maxLines){lines=lines.slice(0,maxLines);let last=lines[maxLines-1];while(last&&ctx.measureText(last+"…").width>maxW)last=last.slice(0,-1);lines[maxLines-1]=last.replace(/[\s,.;:—-]+$/,"")+"…";}
+  lines.forEach((l,i)=>ctx.fillText(l,x,y+i*lineH));return y+Math.max(1,lines.length)*lineH;
+}
+// Подбор размера шрифта, чтобы текст уложился в maxLines строк
+function presFit(ctx,text,weight,family,maxSize,minSize,maxW,maxLines){
+  for(let size=maxSize;size>=minSize;size-=2){ctx.font=`${weight} ${size}px ${family}`;if(canvasTextLines(ctx,String(text||""),maxW).length<=maxLines)return size;}
+  ctx.font=`${weight} ${minSize}px ${family}`;return minSize;
+}
+async function presPhoto(ctx,drawImage,url,x,y,w,h,r,pal,emptyText){
+  ctx.save();presRound(ctx,x,y,w,h,r);ctx.clip();
+  ctx.fillStyle=pal.soft;ctx.fillRect(x,y,w,h);
+  const ok=url?await drawImage(ctx,url,x,y,w,h,"cover"):false;
+  if(!ok&&emptyText){ctx.fillStyle=pal.muted;ctx.font=`600 26px ${PRES_SANS}`;ctx.textAlign="center";ctx.fillText(emptyText,x+w/2,y+h/2);ctx.textAlign="left";}
+  ctx.restore();return ok;
+}
+// Верхний колонтитул и подвал внутренних страниц
+function presChrome(ctx,pal,{agencyName,label,lang}){
+  ctx.fillStyle=pal.muted;ctx.font=`700 19px ${PRES_SANS}`;presSpaced(ctx,String(agencyName||"CRM Real Estate").toUpperCase(),PRES_M,70,2.4);
+  if(label){ctx.font=`700 19px ${PRES_SANS}`;const t=String(label).toUpperCase();let w=0;for(const ch of t)w+=ctx.measureText(ch).width+2.4;ctx.fillStyle=pal.accentInk;presSpaced(ctx,t,PRES_W-PRES_M-w,70,2.4);}
+  ctx.fillStyle=pal.line;ctx.fillRect(PRES_M,96,PRES_IN,2);
+  ctx.fillStyle=pal.line;ctx.fillRect(PRES_M,PRES_H-96,PRES_IN,2);
+  ctx.fillStyle=pal.muted;ctx.font=`600 18px ${PRES_SANS}`;ctx.fillText(formatPresentationDate(lang),PRES_M,PRES_H-58);
+}
+async function presCoverPage(pages,{pal,brand,agencyName,headline,dateLine,preparedLabel,client,subtitle,hero,drawImage=drawRemoteImage}){
+  await presEnsureFonts();
+  const {c,ctx}=presCanvas(pal.coverBg);
+  const photoH=hero?980:0;
+  if(hero){
+    await drawImage(ctx,hero,0,0,PRES_W,photoH,"cover");
+    const g=ctx.createLinearGradient(0,photoH*.45,0,photoH);g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(1,pal.coverBg);ctx.fillStyle=g;ctx.fillRect(0,photoH*.45,PRES_W,photoH*.55+2);
+    const top=ctx.createLinearGradient(0,0,0,260);top.addColorStop(0,"rgba(0,0,0,.45)");top.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=top;ctx.fillRect(0,0,PRES_W,260);
+  }else{
+    ctx.fillStyle=pal.accent;ctx.globalAlpha=.10;ctx.beginPath();ctx.arc(PRES_W-120,260,420,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
   }
+  if(brand?.logo_url){ctx.save();ctx.fillStyle="rgba(255,255,255,.92)";presRound(ctx,PRES_M-16,64,252,124,22);ctx.fill();ctx.restore();await drawRemoteImage(ctx,brand.logo_url,PRES_M,76,220,100,"contain");}
+  else{ctx.fillStyle=hero?"#FFFFFF":pal.coverInk;ctx.font=`800 28px ${PRES_SANS}`;presSpaced(ctx,String(agencyName||"CRM Real Estate").toUpperCase(),PRES_M,120,3);}
+  let y=hero?photoH+20:560;
+  ctx.fillStyle=pal.accent;ctx.fillRect(PRES_M,y,120,6);y+=70;
+  ctx.fillStyle=pal.coverMuted;ctx.font=`700 22px ${PRES_SANS}`;presSpaced(ctx,String(agencyName||"CRM Real Estate").toUpperCase(),PRES_M,y,3);y+=72;
+  ctx.fillStyle=pal.coverInk;const hs=presFit(ctx,headline,700,PRES_SERIF,66,44,PRES_IN,3);y=presText(ctx,headline,PRES_M,y,PRES_IN,Math.round(hs*1.18),3)+10;
+  ctx.fillStyle=pal.darkCover?pal.accent:pal.accentInk;ctx.font=`700 26px ${PRES_SANS}`;ctx.fillText(dateLine||"",PRES_M,y+12);y+=80;
+  if(client){ctx.fillStyle=pal.coverMuted;ctx.font=`600 24px ${PRES_SANS}`;ctx.fillText(preparedLabel||"",PRES_M,y);y+=62;ctx.fillStyle=pal.coverInk;presFit(ctx,client,700,PRES_SERIF,48,34,PRES_IN,2);y=presText(ctx,client,PRES_M,y,PRES_IN,58,2)+8;}
+  if(subtitle){ctx.fillStyle=pal.coverMuted;ctx.font=`600 26px ${PRES_SANS}`;presText(ctx,subtitle,PRES_M,Math.min(y+20,PRES_H-150),PRES_IN,36,2);}
+  presPush(pages,c,.92);
+}
+// Страница объекта: номер, заголовок, главное фото, цена плашкой, характеристики сеткой, начало описания
+async function presObjectPage(pages,{pal,agencyName,lang,index,total,label,title,photo,price,priceLabel,specs,aboutTitle,about,hint,drawImage=drawRemoteImage,noPhotoText}){
+  await presEnsureFonts();
+  const {c,ctx}=presCanvas(pal.paper);
+  presChrome(ctx,pal,{agencyName,label:total>1?`${label} ${String(index+1).padStart(2,"0")} / ${String(total).padStart(2,"0")}`:label,lang});
+  ctx.fillStyle=pal.ink;presFit(ctx,title,700,PRES_SERIF,46,32,PRES_IN,3);
+  const ts=parseInt(ctx.font)||40;let y=presText(ctx,title,PRES_M,170,PRES_IN,Math.round(ts*1.22),3);
+  const photoY=y+14, photoBottom=specs.length>4?900:960, photoH=Math.max(470,photoBottom-photoY);
+  await presPhoto(ctx,drawImage,photo,PRES_M,photoY,PRES_IN,photoH,28,pal,noPhotoText);
+  y=photoY+photoH+28;
+  // цена
+  ctx.fillStyle=pal.band;presRound(ctx,PRES_M,y,PRES_IN,112,22);ctx.fill();
+  ctx.fillStyle=pal.accent;ctx.font=`800 18px ${PRES_SANS}`;presSpaced(ctx,String(priceLabel||"").toUpperCase(),PRES_M+34,y+44,2.4);
+  ctx.fillStyle=pal.bandInk;const ps=presFit(ctx,price,800,PRES_SANS,46,30,PRES_IN-300,1);ctx.textAlign="right";ctx.fillText(String(price||"—"),PRES_M+PRES_IN-34,y+56+ps/3);ctx.textAlign="left";
+  y+=136;
+  // характеристики
+  const cols=4,gap=16,cw=(PRES_IN-gap*(cols-1))/cols,ch=112;
+  specs.forEach(([lab,val],i)=>{const col=i%cols,row=Math.floor(i/cols),x=PRES_M+col*(cw+gap),yy=y+row*(ch+gap);
+    ctx.fillStyle=pal.soft;presRound(ctx,x,yy,cw,ch,18);ctx.fill();
+    ctx.fillStyle=pal.muted;ctx.font=`700 16px ${PRES_SANS}`;presSpaced(ctx,String(lab).toUpperCase(),x+20,yy+36,1.4);
+    ctx.fillStyle=pal.ink;const vs=presFit(ctx,String(val||"—"),700,PRES_SANS,27,19,cw-40,2);presText(ctx,String(val||"—"),x+20,yy+72,cw-40,Math.round(vs*1.15),2);});
+  y+=Math.ceil(specs.length/cols)*(ch+gap)+30;
+  // об объекте
+  const footerTop=PRES_H-128;
+  if(about&&y<footerTop-120){
+    ctx.fillStyle=pal.ink;ctx.font=`700 30px ${PRES_SERIF}`;ctx.fillText(aboutTitle||"",PRES_M,y+20);y+=66;
+    ctx.fillStyle=pal.ink;ctx.font=`400 25px ${PRES_SANS}`;const lineH=39,maxLines=Math.max(1,Math.floor((footerTop-(hint?50:0)-y)/lineH));
+    y=presText(ctx,about,PRES_M,y,PRES_IN,lineH,maxLines);
+  }
+  if(hint){ctx.fillStyle=pal.accentInk;ctx.font=`800 17px ${PRES_SANS}`;presSpaced(ctx,String(hint).toUpperCase(),PRES_M,footerTop-6,1.6);}
+  presPush(pages,c,.93);
+}
+async function presContactPage(pages,{pal,brand,contactTitle,manager,contactLine,thanks}){
+  await presEnsureFonts();
+  const {c,ctx}=presCanvas(pal.coverBg);
+  ctx.textAlign="center";
+  if(brand?.logo_url){ctx.save();ctx.fillStyle="rgba(255,255,255,.95)";presRound(ctx,PRES_W/2-170,240,340,170,28);ctx.fill();ctx.restore();ctx.textAlign="left";await drawRemoteImage(ctx,brand.logo_url,PRES_W/2-150,255,300,140,"contain");ctx.textAlign="center";}
+  ctx.fillStyle=pal.accent;ctx.fillRect(PRES_W/2-60,560,120,6);
+  ctx.fillStyle=pal.coverInk;presFit(ctx,contactTitle,700,PRES_SERIF,54,38,PRES_IN,3);const cs=parseInt(ctx.font)||48;
+  let y=presText(ctx,contactTitle,PRES_W/2,680,PRES_IN,Math.round(cs*1.2),3)+60;
+  ctx.fillStyle=pal.darkCover?pal.accent:pal.accentInk;ctx.font=`700 42px ${PRES_SERIF}`;y=presText(ctx,manager||"",PRES_W/2,y,PRES_IN,52,2)+20;
+  if(contactLine){ctx.fillStyle=pal.coverInk;ctx.font=`700 34px ${PRES_SANS}`;y=presText(ctx,contactLine,PRES_W/2,y,PRES_IN,44,2);}
+  ctx.fillStyle=pal.coverMuted;ctx.font=`italic 600 32px ${PRES_SERIF}`;presText(ctx,thanks||"",PRES_W/2,PRES_H-260,PRES_IN,42,2);
+  ctx.textAlign="left";presPush(pages,c,.92);
+}
+
+function addFullDescriptionPages(pages,{text,title,agencyName,brand,themeId,visualId,lang}){
+  const pal=presPal(visualId,themeId), txt=vipPresentationText(lang);
+  const body=String(text||txt.noDescription).trim()||txt.noDescription;
+  const probe=document.createElement("canvas").getContext("2d");probe.font=`400 26px ${PRES_SANS}`;
+  const lines=canvasTextLines(probe,body,PRES_IN);
+  const lineH=43, bottom=PRES_H-140;
+  const chunks=[];let i=0;
+  while(i<lines.length||!chunks.length){
+    const startY=chunks.length?250:300;const cap=Math.max(1,Math.floor((bottom-startY)/lineH));
+    chunks.push(lines.slice(i,i+cap));i+=cap;if(i>=lines.length)break;
+  }
+  chunks.forEach((chunk,pageNo)=>{
+    const {c,ctx}=presCanvas(pal.paper);
+    presChrome(ctx,pal,{agencyName,label:chunks.length>1?`${txt.description} · ${pageNo+1}/${chunks.length}`:txt.description,lang});
+    let y;
+    if(pageNo===0){ctx.fillStyle=pal.ink;presFit(ctx,title||txt.property,700,PRES_SERIF,38,28,PRES_IN,2);const ts=parseInt(ctx.font)||34;y=presText(ctx,title||txt.property,PRES_M,170,PRES_IN,Math.round(ts*1.22),2)+20;ctx.fillStyle=pal.accent;ctx.fillRect(PRES_M,y-6,90,5);y+=54;}
+    else y=200;
+    ctx.fillStyle=pal.ink;ctx.font=`400 26px ${PRES_SANS}`;
+    for(const line of chunk){if(line===""){y+=lineH*.55;continue;}ctx.fillText(line,PRES_M,y);y+=lineH;}
+    presPush(pages,c,.93);
+  });
 }
 
 async function addLuxuryGalleryPage(pages,{photos,title,agencyName,themeId,visualId,lang,drawImage=drawRemoteImage,compact=false}){
   if(!photos?.length) return;
-  const pal=presentationPalette(visualId,themeId), txt=vipPresentationText(lang);
+  await presEnsureFonts();
+  const pal=presPal(visualId,themeId), txt=vipPresentationText(lang);
+  const X=PRES_M,W=PRES_IN,G=16;
   for(let start=0; start<photos.length; start+=4){
-    const chunk=photos.slice(start,start+4),c=document.createElement("canvas");c.width=1240;c.height=1754;const ctx=c.getContext("2d");
-    ctx.fillStyle=pal.paper;ctx.fillRect(0,0,1240,1754);
-    ctx.fillStyle=pal.ink;ctx.font='bold 44px Georgia, "Times New Roman", serif';ctx.fillText(txt.photos,80,105);
-    ctx.fillStyle=pal.accent;ctx.fillRect(80,135,1080,3);ctx.fillStyle=pal.muted;ctx.font='21px Arial';ctx.fillText(`${title||""} · ${start+1}-${Math.min(start+4,photos.length)} / ${photos.length}`,80,178);
-    const standardBoxes=[[80,240,700,650],[805,240,355,310],[805,580,355,310],[80,920,1080,650]];
-    const compactBoxes=chunk.length===1
-      ?[[80,240,1080,1330]]
-      :chunk.length===2
-        ?[[80,240,1080,640],[80,910,1080,660]]
-        :chunk.length===3
-          ?[[80,240,700,1330],[805,240,355,645],[805,925,355,645]]
-          :standardBoxes;
-    const boxes=compact?compactBoxes:standardBoxes;
-    for(let i=0;i<chunk.length;i++){
-      const ok=await drawImage(ctx,chunk[i].url,...boxes[i],"cover");
-      if(!ok){
-        const [x,y,w,h]=boxes[i];ctx.fillStyle="#eeeae3";ctx.fillRect(x,y,w,h);ctx.fillStyle=pal.muted;ctx.font='20px Arial';ctx.fillText(`Фото ${start+i+1}`,x+24,y+48);
-      }
-    }
-    pages.push({bytes:pdfDataUrlToBytes(c.toDataURL("image/jpeg",.97)),width:1240,height:1754});
+    const chunk=photos.slice(start,start+4);
+    const {c,ctx}=presCanvas(pal.paper);
+    presChrome(ctx,pal,{agencyName,label:`${txt.photos} · ${start+1}–${Math.min(start+4,photos.length)} / ${photos.length}`,lang});
+    ctx.fillStyle=pal.ink;ctx.font=`700 28px ${PRES_SERIF}`;presText(ctx,title||"",X,160,W,34,1);
+    const top=196,H=PRES_H-140-top;
+    const n=chunk.length;let boxes;
+    if(n===1)boxes=[[X,top,W,H]];
+    else if(n===2){const h=(H-G)/2;boxes=[[X,top,W,h],[X,top+h+G,W,h]];}
+    else if(n===3){const h1=Math.round(H*.56),h2=H-h1-G,w=(W-G)/2;boxes=[[X,top,W,h1],[X,top+h1+G,w,h2],[X+w+G,top+h1+G,w,h2]];}
+    else{const h1=Math.round(H*.56),h2=H-h1-G,w=(W-G*2)/3;boxes=[[X,top,W,h1],[X,top+h1+G,w,h2],[X+w+G,top+h1+G,w,h2],[X+(w+G)*2,top+h1+G,w,h2]];}
+    for(let i=0;i<n;i++){const [x,y,w,h]=boxes[i];await presPhoto(ctx,drawImage,chunk[i].url,x,y,w,h,22,pal,`${txt.photos} ${start+i+1}`);}
+    presPush(pages,c,.93);
   }
 }
 
 function addSelectionComparisonPages(pages,{items,themeId,visualId,lang,agencyName}){
   if(!items?.length || items.length<2) return;
-  const pal=presentationPalette(visualId,themeId), txt=vipPresentationText(lang);
+  const pal=presPal(visualId,themeId);
   const headers=lang==="en"?["#","Property","Price","Area","Price/m²","District","Floor"]:lang==="uk"?["#","Об'єкт","Ціна","Площа","Ціна/м²","Район","Поверх"]:["#","Объект","Цена","Площадь","Цена/м²","Район","Этаж"];
   const title=lang==="en"?"COMPARISON OF OFFERS":lang==="uk"?"ПОРІВНЯННЯ ПРОПОЗИЦІЙ":"СРАВНЕНИЕ ПРЕДЛОЖЕНИЙ";
-  const chunks=[];for(let i=0;i<items.length;i+=12) chunks.push(items.slice(i,i+12));
+  const per=11,chunks=[];for(let i=0;i<items.length;i+=per) chunks.push(items.slice(i,i+per));
+  const cols=[[PRES_M+18,46],[PRES_M+72,330],[PRES_M+420,150],[PRES_M+584,112],[PRES_M+706,128],[PRES_M+846,140],[PRES_M+994,54]];
   chunks.forEach((chunk,pageIndex)=>{
-    const cmp=document.createElement("canvas");cmp.width=1240;cmp.height=1754;const ctx=cmp.getContext("2d");ctx.fillStyle=pal.paper;ctx.fillRect(0,0,1240,1754);
-    ctx.fillStyle=pal.ink;ctx.font='bold 48px Georgia, "Times New Roman", serif';ctx.fillText(title,80,120);ctx.fillStyle=pal.accent;ctx.fillRect(80,150,1080,3);
-    ctx.fillStyle=pal.muted;ctx.font='18px Arial';ctx.fillText(`${agencyName||"CRM Real Estate"} · ${formatPresentationDate(lang)} · ${pageIndex+1}/${chunks.length}`,80,190);
-    const xs=[80,135,480,650,790,930,1080];ctx.font='bold 17px Arial';ctx.fillStyle=pal.muted;headers.forEach((h,i)=>ctx.fillText(h,xs[i],250));
-    let y=310;chunk.forEach((p,idx)=>{const i=pageIndex*12+idx,ppm=Number(p.area)?Math.round(Number(p.price||0)/Number(p.area)):0;ctx.strokeStyle=pal.line;ctx.beginPath();ctx.moveTo(80,y-28);ctx.lineTo(1160,y-28);ctx.stroke();ctx.fillStyle=pal.accent;ctx.font='bold 20px Georgia';ctx.fillText(String(i+1).padStart(2,"0"),80,y);ctx.fillStyle=pal.ink;ctx.font='18px Arial';pdfDrawWrapped(ctx,p.title||"—",135,y,320,22);ctx.fillText(money(p.price),480,y);ctx.fillText(`${p.area||0} м²`,650,y);ctx.fillText(ppm?money(ppm):"—",790,y);ctx.fillText(p.district||"—",930,y);ctx.fillText(p.floor||"—",1080,y);y+=105;});
-    pages.push({bytes:pdfDataUrlToBytes(cmp.toDataURL("image/jpeg",.97)),width:1240,height:1754});
+    const {c,ctx}=presCanvas(pal.paper);
+    presChrome(ctx,pal,{agencyName,label:chunks.length>1?`${pageIndex+1}/${chunks.length}`:"",lang});
+    ctx.fillStyle=pal.ink;presFit(ctx,title,700,PRES_SERIF,44,32,PRES_IN,1);ctx.fillText(title,PRES_M,190);
+    ctx.fillStyle=pal.accent;ctx.fillRect(PRES_M,214,90,5);
+    let y=260;ctx.fillStyle=pal.band;presRound(ctx,PRES_M,y,PRES_IN,62,16);ctx.fill();
+    ctx.fillStyle=pal.bandInk;ctx.font=`800 17px ${PRES_SANS}`;headers.forEach((h,i)=>ctx.fillText(String(h).toUpperCase(),cols[i][0],y+39));
+    y+=74;const rowH=106;
+    chunk.forEach((p,idx)=>{
+      const i=pageIndex*per+idx,ppm=Number(p.area)?Math.round(Number(p.price||0)/Number(p.area)):0;
+      if(idx%2===0){ctx.fillStyle=pal.soft;presRound(ctx,PRES_M,y,PRES_IN,rowH-8,14);ctx.fill();}
+      const mid=y+rowH/2;
+      ctx.fillStyle=pal.accentInk;ctx.font=`800 24px ${PRES_SANS}`;ctx.fillText(String(i+1).padStart(2,"0"),cols[0][0],mid+4);
+      ctx.fillStyle=pal.ink;ctx.font=`700 20px ${PRES_SANS}`;presText(ctx,p.title||"—",cols[1][0],mid-8,cols[1][1],25,2);
+      ctx.font=`800 21px ${PRES_SANS}`;presText(ctx,money(p.price),cols[2][0],mid+6,cols[2][1],24,1);
+      ctx.font=`600 20px ${PRES_SANS}`;presText(ctx,p.area?`${p.area} м²`:"—",cols[3][0],mid+6,cols[3][1],24,1);
+      presText(ctx,ppm?money(ppm):"—",cols[4][0],mid+6,cols[4][1],24,1);
+      presText(ctx,p.district||"—",cols[5][0],mid-6,cols[5][1],24,2);
+      presText(ctx,String(p.floor||"—"),cols[6][0],mid+6,cols[6][1],24,1);
+      y+=rowH;
+    });
+    presPush(pages,c,.93);
   });
-
 }
 
 function Properties({properties,setProperties,onOpen,users,currentProfile,lang,agencyName,theme,leads,recordActivity}) {
@@ -3121,34 +3240,14 @@ function Properties({properties,setProperties,onOpen,users,currentProfile,lang,a
       const brand=loadAgencyBrand(currentProfile?.agency_id),txt=vipPresentationText(selectionLang),pages=[];
       const pal=presentationPalette(selectionVisual,theme);
 
-      const cover=document.createElement("canvas");cover.width=1240;cover.height=1754;let c=cover.getContext("2d");
-      c.fillStyle="#0b1428";c.fillRect(0,0,1240,1754);
-      const firstHero=extractPropertyPhotos(items[0])[0];
-      if(firstHero){c.globalAlpha=selectionVisual==="luxuryDark"?.34:.20;await drawRemoteImage(c,firstHero.url,380,0,860,1754,"cover");c.globalAlpha=1;}
-      c.fillStyle=pal.accent;c.fillRect(72,150,4,1300);
-      if(brand.logo_url) await drawRemoteImage(c,brand.logo_url,95,75,180,100,"contain");
-      c.fillStyle=selectionVisual==="luxuryDark"?"#fff":pal.ink;c.font='600 30px Arial';c.fillText(agencyName||"CRM Real Estate",95,245);
-      c.font='bold 68px Georgia, "Times New Roman", serif';pdfDrawWrapped(c,txt.selection,95,430,980,78);
-      c.fillStyle=pal.accent;c.font='bold 25px Arial';c.fillText(`${txt.date}: ${formatPresentationDate(selectionLang)}`,95,700);
-      if(selectionClient.trim()){c.fillStyle=selectionVisual==="luxuryDark"?"#eee":pal.muted;c.font='24px Arial';c.fillText(txt.prepared,95,805);c.fillStyle=selectionVisual==="luxuryDark"?"#fff":pal.ink;c.font='bold 46px Georgia, "Times New Roman", serif';pdfDrawWrapped(c,selectionClient.trim(),95,875,920,55);}
-      c.fillStyle=selectionVisual==="luxuryDark"?"#ddd":pal.muted;c.font='22px Arial';c.fillText(`${items.length} ${selectionLang==="en"?"properties":selectionLang==="uk"?"об'єктів":"объектов"}`,95,1110);
-      pages.push({bytes:pdfDataUrlToBytes(cover.toDataURL("image/jpeg",.96)),width:1240,height:1754});
+      const pp=presPal(selectionVisual,theme);
+      await presCoverPage(pages,{pal:pp,brand,agencyName,headline:txt.selection,dateLine:`${txt.date}: ${formatPresentationDate(selectionLang)}`,preparedLabel:txt.prepared,client:selectionClient.trim(),subtitle:`${items.length} ${selectionLang==="en"?"properties":selectionLang==="uk"?"об'єктів":"объектов"}`,hero:extractPropertyPhotos(items[0])[0]?.url||""});
 
       for(let index=0;index<items.length;index++){
         const p=items[index],photo=extractPropertyPhotos(p)[0];
-        const canvas=document.createElement("canvas");canvas.width=1240;canvas.height=1754;const ctx=canvas.getContext("2d");ctx.fillStyle=pal.paper;ctx.fillRect(0,0,1240,1754);
-        ctx.fillStyle=pal.accent;ctx.font='bold 78px Georgia, "Times New Roman", serif';ctx.fillText(String(index+1).padStart(2,"0"),80,115);
-        ctx.fillStyle=pal.ink;ctx.font='bold 45px Georgia, "Times New Roman", serif';pdfDrawWrapped(ctx,p.title||`${txt.property} ${index+1}`,220,75,900,50);
-        ctx.fillStyle=pal.muted;ctx.font='20px Arial';ctx.fillText(`${formatPresentationDate(selectionLang)} · ${index+1}/${items.length}`,220,165);
-        if(photo) await drawRemoteImage(ctx,photo.url,80,225,1080,690,"cover");
-        const boxes=[[txt.price,money(p.price)],[txt.area,`${p.area||0} м²`],[txt.floor,p.floor||"—"],[txt.district,p.district||"—"],[txt.type,p.type||"—"]];
-        boxes.forEach(([a,b],i)=>{const x=80+i*216;ctx.strokeStyle=pal.line;ctx.lineWidth=1;ctx.strokeRect(x,965,196,130);ctx.fillStyle=pal.muted;ctx.font='17px Arial';ctx.fillText(a,x+16,1002);ctx.fillStyle=pal.ink;ctx.font='bold 24px Arial';pdfDrawWrapped(ctx,String(b),x+16,1043,165,28);});
-        ctx.fillStyle=pal.ink;ctx.font='bold 31px Georgia, "Times New Roman", serif';ctx.fillText(txt.about,80,1185);
         const preview=String((selectionLang==="uk"?(p.description_uk||p.description):p.description)||txt.noDescription);
-        ctx.fillStyle=pal.muted;ctx.font='22px Georgia, "Times New Roman", serif';
-        const teaserLines=canvasTextLines(ctx,preview,1080).slice(0,7);let ty=1240;teaserLines.forEach(line=>{ctx.fillText(line,80,ty);ty+=34;});
-        ctx.fillStyle=pal.accent;ctx.font='bold 18px Arial';ctx.fillText(selectionLang==="en"?"FULL DESCRIPTION ON THE FOLLOWING PAGE(S)":selectionLang==="uk"?"ПОВНИЙ ОПИС — НА НАСТУПНІЙ СТОРІНЦІ/СТОРІНКАХ":"ПОЛНОЕ ОПИСАНИЕ — НА СЛЕДУЮЩЕЙ СТРАНИЦЕ/СТРАНИЦАХ",80,1575);
-        pages.push({bytes:pdfDataUrlToBytes(canvas.toDataURL("image/jpeg",.97)),width:1240,height:1754});
+        await presObjectPage(pages,{pal:pp,agencyName,lang:selectionLang,index,total:items.length,label:txt.property,title:p.title||`${txt.property} ${index+1}`,photo:photo?.url||"",price:money(p.price),priceLabel:txt.price,
+          specs:[[txt.area,`${p.area||0} м²`],[txt.floor,p.floor||"—"],[txt.district,p.district||"—"],[txt.type,p.type||"—"]],aboutTitle:txt.about,about:preview,hint:(selectionLang==="en"?"FULL DESCRIPTION ON THE FOLLOWING PAGE(S)":selectionLang==="uk"?"ПОВНИЙ ОПИС — НА НАСТУПНІЙ СТОРІНЦІ/СТОРІНКАХ":"ПОЛНОЕ ОПИСАНИЕ — НА СЛЕДУЮЩЕЙ СТРАНИЦЕ/СТРАНИЦАХ")});
         addFullDescriptionPages(pages,{text:preview,title:p.title,agencyName,brand,themeId:theme,visualId:selectionVisual,lang:selectionLang});
         const photos=extractPropertyPhotos(p);
         await addLuxuryGalleryPage(pages,{photos,title:p.title,agencyName,themeId:theme,visualId:selectionVisual,lang:selectionLang});
@@ -3783,24 +3882,15 @@ function PropertyModal({property,setProperties,onClose,users,currentProfile,role
     try{
       const txt=vipPresentationText(presentationLang),brand=loadAgencyBrand(currentProfile?.agency_id),pal=presentationPalette(presentationVisual,theme);
       if(presentationUrl?.startsWith("blob:")) URL.revokeObjectURL(presentationUrl);
-      const pages=[],hero=extractPropertyPhotos(local)[0];
-      const cover=document.createElement("canvas");cover.width=1240;cover.height=1754;let ctx=cover.getContext("2d");ctx.fillStyle=pal.bg;ctx.fillRect(0,0,1240,1754);
-      if(hero){ctx.globalAlpha=presentationVisual==="luxuryDark"?.38:.22;await drawRemoteImage(ctx,hero.url,365,0,875,1754,"cover");ctx.globalAlpha=1;}
-      ctx.fillStyle=pal.accent;ctx.fillRect(72,150,4,1300);if(brand.logo_url) await drawRemoteImage(ctx,brand.logo_url,92,72,190,105,"contain");
-      ctx.fillStyle=presentationVisual==="luxuryDark"?"#fff":pal.ink;ctx.font='600 30px Arial';ctx.fillText(agencyName||"CRM Real Estate",92,245);ctx.font='bold 66px Georgia, "Times New Roman", serif';pdfDrawWrapped(ctx,txt.personal,92,430,980,76);
-      ctx.fillStyle=pal.accent;ctx.font='bold 25px Arial';ctx.fillText(`${txt.date}: ${formatPresentationDate(presentationLang)}`,92,700);
-      if(presentationClient.trim()){ctx.fillStyle=presentationVisual==="luxuryDark"?"#eee":pal.muted;ctx.font='24px Arial';ctx.fillText(txt.prepared,92,805);ctx.fillStyle=presentationVisual==="luxuryDark"?"#fff":pal.ink;ctx.font='bold 46px Georgia, "Times New Roman", serif';pdfDrawWrapped(ctx,presentationClient.trim(),92,875,930,55);}
-      ctx.fillStyle=presentationVisual==="luxuryDark"?"#ddd":pal.muted;ctx.font='25px Georgia, "Times New Roman", serif';pdfDrawWrapped(ctx,local.title||txt.property,92,1120,860,38);pages.push({bytes:dataUrlToBytes(cover.toDataURL("image/jpeg",.96)),width:1240,height:1754});
-
-      const info=document.createElement("canvas");info.width=1240;info.height=1754;ctx=info.getContext("2d");ctx.fillStyle=pal.paper;ctx.fillRect(0,0,1240,1754);
-      ctx.fillStyle=pal.accent;ctx.font='bold 72px Georgia, "Times New Roman", serif';ctx.fillText("01",80,115);ctx.fillStyle=pal.ink;ctx.font='bold 46px Georgia, "Times New Roman", serif';pdfDrawWrapped(ctx,local.title||txt.property,220,78,900,52);ctx.fillStyle=pal.muted;ctx.font='20px Arial';ctx.fillText(formatPresentationDate(presentationLang),220,170);
-      if(hero) await drawRemoteImage(ctx,hero.url,80,225,1080,690,"cover");
-      const boxes=[[txt.price,money(local.price)],[txt.area,`${local.area||0} м²`],[txt.floor,local.floor||"—"],[txt.district,local.district||"—"],[txt.type,local.type||"—"]];boxes.forEach(([a,b],i)=>{const x=80+i*216;ctx.strokeStyle=pal.line;ctx.strokeRect(x,965,196,130);ctx.fillStyle=pal.muted;ctx.font='17px Arial';ctx.fillText(a,x+16,1002);ctx.fillStyle=pal.ink;ctx.font='bold 24px Arial';pdfDrawWrapped(ctx,String(b),x+16,1043,165,28);});
-      ctx.fillStyle=pal.ink;ctx.font='bold 31px Georgia, "Times New Roman", serif';ctx.fillText(txt.about,80,1185);const desc=(presentationLang==="uk"?(local.description_uk||local.description):local.description)||txt.noDescription;ctx.fillStyle=pal.muted;ctx.font='22px Georgia, "Times New Roman", serif';const teaserLines=canvasTextLines(ctx,desc,1080).slice(0,7);let ty=1240;teaserLines.forEach(line=>{ctx.fillText(line,80,ty);ty+=34;});ctx.fillStyle=pal.accent;ctx.font='bold 18px Arial';ctx.fillText(presentationLang==="en"?"FULL DESCRIPTION ON THE FOLLOWING PAGE(S)":presentationLang==="uk"?"ПОВНИЙ ОПИС — НА НАСТУПНІЙ СТОРІНЦІ/СТОРІНКАХ":"ПОЛНОЕ ОПИСАНИЕ — НА СЛЕДУЮЩЕЙ СТРАНИЦЕ/СТРАНИЦАХ",80,1575);pages.push({bytes:dataUrlToBytes(info.toDataURL("image/jpeg",.97)),width:1240,height:1754});
+      const pages=[],hero=extractPropertyPhotos(local)[0],pp=presPal(presentationVisual,theme);
+      await presCoverPage(pages,{pal:pp,brand,agencyName,headline:txt.personal,dateLine:`${txt.date}: ${formatPresentationDate(presentationLang)}`,preparedLabel:txt.prepared,client:presentationClient.trim(),subtitle:local.title||txt.property,hero:hero?.url||""});
+      const desc=(presentationLang==="uk"?(local.description_uk||local.description):local.description)||txt.noDescription;
+      await presObjectPage(pages,{pal:pp,agencyName,lang:presentationLang,index:0,total:1,label:txt.property,title:local.title||txt.property,photo:hero?.url||"",price:money(local.price),priceLabel:txt.price,
+        specs:[[txt.area,`${local.area||0} м²`],[txt.floor,local.floor||"—"],[txt.district,local.district||"—"],[txt.type,local.type||"—"]],aboutTitle:txt.about,about:desc,hint:(presentationLang==="en"?"FULL DESCRIPTION ON THE FOLLOWING PAGE(S)":presentationLang==="uk"?"ПОВНИЙ ОПИС — НА НАСТУПНІЙ СТОРІНЦІ/СТОРІНКАХ":"ПОЛНОЕ ОПИСАНИЕ — НА СЛЕДУЮЩЕЙ СТРАНИЦЕ/СТРАНИЦАХ")});
       addFullDescriptionPages(pages,{text:desc,title:local.title,agencyName,brand,themeId:theme,visualId:presentationVisual,lang:presentationLang});
       const photos=extractPropertyPhotos(local);await addLuxuryGalleryPage(pages,{photos,title:local.title,agencyName,themeId:theme,visualId:presentationVisual,lang:presentationLang});
 
-      const endp=document.createElement("canvas");endp.width=1240;endp.height=1754;ctx=endp.getContext("2d");ctx.fillStyle=pal.bg;ctx.fillRect(0,0,1240,1754);ctx.fillStyle=pal.accent;ctx.fillRect(72,150,4,1300);if(brand.logo_url) await drawRemoteImage(ctx,brand.logo_url,92,80,210,115,"contain");ctx.fillStyle=presentationVisual==="luxuryDark"?"#fff":pal.ink;ctx.font='bold 55px Georgia, "Times New Roman", serif';pdfDrawWrapped(ctx,txt.contact,92,470,1000,64);ctx.fillStyle=pal.accent;ctx.font='bold 36px Georgia, "Times New Roman", serif';ctx.fillText(managerDisplayName(currentProfile),92,720);ctx.fillStyle=presentationVisual==="luxuryDark"?"#fff":pal.ink;ctx.font='25px Arial';ctx.fillText(currentProfile?.phone||currentProfile?.email||"",92,780);ctx.font='30px Georgia, "Times New Roman", serif';ctx.fillText(txt.thanks,92,1080);pages.push({bytes:dataUrlToBytes(endp.toDataURL("image/jpeg",.96)),width:1240,height:1754});
+      await presContactPage(pages,{pal:pp,brand,contactTitle:txt.contact,manager:managerDisplayName(currentProfile),contactLine:currentProfile?.phone||currentProfile?.email||"",thanks:txt.thanks});
       const blob=buildPdfFromJpegs(pages),propertyId=Number(local.id)||Date.now(),safeTitle=(local.title||"object").replace(/[^a-zA-Zа-яА-Я0-9_-]+/g,"_").slice(0,60),path=`${propertyId}/${Date.now()}-${safeTitle}-vip-presentation.pdf`;const uploaded=await uploadToFirstAvailableBucket(["presentations"],path,blob,{upsert:false,contentType:"application/pdf",cacheControl:"3600"});setPresentationUrl(uploaded?.publicUrl||URL.createObjectURL(blob));alert(uploaded?.publicUrl?"VIP PDF-презентация создана.":"VIP PDF создан локально.");
     }catch(e){console.error(e);alert("Ошибка создания VIP-презентации: "+(e?.message||e));}
   }
@@ -5602,40 +5692,23 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       const pal=presentationPalette(selectionVisual,theme);
       const items=selectionDraftItems.map(item=>({...item,title:cleanPresentationTitle(item.title)||"Объект недвижимости",description:withoutPresentationSource(item.description,""),description_uk:withoutPresentationSource(item.description_uk||item.description,"")}));
 
-      // Обложка — тот же стиль, что в разделе «Вторичка».
-      const cover=document.createElement("canvas");cover.width=1240;cover.height=1754;let c=cover.getContext("2d");
-      c.fillStyle=pal.bg;c.fillRect(0,0,1240,1754);
-      const firstHero=extractPropertyPhotos(items[0])[0];
-      if(firstHero){c.globalAlpha=selectionVisual==="luxuryDark"?.34:.20;await drawAnalyticsPresentationImage(c,firstHero.url,380,0,860,1754,"cover");c.globalAlpha=1;}
-      c.fillStyle=pal.accent;c.fillRect(72,150,4,1300);
-      if(brand.logo_url)await drawRemoteImage(c,brand.logo_url,95,75,180,100,"contain");
-      c.fillStyle=selectionVisual==="luxuryDark"?"#fff":pal.ink;c.font='600 30px Arial';c.fillText(agencyName||"CRM Real Estate",95,245);
-      c.font='bold 68px Georgia, "Times New Roman", serif';pdfDrawWrapped(c,txt.selection,95,430,980,78);
-      c.fillStyle=pal.accent;c.font='bold 25px Arial';c.fillText(`${txt.date}: ${formatPresentationDate(selectionLang)}`,95,700);
-      if(selectionClient.trim()){c.fillStyle=selectionVisual==="luxuryDark"?"#eee":pal.muted;c.font='24px Arial';c.fillText(txt.prepared,95,805);c.fillStyle=selectionVisual==="luxuryDark"?"#fff":pal.ink;c.font='bold 46px Georgia, "Times New Roman", serif';pdfDrawWrapped(c,selectionClient.trim(),95,875,920,55);}
-      c.fillStyle=selectionVisual==="luxuryDark"?"#ddd":pal.muted;c.font='22px Arial';c.fillText(`${items.length} ${selectionLang==="en"?"properties":selectionLang==="uk"?"об'єктів":"объектов"}`,95,1110);
-      pages.push({bytes:pdfDataUrlToBytes(cover.toDataURL("image/jpeg",.96)),width:1240,height:1754});
+      // Обложка и страницы объектов — общий стиль презентаций CRM.
+      const pp=presPal(selectionVisual,theme);
+      await presCoverPage(pages,{pal:pp,brand,agencyName,headline:txt.selection,dateLine:`${txt.date}: ${formatPresentationDate(selectionLang)}`,preparedLabel:txt.prepared,client:selectionClient.trim(),subtitle:`${items.length} ${selectionLang==="en"?"properties":selectionLang==="uk"?"об'єктів":"объектов"}`,hero:extractPropertyPhotos(items[0])[0]?.url||"",drawImage:drawAnalyticsPresentationImage});
 
       for(let index=0;index<items.length;index++){
         const p=items[index],photo=extractPropertyPhotos(p)[0];
-        const canvas=document.createElement("canvas");canvas.width=1240;canvas.height=1754;const ctx=canvas.getContext("2d");ctx.fillStyle=pal.paper;ctx.fillRect(0,0,1240,1754);
-        ctx.fillStyle=pal.accent;ctx.font='bold 78px Georgia, "Times New Roman", serif';ctx.fillText(String(index+1).padStart(2,"0"),80,115);
         const cleanTitle=cleanPresentationTitle(p.title)||`${txt.property} ${index+1}`;
-        ctx.fillStyle=pal.ink;ctx.font='bold 36px Georgia, "Times New Roman", serif';const titleBottom=pdfDrawWrapped(ctx,cleanTitle,220,65,900,40);
-        const heroY=Math.max(225,titleBottom+70),heroH=Math.max(420,915-heroY);
-        ctx.fillStyle=pal.muted;ctx.font='20px Arial';ctx.fillText(`${formatPresentationDate(selectionLang)} · ${index+1}/${items.length}`,220,heroY-25);
-        if(photo)await drawAnalyticsPresentationImage(ctx,photo.url,80,heroY,1080,heroH,"cover");
-        else{ctx.fillStyle="#eee8dc";ctx.fillRect(80,heroY,1080,heroH);ctx.fillStyle=pal.muted;ctx.font='bold 28px Arial';ctx.textAlign="center";ctx.fillText("Фото не передано рекламной площадкой",620,heroY+heroH/2);ctx.textAlign="left";}
         const roomLabel=selectionLang==="uk"?"Кімнати":selectionLang==="en"?"Rooms":"Комнаты";
         const complexLabel=selectionLang==="uk"?"Житловий комплекс":selectionLang==="en"?"Residential complex":"Жилой комплекс";
         const floorsLabel=selectionLang==="uk"?"Поверховість":selectionLang==="en"?"Total floors":"Этажность";
         const conditionLabel=selectionLang==="uk"?"Ремонт":selectionLang==="en"?"Condition":"Ремонт";
-        const specs=[[txt.price,money(p.price)],[txt.area,p.area?`${p.area} м²`:"—"],[roomLabel,p.rooms||"—"],[txt.floor,p.floor||"—"],[floorsLabel,p.total_floors||"—"],[txt.district,p.district||"—"],[txt.type,p.type||"—"],[complexLabel,p.complex_name||"—"],[conditionLabel,p.condition||"—"]];
-        specs.forEach(([a,b],i)=>{const col=i%5,row=Math.floor(i/5),x=80+col*216,y=955+row*118;ctx.strokeStyle=pal.line;ctx.lineWidth=1;ctx.strokeRect(x,y,196,100);ctx.fillStyle=pal.muted;ctx.font='14px Arial';ctx.fillText(a,x+13,y+27);ctx.fillStyle=pal.ink;ctx.font='bold 18px Arial';pdfDrawWrapped(ctx,String(b),x+13,y+58,168,22);});
-        ctx.fillStyle=pal.ink;ctx.font='bold 31px Georgia, "Times New Roman", serif';ctx.fillText(txt.about,80,1235);
         const preview=cleanPresentationDescription((selectionLang==="uk"?(p.description_uk||p.description):p.description)||txt.noDescription);
-        ctx.fillStyle=pal.muted;ctx.font='21px Georgia, "Times New Roman", serif';const allDescriptionLines=canvasTextLines(ctx,preview,1080);const teaserLines=allDescriptionLines.length>8?[]:allDescriptionLines.slice(0,7);let ty=1290;teaserLines.forEach(line=>{ctx.fillText(line,80,ty);ty+=33;});
-        pages.push({bytes:pdfDataUrlToBytes(canvas.toDataURL("image/jpeg",.97)),width:1240,height:1754});
+        const probeCtx=document.createElement("canvas").getContext("2d");probeCtx.font=`400 25px ${PRES_SANS}`;
+        const allDescriptionLines=canvasTextLines(probeCtx,preview,PRES_IN);
+        await presObjectPage(pages,{pal:pp,agencyName,lang:selectionLang,index,total:items.length,label:txt.property,title:cleanTitle,photo:photo?.url||"",price:money(p.price),priceLabel:txt.price,
+          specs:[[txt.area,p.area?`${p.area} м²`:"—"],[roomLabel,p.rooms||"—"],[txt.floor,p.floor||"—"],[floorsLabel,p.total_floors||"—"],[txt.district,p.district||"—"],[txt.type,p.type||"—"],[complexLabel,p.complex_name||"—"],[conditionLabel,p.condition||"—"]],
+          aboutTitle:txt.about,about:allDescriptionLines.length>8?"":preview,hint:"",drawImage:drawAnalyticsPresentationImage,noPhotoText:selectionLang==="uk"?"Фото не передано рекламним майданчиком":"Фото не передано рекламной площадкой"});
         const previewLineCount=allDescriptionLines.length;
         if(previewLineCount>8)addFullDescriptionPages(pages,{text:preview,title:cleanTitle,agencyName,brand,themeId:theme,visualId:selectionVisual,lang:selectionLang});
         await addLuxuryGalleryPage(pages,{photos:extractPropertyPhotos(p),title:cleanTitle,agencyName,themeId:theme,visualId:selectionVisual,lang:selectionLang,drawImage:drawAnalyticsPresentationImage,compact:true});
@@ -5644,12 +5717,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       if(items.length>1)addSelectionComparisonPages(pages,{items,themeId:theme,visualId:selectionVisual,lang:selectionLang,agencyName});
 
       // Финальная страница — без внешних ссылок и служебных фраз.
-      const endp=document.createElement("canvas");endp.width=1240;endp.height=1754;const ec=endp.getContext("2d");ec.fillStyle=pal.bg;ec.fillRect(0,0,1240,1754);ec.fillStyle=pal.accent;ec.fillRect(72,150,4,1300);
-      if(brand.logo_url)await drawRemoteImage(ec,brand.logo_url,92,80,210,115,"contain");
-      ec.fillStyle=selectionVisual==="luxuryDark"?"#fff":pal.ink;ec.font='bold 55px Georgia, "Times New Roman", serif';pdfDrawWrapped(ec,txt.contact,92,470,1000,64);
-      ec.fillStyle=pal.accent;ec.font='bold 36px Georgia, "Times New Roman", serif';pdfDrawWrapped(ec,managerDisplayName(currentProfile),92,720,1000,44);
-      ec.fillStyle=selectionVisual==="luxuryDark"?"#fff":pal.ink;ec.font='25px Arial';pdfDrawWrapped(ec,currentProfile?.phone||currentProfile?.email||"",92,800,1000,34);ec.font='30px Georgia, "Times New Roman", serif';pdfDrawWrapped(ec,txt.thanks,92,1080,1000,40);
-      pages.push({bytes:pdfDataUrlToBytes(endp.toDataURL("image/jpeg",.96)),width:1240,height:1754});
+      await presContactPage(pages,{pal:pp,brand,contactTitle:txt.contact,manager:managerDisplayName(currentProfile),contactLine:currentProfile?.phone||currentProfile?.email||"",thanks:txt.thanks});
 
       const blob=buildPdfFromCanvasPages(pages),localUrl=URL.createObjectURL(blob);setSelectionDownloadUrl(localUrl);
       const uploaded=await uploadToFirstAvailableBucket(["presentations"],`selections/${Date.now()}-analytics-vip-selection.pdf`,blob,{upsert:false,contentType:"application/pdf",cacheControl:"3600"});
