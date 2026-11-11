@@ -4904,18 +4904,15 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     const seq=++marketLoadSeq.current;
     setLoadingMarket(true);setMarketError("");
     try{
-      const [rows,sourceRes,complexRes]=await Promise.all([
+      const [rows,sourceRes]=await Promise.all([
         fetchAllMarketListings(),
-        supabase.from("market_sources").select("*").eq("agency_id",agencyId).order("created_at",{ascending:false}),
-        supabase.from("analytics_residential_complexes").select("official_name,country,region,city,district,developer,address,source_url,completion_status,completion_year").eq("is_active",true).order("official_name",{ascending:true}).limit(10000)
+        supabase.from("market_sources").select("*").eq("agency_id",agencyId).order("created_at",{ascending:false})
       ]);
       // Старый ответ не должен перерисовывать интерфейс после изменения фильтров.
       if(seq!==marketLoadSeq.current)return;
       setMarketListings(rows);
       if(!sourceRes.error)setMarketSources(sourceRes.data||[]);
       else console.warn("Analytics market_sources:",sourceRes.error);
-      if(!complexRes.error)setComplexDirectory(complexRes.data||[]);
-      else console.warn("Analytics complexes:",complexRes.error);
     }catch(e){
       if(seq!==marketLoadSeq.current)return;
       console.error(e);
@@ -4925,6 +4922,15 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     }
   };
 
+  useEffect(()=>{let alive=true;(async()=>{
+    const all=[];
+    for(let from=0;from<20000;from+=1000){
+      const {data,error}=await supabase.from("analytics_residential_complexes").select("official_name,country,region,city,district,developer,address,source_url,completion_status,completion_year").eq("is_active",true).order("id",{ascending:true}).range(from,from+999);
+      if(error){console.warn("Analytics complexes:",error);break;}
+      all.push(...(data||[]));if(!data||data.length<1000)break;
+    }
+    if(alive&&all.length)setComplexDirectory(all);
+  })();return()=>{alive=false;};},[]);
   useEffect(()=>{
     if(!agencyId)return;
     setResultPage(1);
@@ -5082,9 +5088,12 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     хмельницкая:"khmelnytskyi_region",хмельницька:"khmelnytskyi_region",черкасская:"cherkasy_region",черкаська:"cherkasy_region",
     черновицкая:"chernivtsi_region",чернівецька:"chernivtsi_region",черниговская:"chernihiv_region",чернігівська:"chernihiv_region",
   };
+  // Украинское ↔ русское написание городов (Київ = Киев, Черкаси = Черкассы …)
+  const uaRuCity={"київ": "киев", "вінниця": "винница", "луцьк": "луцк", "дніпро": "днепр", "кривий ріг": "кривой рог", "камянське": "каменское", "нікополь": "никополь", "донецьк": "донецк", "маріуполь": "мариуполь", "краматорськ": "краматорск", "словянськ": "славянск", "житомир": "житомир", "ужгород": "ужгород", "мукачево": "мукачево", "запоріжжя": "запорожье", "бердянськ": "бердянск", "мелітополь": "мелитополь", "івано-франківськ": "ивано-франковск", "біла церква": "белая церковь", "бориспіль": "борисполь", "бровари": "бровары", "ірпінь": "ирпень", "вишгород": "вышгород", "кропивницький": "кропивницкий", "львів": "львов", "миколаїв": "николаев", "одеса": "одесса", "чорноморськ": "черноморск", "південне": "пивденное", "ізмаїл": "измаил", "білгород-дністровський": "белгород-днестровский", "полтава": "полтава", "кременчук": "кременчуг", "рівне": "ровно", "суми": "сумы", "тернопіль": "тернополь", "харків": "харьков", "херсон": "херсон", "хмельницький": "хмельницкий", "камянець-подільський": "каменец-подольский", "черкаси": "черкассы", "умань": "умань", "чернівці": "черновцы", "чернігів": "чернигов", "кам'янське": "каменское", "таїрове": "таирово", "лиманка": "лиманка", "фонтанка": "фонтанка"};
+  const uaRuLatin=Object.fromEntries(Object.entries(uaRuCity).map(([uk,ru])=>[latinGeoKey(uk),latinGeoKey(ru)]));
   const geoCanon=v=>{
-    const raw=geoKey(v),latin=latinGeoKey(v);
-    return geoAlias[raw]||geoAlias[latin]||latin||raw;
+    const raw=geoKey(v),latin=latinGeoKey(v),ruLatin=uaRuLatin[latin]||latin;
+    return geoAlias[raw]||geoAlias[latin]||geoAlias[ruLatin]||ruLatin||raw;
   };
   const geoEq=(a,b)=>{
     const aa=geoCanon(a),bb=geoCanon(b);
