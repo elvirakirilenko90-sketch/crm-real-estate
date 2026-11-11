@@ -661,7 +661,7 @@ async function dimCityIds(cityName:string,ukName="",oblastUk=""){
   const rec:any=(REM_LUN_CITIES as any)[String(cityName||"").trim().toLowerCase()];const uk=String(ukName||rec?.uk||cityName);
   const c=dimIdsCache.get(k);if(c&&Date.now()-c.at<12*3600000)return c.ids;
   let ids:any=null,answered=false;
-  try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(uk)}&langId=4`);if(r.ok){answered=true;const list:any[]=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).replace(/\s*область$/,"");const hit=list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk))||list.find(x=>x?.type==="city"&&norm(String(x.cityName).replace(/\s*\(.*?\)\s*/g,""))===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||null;if(hit?.payload?.cityId)ids={stateId:Number(hit.payload.stateId),cityId:Number(hit.payload.cityId)}}}catch{/* нет ответа — честно сообщим */}
+  try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(uk)}&langId=4`);if(r.ok){answered=true;const list:any[]=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).replace(/\s*область$/,"");const bare=(v:string)=>norm(String(v||"").replace(/\s*\(.*?\)\s*/g,""));const hit=list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||list.find(x=>x?.type==="city"&&bare(x.cityName)===bare(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||(!ob?list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk)):null)||null;if(hit?.payload?.cityId)ids={stateId:Number(hit.payload.stateId),cityId:Number(hit.payload.cityId)}}}catch{/* нет ответа — честно сообщим */}
   if(answered)dimIdsCache.set(k,{ids,at:Date.now()});return ids;
 }
 async function dimApiSearch(f:Filters,pageUrl:string){
@@ -1100,6 +1100,9 @@ export async function handler(req:Request):Promise<Response>{
     if(isRent(f))await loadUah();
     const sessionId=String(body?.search_session_id||"");const startedAt=Date.now();if(sessionId)await touchSession(sessionId,req,{city:f.city,district:f.district,complex:f.complex,property_type:f.property_type,deal_type:f.deal_type,sources});
     const results=(await Promise.all(sources.map(s=>one(s,f)))).map((r:any)=>isRent(f)?{...r,items:(r.items||[]).map((i:any)=>({...i,deal_type:"Аренда"}))}:r);
+    for(const r of results as any[]){
+      if(r&&r.source==="RIELTOR.UA"&&!String(f.complex||"").trim()&&Array.isArray(r.items)&&r.url){const m=String(r.url).match(/^https:\/\/rieltor\.ua\/([a-z0-9-]+)\/(?:flats|houses|areas|commercials|rooms)-/);if(m){const own=r.items.filter((x:any)=>new RegExp(`rieltor\\.ua\\/${m[1]}\\/`).test(String(x.source_url||"")));if(own.length<r.items.length){r.items=own;r.page_item_count=own.length;}}}
+    }
     for(const r of results as any[]){
       if(!r||r.ok===false||r.unsupported_city||r.unsupported_category)continue;
       const miss=unsupportedFilters(String(r.source),f);if(!miss.length)continue;
