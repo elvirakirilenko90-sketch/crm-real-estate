@@ -5296,7 +5296,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const pickPlace=item=>{
     if(country==="Все")setCountry("Украина");
     if(item.region_ru)setRegion(item.region_ru);
-    if(item.catalog_city){setCity(item.catalog_city);setCityMeta(null);}else{setCity(item.name);setCityMeta(item);}
+    if(item.catalog_city){const regionList=analyticsGeoCatalog["Украина"]?.regions?.[item.region_ru]||[];const allCities=Object.values(analyticsGeoCatalog["Украина"]?.regions||{}).flat();const nice=regionList.find(c=>String(c).toLowerCase()===item.catalog_city)||allCities.find(c=>String(c).toLowerCase()===item.catalog_city)||item.catalog_city;setCity(nice);setCityMeta(null);}else{setCity(item.name);setCityMeta(item);}
     setDistrictFilter("Все");setComplexFilter("Все");setPlaceQuery("");setPlaceSuggest([]);setLivePage(1);
   };
   const regionCities=selectedCountryKey!=="Все"&&selectedRegionKey!=="Все"

@@ -589,7 +589,7 @@ function settlementOf(f:Filters):Settlement|null{
 const UKLAT:any={а:"a",б:"b",в:"v",г:"h",ґ:"g",д:"d",е:"e",є:"ie",ж:"zh",з:"z",и:"y",і:"i",ї:"i",й:"i",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"kh",ц:"ts",ч:"ch",ш:"sh",щ:"shch",ь:"",ю:"iu",я:"ia"};const UKFIRST:any={є:"ye",ї:"yi",й:"y",ю:"yu",я:"ya"};
 const ukTranslit=(v="")=>normUk(v).replace(/\s*\(.*?\)\s*/g," ").trim().split(/[\s-]+/).map(w=>w.replace(/зг/g,"zgh").split("").map((c,i)=>i===0&&UKFIRST[c]?UKFIRST[c]:(UKLAT[c]??c)).join("")).join("-").replace(/[^a-z0-9-]/g,"");
 const pageExists=new Map<string,{ok:boolean,title:string,at:number}>();
-async function checkPage(url:string){const c=pageExists.get(url);if(c&&Date.now()-c.at<12*3600000)return c;let ok=false,title="";try{const r=await politeFetch(url);ok=r.ok;const html=ok?await r.text():"";title=(html.match(/<title>([^<]{0,200})/)||[])[1]||""}catch{/* нет ответа */}const v={ok,title,at:Date.now()};pageExists.set(url,v);return v}
+async function checkPage(url:string){const c=pageExists.get(url);if(c&&Date.now()-c.at<12*3600000)return c;let ok=false,title="",sure=false;try{const r=await politeFetch(url);ok=r.ok;sure=r.ok||r.status===404||r.status===410;const html=ok?await r.text():"";title=(html.match(/<title>([^<]{0,200})/)||[])[1]||""}catch{/* нет ответа */}const v={ok,title,at:Date.now()};if(sure)pageExists.set(url,v);return v}
 // ЛУН: регион/flats-<населённый пункт>
 async function lunPathLive(st:Settlement){
   const lun=st.oblast?.lun;if(!lun)return"";
@@ -610,7 +610,7 @@ async function rieltorCityLive(st:Settlement){
   const R:any={а:"a",б:"b",в:"v",г:"g",ґ:"g",д:"d",е:"e",є:"e",ж:"zh",з:"z",и:"y",і:"i",ї:"i",й:"j",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sch",ь:"",ю:"ju",я:"ja"};
   const base=normUk(st.uk).replace(/\s*\(.*?\)\s*/g," ").trim();const t1=base.split("").map(c=>R[c]??c).join("").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
   const stem=normUk(st.uk).slice(0,Math.max(4,normUk(st.uk).length-3));
-  for(const cand of [...new Set([t1,t1.replace(/ivka$/,"ovka"),t1.replace(/ivka$/,"evka"),t1.replace(/ne$/,"noe"),t1.replace(/ske$/,"skoe")])]){const c=await checkPage(`https://rieltor.ua/${cand}/flats-sale/`);if(c.ok&&normUk(c.title).includes(stem)&&!/києві/i.test(c.title))return cand}
+  for(const cand of [...new Set([t1,t1.replace(/ivka$/,"ovka"),t1.replace(/ivka$/,"evka"),t1.replace(/ne$/,"noe"),t1.replace(/ske$/,"skoe"),t1.replace(/iv$/,"ov"),t1.replace(/i/,"e"),t1.replace(/i/,"e").replace(/yn$/,"in")])]){const c=await checkPage(`https://rieltor.ua/${cand}/flats-sale/`);if(c.ok&&normUk(c.title).includes(stem)&&!/києві/i.test(c.title))return cand}
   return"";
 }
 // ===== Районы городов: район передаётся самой площадке =====
@@ -762,7 +762,7 @@ async function one(source:string,f:Filters){
      else if(source==="ЛУН"||source==="LUN"){const pth=await lunPathLive(st);if(!pth)return none("ЛУН");f={...f,_lun_path:pth} as any;}
    }else{
    if(wantCity&&portal==="olx"&&(REM_LUN_CITIES as any)[wantCity.toLowerCase()]){const sl=await olxCitySlugLive(wantCity);if(sl)f={...f,_olx_slug:sl} as any;}
-   if(wantCity&&portal==="dim"&&portalSlug("dim",wantCity)===""){const ids=await dimCityIds(wantCity);if(ids)f={...f,_dim_ids:ids} as any;}
+   if(wantCity&&portal==="dim"&&!portalSlug("dim",wantCity)){const ids=await dimCityIds(wantCity);if(ids)f={...f,_dim_ids:ids} as any;}
    if(wantCity&&portal&&!(portal==="dim"&&(f as any)._dim_ids)&&!(portal==="olx"&&(f as any)._olx_slug)){const s=portalSlug(portal,wantCity)??(portal==="rieltor"?rieltorCitySlug(wantCity):citySlug(wantCity));if(!s)return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ${source} нет отдельной выдачи по городу «${wantCity}»`,items:[]}}
    if(source==="REM"&&wantCity&&!remCitySlug(wantCity))return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На REM нет отдельной выдачи по городу «${wantCity}»`,items:[]};
    if((source==="ЛУН"||source==="LUN")&&wantCity&&!lunCityPath(wantCity))return{source:"ЛУН",ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ЛУН нет отдельной выдачи по городу «${wantCity}»`,items:[]};}}
