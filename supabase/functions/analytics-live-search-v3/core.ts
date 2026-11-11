@@ -580,7 +580,7 @@ type Settlement={key:string;uk:string;oblastUk:string;oblast:any;catalog:boolean
 function settlementOf(f:Filters):Settlement|null{
   const city=String(geo(f).city||"").trim();if(!city)return null;const key=city.toLowerCase();
   const rec:any=(REM_LUN_CITIES as any)[key];const meta:any=(f as any).city_meta||{};
-  const uk=String(rec?.uk||meta.uk||city);
+  const uk=String(rec?.uk||meta.uk||city).replace(/\s*\(.*?\)\s*/g," ").replace(/\s+/g," ").trim();
   const reg=String(f.region||"");const ob=OBLASTS.find(o=>o.ru===reg)||OBLASTS.find(o=>meta.state_uk&&normUk(o.uk)===normUk(String(meta.state_uk).replace(/\s*область$/i,"")))||null;
   const dim=meta.dim_city_id?{stateId:Number(meta.dim_state_id),cityId:Number(meta.dim_city_id)}:null;
   return{key,uk,oblastUk:String(meta.state_uk||ob?.uk||""),oblast:ob,catalog:!!rec||!!(UA_SLUGS as any)[key],dim};
