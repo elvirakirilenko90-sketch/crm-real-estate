@@ -496,6 +496,68 @@ function parseExactRieltorPage(html:string,f:Filters){
   return out;
 }
 
+// ===== DIM.RIA через собственный поиск площадки (тот же, что на сайте dom.ria.com) =====
+// Фильтры передаются площадке как есть, поэтому количество совпадает с сайтом один в один.
+const dimQueryCache=new Map<string,{q:string,at:number}>();
+async function dimBaseQuery(pageUrl:string):Promise<string>{
+  const c=dimQueryCache.get(pageUrl);if(c&&Date.now()-c.at<1800000)return c.q;
+  const r=await politeFetch(pageUrl);if(!r.ok)return "";
+  const html=await r.text();
+  const q=(html.match(/queryStrNewDesign\\?"\s*:\s*\\?"([^"\\]+)/)?.[1]||"").replace(/\\u0026/g,"&");
+  if(q)dimQueryCache.set(pageUrl,{q,at:Date.now()});
+  return q;
+}
+const dimPhoto=(file:string)=>file?`https://cdn.riastatic.com/photos/${String(file).replace(/\.(jpe?g|png|webp)$/i,"")}xl.webp`:"";
+function dimPeriodParams(f:any,u:URLSearchParams){
+  const p=String(f.period||"");
+  if(p==="per_day"||p==="per_allday")u.set("period",p);
+  if(f.date_from&&/^\d{4}-\d{2}-\d{2}$/.test(String(f.date_from)))u.set("date_from",String(f.date_from));
+  if(f.date_to&&/^\d{4}-\d{2}-\d{2}$/.test(String(f.date_to)))u.set("date_to",String(f.date_to));
+}
+async function dimApiSearch(f:Filters,pageUrl:string){
+  const base=await dimBaseQuery(pageUrl);
+  if(!base)return null;
+  const PER=50,requestedPage=Math.max(1,Number(f.page||1));
+  const u=new URLSearchParams(base.replace(/^&/,""));
+  u.set("addMoreRealty","false");u.set("excludeSold","1");u.set("wo_dupl","1");
+  u.set("page",String(requestedPage-1));u.set("limit",String(PER));
+  const rooms=String(f.rooms||"");if(/^\d/.test(rooms)){const n=parseInt(rooms);u.set("characteristic[209][from]",String(n));if(!/\+/.test(rooms))u.set("characteristic[209][to]",String(n));}
+  if(f.price_from||f.price_to){if(f.price_from)u.set("characteristic[234][from]",String(f.price_from));if(f.price_to)u.set("characteristic[234][to]",String(f.price_to));u.set("characteristic[242]","239");}
+  if(f.area_from)u.set("characteristic[214][from]",String(f.area_from));if(f.area_to)u.set("characteristic[214][to]",String(f.area_to));
+  if(f.floor_from)u.set("characteristic[227][from]",String(f.floor_from));if(f.floor_to)u.set("characteristic[227][to]",String(f.floor_to));
+  dimPeriodParams(f,u);
+  const searchUrl=`https://dom.ria.com/node/searchEngine/v2/?${u.toString()}`;
+  const sr=await politeFetch(searchUrl);if(!sr.ok)return null;
+  let data:any;try{data=await sr.json()}catch{return null}
+  const ids:number[]=(data?.items||[]).map((x:any)=>Number(x)).filter(Boolean);
+  const count=Number(data?.count||0);
+  const details:any[]=[];
+  for(let i=0;i<ids.length;i+=6){
+    const chunk=ids.slice(i,i+6);
+    const got=await Promise.all(chunk.map(async id=>{try{const r=await politeFetch(`https://dom.ria.com/realty/data/${id}?lang_id=4`,2);return r.ok?await r.json():null}catch{return null}}));
+    details.push(...got.filter(Boolean));
+  }
+  const g=geo(f),rent=isRent(f);
+  const items:Item[]=details.map((d:any)=>{
+    const url=`https://dom.ria.com/uk/${d.beautiful_url||`realty-${d.realty_id}.html`}`;
+    const usd=num(d?.priceArr?.["1"]||0)||(Number(d.currency_type_id)===1?num(d.price):0);
+    const photos=Object.values(d.photos||{}).sort((a:any,b:any)=>(b.is_main?1:0)-(a.is_main?1:0)||Number(a.ordering||0)-Number(b.ordering||0)).map((p:any)=>dimPhoto(p.file)).filter(Boolean);
+    const tags=(d.tag_uk||[]).map((t:any)=>String(t.tag_synonym||"")).join(" ");
+    const condition=/без ремонт/i.test(tags)?"Без ремонта":/ремонт|євроремонт|дизайнер/i.test(tags)?"С ремонтом":"";
+    const desc=String(d.description_uk||d.description||"");
+    const addr=[d.street_name_uk||d.street_name,d.building_number_str].filter(Boolean).join(", ");
+    const title=[addr,d.district_name_uk||d.district_name,d.city_name_uk||d.city_name].filter(Boolean).join(" · ")||`DIM.RIA ${d.realty_id}`;
+    return {external_id:String(d.realty_id),source_name:"DIM.RIA Украина",source_url:listingUrlInUsd(url,"DIM.RIA Украина"),title,description:desc.slice(0,1800),
+      country:"Украина",region:g.region||String(d.state_name_uk||""),city:String(d.city_name_uk||d.city_name||g.city||""),district:String(d.district_name_uk||d.district_name||""),
+      property_type:propertyLabel(f),deal_type:rent?"Аренда":"Продажа",rooms:Number(d.rooms_count||0)||null,price:usd,area:Number(d.total_square_meters||0),currency:"USD",
+      complex_name:String(d.user_newbuild_name_uk||d.user_newbuild_name||""),main_photo_url:photos[0]||dimPhoto(d.main_photo),photo_urls:photos.slice(0,12),
+      published_at:d.publishing_date?new Date(String(d.publishing_date).replace(" ","T")+"+02:00").toISOString():null,
+      raw_data:{live:true,api:"dimria",source_price:usd,source_currency:"USD",price_kind:"total_object",converted:false,floor:Number(d.floor||0),total_floors:Number(d.floors_count||0),
+        condition,verified:!!(d.agencyVerified||d.realtorVerified),construction_year:0,publishing_date_info:d.publishing_date_info||"",kitchen_area:Number(d.kitchen_square_meters||0),living_area:Number(d.living_square_meters||0)}} as Item;
+  }).filter((x:Item)=>x.price>0);
+  return {count,items,searchUrl,PER};
+}
+
 async function one(source:string,f:Filters){
   // Город, которого нет на площадке: не подменяем его общей выдачей по Украине
   {const wantCity=String(geo(f).city||"").trim();const portal:any={"OLX":"olx","DIM.RIA Украина":"dim","RIELTOR.UA":"rieltor"}[source];
@@ -505,6 +567,17 @@ async function one(source:string,f:Filters){
   if(propertyGroup(f)!=="apartment")f={...f,complex:"",complex_source_url:""};
   const requestedPage=Math.max(1,Number(f.page||1));
   let base="";
+  if(source==="DIM.RIA Украина"){
+    const pageUrl=await resolvedDomUrl(f);
+    const api=await dimApiSearch(f,pageUrl).catch(()=>null);
+    if(api){
+      const finalF={...f,rooms:undefined,price_from:undefined,price_to:undefined,area_from:undefined,area_to:undefined,floor_from:undefined,floor_to:undefined,district:"",complex:""} as any;
+      const items=api.items.filter(item=>passes(item,finalF)).map(item=>({...item,floor:Number(item.raw_data?.floor||0)||null,total_floors:Number(item.raw_data?.total_floors||0)||null,date_known:!!item.published_at,last_seen_at:new Date().toISOString()}));
+      const extra=!!f.condition||!!f.land_area_from||!!f.land_area_to||!!f.construction_year_from||!!f.construction_year_to||!!f.verified_only||!!(f.programs||[]).length;
+      const totalPages=Math.max(1,Math.ceil(api.count/api.PER));
+      return{source,ok:true,status:200,url:pageUrl,search_url:api.searchUrl,page:requestedPage,pages_loaded:1,total:extra?items.length:api.count,count_is_exact:!extra,page_item_count:items.length,total_pages:totalPages,has_more:requestedPage<totalPages,items};
+    }
+  }
   if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=await resolvedRieltorComplexUrl(f);else if(source==="REM"){const group=propertyGroup(f);base=group==="house"?"https://rem.ua/ua/prodazha-domov-odessa":group==="apartment"?(f.complex&&complexMatches(f.complex,"ЖК Калейдоскоп")?"https://rem.ua/ua/prodazha-kvartir-odnokomnatnye-odessa-stroiteley":"https://rem.ua/ua/prodazha-kvartir-odessa"):"";}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,items:[]};
   // DIM.RIA: one CRM page is a block of five native DIM.RIA pages (up to about
   // 100 listings). The frontend sends pages:1, but DIM.RIA must still return a
@@ -565,6 +638,14 @@ async function one(source:string,f:Filters){
   parsed=parsed.map(item=>Number(item.rooms||0)>0?item:{...item,rooms:roomsFromText(item.title||"")||roomsFromText(String(item.description||"").slice(0,400))||(olxRoomsNative?parseInt(String(f.rooms)):null)});
   const finalFilters=source==="OLX"?{...f,city:String((f as any)._requested_city||f.city||""),district:String((f as any)._requested_district||f.district||""),floor_from:undefined,floor_to:undefined}:(exactRieltorCatalog?{...f,complex:""}:f);
   parsed=parsed.filter(item=>passes(item,finalFilters));
+  // Період подачі — как на DIM.RIA: за сьогодні / за добу / дата від–до (без даты объявление не проходит)
+  const pf:any=f;const periodActive=pf.period==="per_day"||pf.period==="per_allday"||!!pf.date_from||!!pf.date_to;
+  if(periodActive){
+    const now=Date.now(),kyiv=new Date(now+2*3600000);const todayStart=Date.UTC(kyiv.getUTCFullYear(),kyiv.getUTCMonth(),kyiv.getUTCDate())-2*3600000;
+    const from=pf.period==="per_day"?todayStart:pf.period==="per_allday"?now-86400000:pf.date_from?new Date(pf.date_from+"T00:00:00+02:00").getTime():0;
+    const to=pf.date_to?new Date(pf.date_to+"T23:59:59+02:00").getTime():now+86400000;
+    parsed=parsed.filter(item=>{const t=item.published_at?new Date(item.published_at).getTime():NaN;return Number.isFinite(t)&&t>=from&&t<=to});
+  }
   // В аренде иногда попадаются объявления о продаже (цена в сотни тысяч $) — это не аренда
   if(isRent(f))parsed=parsed.filter(item=>!(Number(item.price||0)>20000));
   if(exactComplexCatalog&&f.complex){const matching=parsed.filter(item=>complexMatches(`${item.complex_name||""} ${item.title||""} ${item.description||""}`,f.complex||""));if(matching.length)parsed=matching;}
@@ -579,7 +660,7 @@ async function one(source:string,f:Filters){
   }
   const nativeTotal=countFrom(totalHtml,source);
   const propertySubtypeActive=/^(Таунхаус|Дуплекс|Коттедж)$/i.test(selectedPropertyType(f));
-  const postParseFilterActive=propertySubtypeActive||!!f.condition||!!f.area_from||!!f.area_to||!!f.floor_from||!!f.floor_to||!!f.land_area_from||!!f.land_area_to||!!f.construction_year_from||!!f.construction_year_to||!!f.verified_only||!!(f.programs||[]).length||!!f.rooms||!!f.price_from||!!f.price_to;
+  const postParseFilterActive=periodActive||propertySubtypeActive||!!f.condition||!!f.area_from||!!f.area_to||!!f.floor_from||!!f.floor_to||!!f.land_area_from||!!f.land_area_to||!!f.construction_year_from||!!f.construction_year_to||!!f.verified_only||!!(f.programs||[]).length||!!f.rooms||!!f.price_from||!!f.price_to;
   const exactDimComplex=source==="DIM.RIA Украина"&&exactComplexCatalog;
   // OLX exposes the total for its exact search URL; DIM.RIA exposes the total
   // for its exact ЖК catalog. Use those native totals when no additional
@@ -590,7 +671,7 @@ async function one(source:string,f:Filters){
   // cards that actually passed every filter and is returned to the CRM.
   // Advertising-site headline counters may include promoted, inaccessible or
   // merely keyword-related listings, so never present them as filtered cards.
-  const olxAllNative=source==="OLX"&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const total=olxAllNative?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
   const countExact=olxAllNative||!postParseFilterActive||!!f.complex;
   const pageItemCount=items.length;
