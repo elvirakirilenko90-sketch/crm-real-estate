@@ -1,6 +1,7 @@
 // analytics-live-search v3 core: v1 + все города Украины по каждой площадке, аренда, зарубежные площадки.
 // Подключается из index.ts по закреплённому коммиту; авторизация — в index.ts.
 import { UA_SLUGS, UA_UK } from "./ua_slugs.ts";
+import { REM_LUN_CITIES } from "./cities_rem_lun.ts";
 import { foreignSearch } from "./foreign.ts";
 
 const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization,apikey,content-type,x-client-info","content-type":"application/json; charset=utf-8"};
@@ -231,7 +232,7 @@ async function presentationDetail(value:string){
 function passes(x:Item,f:Filters){const roomsPlus=/\+/.test(String(f.rooms||"")),room=parseInt(String(f.rooms||0))||0,text=`${x.title||""} ${x.description||""} ${JSON.stringify(x.raw_data||{})}`,floor=num(x.raw_data?.floor)||floorFromText(text).floor,land=num(x.raw_data?.land_area)||landAreaFromText(text),year=num(x.raw_data?.construction_year)||yearFromText(text),condition=(["С ремонтом","Без ремонта"].includes(String(x.raw_data?.condition||""))?String(x.raw_data?.condition):conditionTag(text));return(!f.district||f.district==="Все"||districtCanon(x.district)===districtCanon(f.district))&&(!room||(roomsPlus?Number(x.rooms||0)>=room:Number(x.rooms||0)===room))&&(!f.price_from||x.price>=Number(f.price_from))&&(!f.price_to||x.price<=Number(f.price_to))&&(!f.area_from||x.area>=Number(f.area_from))&&(!f.area_to||x.area<=Number(f.area_to))&&(!f.complex||f.complex==="Все"||complexMatches(`${x.complex_name} ${x.title} ${x.description}`,f.complex))&&(!f.condition||f.condition==="Все"||condition===f.condition)&&(!f.floor_from||floor>=Number(f.floor_from))&&(!f.floor_to||floor>0&&floor<=Number(f.floor_to))&&(!f.land_area_from||land>=Number(f.land_area_from))&&(!f.land_area_to||land>0&&land<=Number(f.land_area_to))&&(!f.construction_year_from||year>=Number(f.construction_year_from))&&(!f.construction_year_to||year>0&&year<=Number(f.construction_year_to))&&(!f.verified_only||verifiedFromText(text))&&(!(f.programs||[]).length||(f.programs||[]).some(p=>programTags(text).includes(p)));}
 
 function countFrom(html:string,source:string){
-  if(source==="ЛУН"){const m=html.match(/>\s*(\d[\d\s\u00a0]{0,9})\s*квартир[аи]?\s*</i);if(m)return num(m[1]);}
+  if(source==="ЛУН"){const m=html.match(/>\s*(\d[\d\s\u00a0]{0,9})\s*(?:квартир[аи]?|будин(?:ок|ки|ків)|ділян(?:ка|ки|ок))\s*</i);if(m)return num(m[1]);}
   const t=clean(html);
   // DIM.RIA prints the exact catalog total in the filter button, for example
   // "Показати 8 885 оголошень". Prefer this explicit value over the number of
@@ -420,9 +421,11 @@ function parseDom(html:string,f:Filters){
 
 const lunCitySlug=(value="")=>{const c=String(value||"").toLowerCase();if(/одес|odes/.test(c))return"odesa";if(/ки[еї]в|kyiv|kiev/.test(c))return"kyiv";if(/льв[іо]в|lviv/.test(c))return"lviv";if(/дн[іе]пр|dnipr/.test(c))return"dnipro";return latin(c)||"odesa"};
 const lunComplexSlug=(value="")=>normalizeComplexNumbers(String(value||"")).replace(/^\s*(?:жк\s+|жил(?:ой|ого)?\s+комплекс\s+|житлов(?:ий|ого)?\s+комплекс\s+)/i," ").split(/[^a-zа-яіїєґ0-9]+/i).map(part=>latin(part)).filter(Boolean).join("-");
-const lunUrl=(f:Filters)=>{const city=lunCitySlug(f.city||"Одесса"),group=propertyGroup(f);if(group!=="apartment")return"";const rent=isRent(f),slug=!rent&&f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):"flats";const lunDistricts:any={"Киевский":"kyivskyi","Приморский":"prymorskyi","Хаджибейский":"khadzhybeiskyi","Пересыпский":"peresypskyi"};const g=geo(f),dSlug=slug==="flats"&&city==="odesa"?lunDistricts[g.district]:"";const u=new URL(`https://lun.ua/${rent?"rent":"sale"}/${city}/${slug}${dSlug?`-${dSlug}-district`:""}`);
+// Город → адрес ЛУН (регион/flats или регион/flats-город); "" = на ЛУН нет такого города
+const lunCityPath=(cityName="")=>{const k=String(cityName||"").trim().toLowerCase();const rec:any=(REM_LUN_CITIES as any)[k]||Object.values(REM_LUN_CITIES).find((x:any)=>String(x.uk).toLowerCase()===k)||(REM_LUN_CITIES as any)[String((UA_UK as any)[k]||"")];if(rec)return String(rec.lun||"");if(!k)return"odesa/flats";return""};
+const lunUrl=(f:Filters)=>{const group=propertyGroup(f);const kind=group==="apartment"?"flats":group==="house"?"houses":group==="land"?"land":"";if(!kind)return"";const path=lunCityPath(f.city||"Одесса");if(!path)return"";const [city,cityPart]=path.split("/");const rent=isRent(f);if(rent&&kind==="land")return"";const townSuffix=cityPart.replace(/^flats/,"");const slug=kind==="flats"&&!rent&&f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):`${kind}${townSuffix}`;const lunDistricts:any={"Киевский":"kyivskyi","Приморский":"prymorskyi","Хаджибейский":"khadzhybeiskyi","Пересыпский":"peresypskyi"};const g=geo(f),dSlug=kind==="flats"&&slug==="flats"&&city==="odesa"&&!townSuffix?lunDistricts[g.district]:"";const u=new URL(`https://lun.ua/${rent?"rent":"sale"}/${city}/${slug}${dSlug?`-${dSlug}-district`:""}`);
   // родные фильтры ЛУН: комнаты и цена в $ (счётчик «N квартир» на странице учитывает их)
-  const r=parseInt(String(f.rooms||""))||0;if(r>=1&&r<=3&&/^[1-3]$/.test(String(f.rooms)))u.searchParams.set("roomCount",String(r));
+  const r=parseInt(String(f.rooms||""))||0;if(kind==="flats"&&r>=1&&r<=3&&/^[1-3]$/.test(String(f.rooms)))u.searchParams.set("roomCount",String(r));
   if(f.price_from||f.price_to){if(f.price_from)u.searchParams.set("priceMin",String(f.price_from));if(f.price_to)u.searchParams.set("priceMax",String(f.price_to));u.searchParams.set("currency","USD");}
   return u.toString()};
 
@@ -432,7 +435,7 @@ function parseLun(html:string,f:Filters){
   const lunMeta=new Map<string,any>();
   for(const m of html.matchAll(/\\"id\\":(\d+),\\"groupId\\"/g)){
     const s=html.slice(m.index||0,(m.index||0)+2500),v=(k:string)=>s.match(new RegExp('\\\\"'+k+'\\\\":\\\\?"?([\\d.T:-]+)'))?.[1]||"";
-    if(!lunMeta.has(m[1]))lunMeta.set(m[1],{rooms:num(v("roomCount")),area:num(v("areaTotal")),floor:num(v("floor")),floors:num(v("floorCount")),year:num(v("builtYear")),inserted:v("insertTime")});
+    if(!lunMeta.has(m[1]))lunMeta.set(m[1],{rooms:num(v("roomCount")),area:num(v("areaTotal")),floor:num(v("floor")),floors:num(v("floorCount")),year:num(v("builtYear")),inserted:v("insertTime"),price:num(v("price")),currency:(s.match(/\\"currency\\":\\"([a-z]+)/)?.[1]||"").toLowerCase()});
   }
   const starts=[...html.matchAll(/<div class=["']RealtiesLayout[^"']*__resultsItem["']/gi)].map(m=>m.index||0),out:Item[]=[],g=geo(f);
   for(let i=0;i<starts.length;i++){
@@ -445,12 +448,14 @@ function parseLun(html:string,f:Filters){
     const upstreamUrl=listingUrlInUsd(sourceRawUrl,/olx\.ua/i.test(sourceRawUrl)?"OLX":/dom\.ria\.com/i.test(sourceRawUrl)?"DIM.RIA Украина":"");
     const rawUrl=`https://lun.ua/realty/${pageId}`;
     const priceMatch=text.match(/\$\s*([\d\s\u00a0.,]+)\s*(тис\.?|млн)?/i);
-    let price=num(priceMatch?.[1]||0);if(/тис/i.test(priceMatch?.[2]||""))price*=1000;else if(/млн/i.test(priceMatch?.[2]||""))price*=1000000;
+    let price=num(priceMatch?.[1]||0);if(/тис/i.test(priceMatch?.[2]||""))price*=1000;else if(/млн/i.test(priceMatch?.[2]||""))price*=1000000;const metaP=lunMeta.get(pageId)||{};
+    // цена из данных карточки ЛУН: в аренде она в гривнах — пересчёт по курсу НБУ
+    if(Number(metaP.price)>0)price=metaP.currency==="uah"?uahToUsd(Number(metaP.price)):metaP.currency==="eur"?price||0:Number(metaP.price);
     const title=clean(seg.match(/<h3[^>]*RealtyCard[^>]*__title[^>]*>([\s\S]*?)<\/h3>/i)?.[1]||seg.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)?.[1]||"ЛУН");
     const floorPair=text.match(/поверх\s*(\d{1,3})\s*з\s*(\d{1,3})/i),meta=lunMeta.get(pageId)||{},rooms=num(text.match(/(\d+)\s*кімнат/i)?.[1])||meta.rooms||0,area=meta.area||areaFromCard(text,seg);
     const complex=clean(text.match(/ЖК\s+([^\n]{2,80}?)(?=(?:Молдаванка|Приморськ|Київськ|Хаджибейськ|Пересипськ|Одеса|Скопіювати))/i)?.[1]||"");
     const imgs=[...seg.matchAll(/(?:src|data-src|content)=["']([^"']*lunstatic\.net[^"']+)["']/gi)].map(m=>decodeHtml(m[1]).replace(/\\\//g,"/")).filter(v=>/^https:\/\//i.test(v)&&!/avatar|logo/i.test(v));
-    const x:Item={external_id:pageId||rawUrl.match(/(\d{5,})(?:\/?(?:[?#]|$))/)?.[1]||rawUrl,source_name:"ЛУН",source_url:rawUrl,title,description:text.slice(0,3500),country:g.country,region:g.region,city:g.city||"Одесса",district:districtCanon(text.match(/(Київський|Киевский|Приморський|Приморский|Хаджибейський|Хаджибейский|Пересипський|Пересыпский)/i)?.[1]||g.district),property_type:propertyLabel(f),deal_type:"Продажа",rooms:rooms||null,price,area,currency:"USD",complex_name:String(f.complex||complex),main_photo_url:imgs[0]||"",photo_urls:[...new Set(imgs)].slice(0,8),published_at:listingDateFrom(clean(seg))||(meta.inserted?String(meta.inserted).slice(0,10):null),raw_data:{live:true,upstream_source_url:upstreamUrl,source_price:price,source_currency:"USD",price_kind:"total_object",floor:num(floorPair?.[1])||meta.floor||0,total_floors:num(floorPair?.[2])||meta.floors||0,construction_year:yearFromText(text)||meta.year||0,condition:conditionTag(text),converted:false}};
+    const x:Item={external_id:pageId||rawUrl.match(/(\d{5,})(?:\/?(?:[?#]|$))/)?.[1]||rawUrl,source_name:"ЛУН",source_url:rawUrl,title,description:text.slice(0,3500),country:g.country,region:g.region,city:g.city||"Одесса",district:districtCanon(text.match(/(Київський|Киевский|Приморський|Приморский|Хаджибейський|Хаджибейский|Пересипський|Пересыпский)/i)?.[1]||g.district),property_type:propertyLabel(f),deal_type:isRent(f)?"Аренда":"Продажа",rooms:rooms||null,price,area,currency:"USD",complex_name:String(f.complex||complex),main_photo_url:imgs[0]||"",photo_urls:[...new Set(imgs)].slice(0,8),published_at:listingDateFrom(clean(seg))||(meta.inserted?String(meta.inserted).slice(0,10):null),raw_data:{live:true,upstream_source_url:upstreamUrl,source_price:price,source_currency:String(metaP.currency||"usd").toUpperCase(),price_kind:"total_object",floor:num(floorPair?.[1])||meta.floor||0,total_floors:num(floorPair?.[2])||meta.floors||0,construction_year:yearFromText(text)||meta.year||0,condition:conditionTag(text),converted:false}};
     if(price>0&&passes(x,{...f,complex:""}))out.push(x);
   }
   return out;
@@ -460,12 +465,14 @@ function parseRem(html:string,f:Filters){
   const marks=[...html.matchAll(/<div class=["']object-item\s+object-map-marker["']/gi)].map(m=>m.index||0),out:Item[]=[],g=geo(f);
   for(let i=0;i<marks.length;i++){
     const seg=html.slice(marks[i],i+1<marks.length?marks[i+1]:marks[i]+35000);
-    const link=seg.match(/href\s*=\s*["']?(https?:\/\/rem\.ua\/(?:ua\/)?prodazha-[^\s"'<>]*?-db(\d+))/i);
+    const link=seg.match(/href\s*=\s*["']?(https?:\/\/rem\.ua\/(?:ua\/)?(?:prodazha|arenda)-[^\s"'<>]*?-db(\d+))/i);
     if(!link)continue;
     const url=abs(link[1],"https://rem.ua"),id=link[2],text=clean(seg);
     const title=clean(seg.match(/class=["']object-address["'][^>]*>([\s\S]*?)<\//i)?.[1]||"REM");
     const description=clean(seg.match(/class=["']object-card-description["'][^>]*>([\s\S]*?)<\//i)?.[1]||"");
-    const price=num(seg.match(/class=["']object-price["'][^>]*>\s*([\d\s\u00a0.,]+)\s*\$/i)?.[1]);
+    const pm=seg.match(/class=["']object-price["'][^>]*>\s*([\d\s\u00a0.,]+)\s*(\$|UAH|грн|€|EUR)/i);const priceRaw=num(pm?.[1]);const priceCur=/UAH|грн/i.test(pm?.[2]||"")?"UAH":/€|EUR/i.test(pm?.[2]||"")?"EUR":"USD";
+    // аренда на REM часто в гривнах — пересчёт в $ по курсу НБУ
+    const price=priceCur==="UAH"?uahToUsd(priceRaw):priceCur==="EUR"?0:priceRaw;
     const location=clean(seg.match(/class=["']object-city-region["'][^>]*>([\s\S]*?)<\//i)?.[1]||"");
     const area=num(location.match(/(\d+(?:[.,]\d+)?)\s*кв\.\s*м/i)?.[1]||text.match(/(?:Кімнат|Комнат)\s*\d+\s+(\d+(?:[.,]\d+)?)/i)?.[1]);
     const rooms=num(location.match(/(\d+)\s*[- ]?(?:комн|кімн)/i)?.[1]||text.match(/(?:Кімнат|Комнат)\s*(\d+)/i)?.[1]);
@@ -473,7 +480,7 @@ function parseRem(html:string,f:Filters){
     const district=districtCanon(location.match(/(Київський|Киевский|Приморський|Приморский|Хаджибейський|Хаджибейский|Малиновський|Малиновский|Пересипський|Пересыпский|Суворівський|Суворовский)/i)?.[1]||g.district);
     const imgs=[...seg.matchAll(/(?:src|data-src)=["']([^"']+)["']/gi)].map(m=>abs(m[1],"https://rem.ua")).filter(x=>/storage\.rem\.ua.+\.(?:jpe?g|webp|png)(?:\?|$)/i.test(x));
     const fullText=`${title} ${location} ${description}`;
-    const x:Item={external_id:id,source_name:"REM",source_url:url,title,description:fullText,country:g.country,region:g.region,city:g.city||(/Одес/i.test(location)?"Одесса":""),district,property_type:propertyLabel(f),deal_type:"Продажа",rooms:rooms||null,price,area,currency:"USD",complex_name:complexFromText(fullText),main_photo_url:imgs[0]||"",photo_urls:[...new Set(imgs)].slice(0,8),published_at:listingDateFrom(clean(seg)),raw_data:{live:true,programs:programTags(text),source_price:price,source_currency:"USD",price_kind:"total_object",floor:num(floorPair?.[1]),total_floors:num(floorPair?.[2]),construction_year:Number(f._complex_year||yearFromText(text)||0),condition:conditionTag(text),verified:verifiedFromText(text),converted:false}};
+    const x:Item={external_id:id,source_name:"REM",source_url:url,title,description:fullText,country:g.country,region:g.region,city:g.city||(/Одес/i.test(location)?"Одесса":""),district,property_type:propertyLabel(f),deal_type:isRent(f)?"Аренда":"Продажа",rooms:rooms||null,price,area,currency:"USD",complex_name:complexFromText(fullText),main_photo_url:imgs[0]||"",photo_urls:[...new Set(imgs)].slice(0,8),published_at:listingDateFrom(clean(seg)),raw_data:{live:true,programs:programTags(text),source_price:price,source_currency:"USD",price_kind:"total_object",floor:num(floorPair?.[1]),total_floors:num(floorPair?.[2]),construction_year:Number(f._complex_year||yearFromText(text)||0),condition:conditionTag(text),verified:verifiedFromText(text),converted:false}};
     if(price>0&&passes(x,f))out.push(x);
   }
   return out;
@@ -607,11 +614,16 @@ async function dimApiSearch(f:Filters,pageUrl:string){
 
 
 // REM: фильтры сайта rem.ua (комнаты — в адресе, цена/площадь/этаж/ЖК — параметрами формы поиска)
+// Город → адрес REM (rem.ua/ua/prodazha-kvartir-<город>); "" = на REM нет такого города
+const remCitySlug=(cityName="")=>{const k=String(cityName||"").trim().toLowerCase();if(!k)return"odessa";const rec:any=(REM_LUN_CITIES as any)[k]||Object.values(REM_LUN_CITIES).find((x:any)=>String(x.uk).toLowerCase()===k)||(REM_LUN_CITIES as any)[String((UA_UK as any)[k]||"")];return rec?String(rec.rem||""):""};
 function remUrl(f:Filters){
-  const group=propertyGroup(f);if(group!=="apartment"&&group!=="house")return "";
-  if(group==="house")return remParams("https://rem.ua/ua/prodazha-domov-odessa",f,false);
+  const group=propertyGroup(f);const rent=isRent(f);const city=remCitySlug(geo(f).city);if(!city)return "";
+  const deal=rent?"arenda":"prodazha";
+  if(group==="house")return remParams(`https://rem.ua/ua/${deal}-domov-${city}`,f,false);
+  if(group==="land")return rent?"":remParams(`https://rem.ua/ua/prodazha-zemli-${city}`,f,false);
+  if(group!=="apartment")return "";
   const r=parseInt(String(f.rooms||""))||0;const slug=({1:"odnokomnatnye",2:"dvuhkomnatnye",3:"trehkomnatnye",4:"chetyrehkomnatnye"} as any)[Math.min(r,4)]||"";
-  return remParams(`https://rem.ua/ua/prodazha-kvartir-${slug?slug+"-":""}odessa`,f,true);
+  return remParams(`https://rem.ua/ua/${deal}-kvartir-${slug?slug+"-":""}${city}`,f,true);
 }
 function remParams(base:string,f:Filters,apartment:boolean){
   const u=new URL(base);
@@ -620,7 +632,7 @@ function remParams(base:string,f:Filters,apartment:boolean){
   if(apartment&&f.floor_from)u.searchParams.set("floorMin",String(f.floor_from));if(apartment&&f.floor_to)u.searchParams.set("floorMax",String(f.floor_to));
   const cx=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк)(?=\s|$)/g," ").trim();if(apartment&&cx&&cx!=="Все")u.searchParams.set("textQuery",`ЖК ${cx}`);
   // район: REM ищет его через строку поиска (без ЖК — иначе поиск идёт по ЖК)
-  else{const d=({"Киевский":"Київський","Приморский":"Приморський","Хаджибейский":"Хаджибейський","Пересыпский":"Пересипський"} as any)[geo(f).district];if(d)u.searchParams.set("textQuery",d);}
+  else if(/-odessa$/.test(u.pathname)){const d=({"Киевский":"Київський","Приморский":"Приморський","Хаджибейский":"Хаджибейський","Пересыпский":"Пересипський"} as any)[geo(f).district];if(d)u.searchParams.set("textQuery",d);}
   return u.toString();
 }
 // RIELTOR.UA: фильтры сайта — комнаты в адресе (/2-rooms/), цена — price_min/price_max (в $)
@@ -642,8 +654,8 @@ async function one(source:string,f:Filters){
   // Город, которого нет на площадке: не подменяем его общей выдачей по Украине
   {const wantCity=String(geo(f).city||"").trim();const portal:any={"OLX":"olx","DIM.RIA Украина":"dim","RIELTOR.UA":"rieltor"}[source];
    if(wantCity&&portal){const s=portalSlug(portal,wantCity)??(portal==="rieltor"?rieltorCitySlug(wantCity):citySlug(wantCity));if(!s)return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ${source} нет отдельной выдачи по городу «${wantCity}»`,items:[]}}
-   if((source==="ЛУН"||source==="LUN")&&isRent(f))return{source:"ЛУН",ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:"ЛУН: аренда пока не читается — она есть на OLX, DIM.RIA и RIELTOR.UA",items:[]};
-   if(source==="REM"&&(isRent(f)||(wantCity&&!/одес|лиманк|таир/i.test(wantCity))))return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:isRent(f)?"REM показывает только продажу":"REM работает только по Одессе",items:[]};}
+   if(source==="REM"&&wantCity&&!remCitySlug(wantCity))return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На REM нет отдельной выдачи по городу «${wantCity}»`,items:[]};
+   if((source==="ЛУН"||source==="LUN")&&wantCity&&!lunCityPath(wantCity))return{source:"ЛУН",ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ЛУН нет отдельной выдачи по городу «${wantCity}»`,items:[]};}
   if(propertyGroup(f)!=="apartment")f={...f,complex:"",complex_source_url:""};
   const requestedPage=Math.max(1,Number(f.page||1));
   let base="";
