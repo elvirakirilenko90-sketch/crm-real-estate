@@ -618,7 +618,7 @@ function remParams(base:string,f:Filters,apartment:boolean){
   if(f.price_from||f.price_to){if(f.price_from)u.searchParams.set("priceMin",String(f.price_from));if(f.price_to)u.searchParams.set("priceMax",String(f.price_to));u.searchParams.set("currency","usd");}
   if(f.area_from)u.searchParams.set("areaTotalMin",String(f.area_from));if(f.area_to)u.searchParams.set("areaTotalMax",String(f.area_to));
   if(apartment&&f.floor_from)u.searchParams.set("floorMin",String(f.floor_from));if(apartment&&f.floor_to)u.searchParams.set("floorMax",String(f.floor_to));
-  const cx=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк)(?=\s|$)/g," ").trim();if(apartment&&cx&&cx!=="Все")u.searchParams.set("textQuery",cx);
+  const cx=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк)(?=\s|$)/g," ").trim();if(apartment&&cx&&cx!=="Все")u.searchParams.set("textQuery",`ЖК ${cx}`);
   // район: REM ищет его через строку поиска (без ЖК — иначе поиск идёт по ЖК)
   else{const d=({"Киевский":"Київський","Приморский":"Приморський","Хаджибейский":"Хаджибейський","Пересыпский":"Пересипський"} as any)[geo(f).district];if(d)u.searchParams.set("textQuery",d);}
   return u.toString();
