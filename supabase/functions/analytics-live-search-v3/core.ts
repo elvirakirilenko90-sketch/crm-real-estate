@@ -574,6 +574,18 @@ function remParams(base:string,f:Filters,apartment:boolean){
   const cx=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк)(?=\s|$)/g," ").trim();if(apartment&&cx&&cx!=="Все")u.searchParams.set("textQuery",cx);
   return u.toString();
 }
+// RIELTOR.UA: фильтры сайта — комнаты в адресе (/2-rooms/), цена — price_min/price_max (в $)
+function rieltorNative(url:string,f:Filters){
+  if(!url)return url;
+  try{
+    const u=new URL(url);
+    const r=parseInt(String(f.rooms||""))||0;
+    if(r>0&&propertyGroup(f)==="apartment"&&!/\/\d-rooms\/?$/.test(u.pathname)&&!/-n\d+\/?$/.test(u.pathname))u.pathname=u.pathname.replace(/\/?$/,"/")+`${Math.min(r,4)}-rooms/`;
+    if(f.price_from)u.searchParams.set("price_min",String(f.price_from));
+    if(f.price_to)u.searchParams.set("price_max",String(f.price_to));
+    return u.toString();
+  }catch{return url}
+}
 async function one(source:string,f:Filters){
   // Город, которого нет на площадке: не подменяем его общей выдачей по Украине
   {const wantCity=String(geo(f).city||"").trim();const portal:any={"OLX":"olx","DIM.RIA Украина":"dim","RIELTOR.UA":"rieltor"}[source];
@@ -594,7 +606,7 @@ async function one(source:string,f:Filters){
       return{source,ok:true,status:200,url:pageUrl,search_url:api.searchUrl,page:requestedPage,pages_loaded:1,total:extra?items.length:api.count,count_is_exact:!extra,page_item_count:items.length,total_pages:totalPages,has_more:requestedPage<totalPages,items};
     }
   }
-  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=await resolvedRieltorComplexUrl(f);else if(source==="REM"){base=remUrl(f);}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,items:[]};
+  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=rieltorNative(await resolvedRieltorComplexUrl(f),f);else if(source==="REM"){base=remUrl(f);}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,items:[]};
   // DIM.RIA: one CRM page is a block of five native DIM.RIA pages (up to about
   // 100 listings). The frontend sends pages:1, but DIM.RIA must still return a
   // full page comparable to the other sources.
@@ -689,8 +701,9 @@ async function one(source:string,f:Filters){
   // merely keyword-related listings, so never present them as filtered cards.
   const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&!f.district&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
-  const total=(olxAllNative||remAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
-  const countExact=olxAllNative||remAllNative||!postParseFilterActive||!!f.complex;
+  const rieltorAllNative=source==="RIELTOR.UA"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const total=(olxAllNative||remAllNative||rieltorAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
+  const countExact=olxAllNative||remAllNative||rieltorAllNative||!postParseFilterActive||!!f.complex;
   const pageItemCount=items.length;
   // ЛУН не сообщает общее число объявлений: страница полная — значит, есть следующая
   const lunOpenEnded=source==="ЛУН"&&!exactComplexCatalog&&!f.complex&&pageItemCount>=20;
