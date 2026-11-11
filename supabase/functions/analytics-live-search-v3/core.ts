@@ -581,7 +581,8 @@ function rieltorNative(url:string,f:Filters){
     const u=new URL(url);
     const r=parseInt(String(f.rooms||""))||0;
     // комнаты — сегмент адреса (1-room, 2-rooms…); вместе с районом/ЖК в адресе площадка его не принимает
-    const simplePath=/^\/[a-z-]+\/[a-z]+-(?:sale|rent)\/?$/.test(u.pathname);
+    // допускаем: /город/раздел/, /раздел/ (Киев) и /город/раздел/Район-dNN/ — площадка принимает /Район-dNN/1-room/
+    const simplePath=/^\/(?:[a-z-]+\/)?[a-z]+-(?:sale|rent)\/(?:[^/]+-d\d+\/?)?$/.test(u.pathname);
     if(r>0&&propertyGroup(f)==="apartment"&&simplePath)u.pathname=u.pathname.replace(/\/?$/,"/")+(r===1?"1-room/":`${Math.min(r,4)}-rooms/`);
     // цена: currency=2 — доллары (1 — гривна по умолчанию)
     if(f.price_from||f.price_to){if(f.price_from)u.searchParams.set("price_min",String(f.price_from));if(f.price_to)u.searchParams.set("price_max",String(f.price_to));u.searchParams.set("currency","2");}
@@ -701,9 +702,9 @@ async function one(source:string,f:Filters){
   // cards that actually passed every filter and is returned to the CRM.
   // Advertising-site headline counters may include promoted, inaccessible or
   // merely keyword-related listings, so never present them as filtered cards.
-  const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
-  const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&!f.district&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
-  const rieltorAllNative=source==="RIELTOR.UA"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&!f.district&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&!f.district&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const rieltorAllNative=source==="RIELTOR.UA"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-d\d+\/?/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const total=(olxAllNative||remAllNative||rieltorAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
   const countExact=olxAllNative||remAllNative||rieltorAllNative||!postParseFilterActive||!!f.complex;
   const pageItemCount=items.length;
