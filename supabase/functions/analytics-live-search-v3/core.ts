@@ -243,6 +243,8 @@ function countFrom(html:string,source:string){
     const exact=t.match(/Показати\s+([\d\s\u00a0]+)\s+оголошень/iu)||t.match(/Показать\s+([\d\s\u00a0]+)\s+объявлен/iu);
     if(exact){const value=num(exact[1]);if(value>0)return value}
   }
+  // RIELTOR.UA: заголовок выдачи «63 оголошення» / «4 471 оголошення» (2–4 → «оголошення», не только «оголошень»)
+  if(source==="RIELTOR.UA"){const m=t.match(/(?<![\d\s\u00a0])\s*(\d{1,3}(?:[\s\u00a0]\d{3})*|\d+)\s+оголошен(?:ня|ь)(?![а-яіїєґ])/iu);if(m){const value=num(m[1]);if(value>0)return value}}
   const patterns=source==="OLX"?[/Ми знайшли(?:\s+понад)?\s+([\d\s\u00a0]+)/iu,/Найдено(?:\s+более)?\s+([\d\s\u00a0]+)/iu]:[/Знайдено\s+([\d\s\u00a0]+)\s+(?:пропози|оголош)/iu,/([\d\s\u00a0]+)\s+(?:пропозицій|оголошень|объявлений|об'єктів|объектов|обʼєктів)/iu];
   for(const r of patterns){const m=t.match(r);if(m){const value=num(m[1]);if(value>0)return value}}
   return null;
