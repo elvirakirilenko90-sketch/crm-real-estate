@@ -615,7 +615,8 @@ async function rieltorCityLive(st:Settlement){
 }
 // ===== Районы городов: район передаётся самой площадке =====
 // сравнение районов рус./укр. по корню: «Печерский» = «Печерський», «Голосеевский» = «Голосіївський»
-const districtKey=(v="")=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").replace(/район/g,"").replace(/[іїи]/g,"и").replace(/[єэ]/g,"е").replace(/ы/g,"и").replace(/ё/g,"е").replace(/[^а-яa-z]/g,"").slice(0,5);
+// «скелет» из согласных: Сиховский/Сихівський → схвскй, Голосеевский/Голосіївський → глсвскй
+const districtKey=(v="")=>String(v||"").toLowerCase().replace(/район/g,"").replace(/[^а-яіїєґ]/g,"").replace(/[аеєиіїоуюяыэёьъ]/g,"").replace(/ґ/g,"г").slice(0,6);
 const districtEq=(a="",b="")=>!!a&&!!b&&(districtCanon(a)===districtCanon(b)||districtKey(a)===districtKey(b));
 // OLX: номер района из подсказок OLX
 const olxDistrictCache=new Map<string,number>();
@@ -625,7 +626,14 @@ const DIMTR:any={а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z"
 const dimTr=(v="")=>String(v||"").toLowerCase().split("").map(c=>DIMTR[c]??c).join("").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
 async function dimDistrictPage(cityPageUrl:string,districtRu:string){
   const m=cityPageUrl.match(/^(https:\/\/dom\.ria\.com\/uk\/[a-z-]+\/)([a-z0-9-]+)\/$/);if(!m)return"";
-  const url=`${m[1]}${m[2]}-rayon-${dimTr(districtRu)}/`;const q=await dimBaseQuery(url);return q&&/district|rayon|area/i.test(q)?url:(q?url:"");
+  const url=`${m[1]}${m[2]}-rayon-${dimTr(districtRu)}/`;const q=await dimBaseQuery(url);return /district_id=\d+/.test(q)?url:"";
+}
+// DIM.RIA: номер района из подсказок площадки (новые и старые названия: «Салтівський» → areaId)
+const dimDistrictCache=new Map<string,number>();
+async function dimDistrictId(cityId:number,districtUk:string,districtRu:string){
+  const k=`${cityId}|${normUk(districtUk)}`;if(dimDistrictCache.has(k))return dimDistrictCache.get(k)||0;let id=0;
+  for(const text of [...new Set([districtUk,districtRu].filter(Boolean))]){try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(text)}&langId=4`);if(r.ok){const list:any[]=await r.json();const hit=list.find(x=>Number(x?.payload?.cityId)===cityId&&x?.payload?.areaId&&(()=>{const n=String(x.text||x.label||"").split(",")[0];return districtEq(n,districtUk)||districtEq(n,districtRu)})());if(hit){id=Number(hit.payload.areaId);break}}}catch{/* нет ответа */}}
+  dimDistrictCache.set(k,id);return id;
 }
 // RIELTOR.UA: районы на странице города (data-title укр., data-id, рус. в analytics) → /город/раздел/<Район>-d<id>/
 const rieltorDistrictCache=new Map<string,{list:{uk:string,ru:string,id:string}[],at:number}>();
@@ -660,6 +668,7 @@ async function dimApiSearch(f:Filters,pageUrl:string){
   if(!base)return null;
   const PER=50,requestedPage=Math.max(1,Number(f.page||1));
   const u=new URLSearchParams(base.replace(/^&/,""));
+  if((f as any)._dim_district_id)u.set("district_id",String((f as any)._dim_district_id));
   const dimIds=(f as any)._dim_ids;if(dimIds){u.set("state_id",String(dimIds.stateId));u.set("city_id",String(dimIds.cityId));for(const key of [...u.keys()])if(/district|metro|zhk|newbuild/i.test(key))u.delete(key);}
   u.set("addMoreRealty","false");u.set("excludeSold","1");u.set("wo_dupl","1");
   u.set("page",String(requestedPage-1));u.set("limit",String(PER));
@@ -761,7 +770,7 @@ async function one(source:string,f:Filters){
    if(dRu&&dRu!=="Все"&&cityKeyUa(String(geo(f).city||""))!=="odessa"){
      const dUk=String((f as any).district_uk||dRu);const st2=settlementOf(f);const cityUk=st2?.uk||String(geo(f).city||"");
      if(source==="OLX"){const id=await olxDistrictId(cityUk,dUk);if(id)f={...f,_olx_district:id,_district_native:true} as any;}
-     else if(source==="DIM.RIA Украина"&&!(f as any)._dim_ids){const cityPage=await resolvedDomUrl({...f,district:"",complex:"",complex_source_url:""});const pg=await dimDistrictPage(cityPage,dRu);if(pg)f={...f,_dim_district_page:pg} as any;}
+     else if(source==="DIM.RIA Украина"&&!(f as any)._dim_ids){const cityPage=await resolvedDomUrl({...f,district:"",complex:"",complex_source_url:""});const pg=await dimDistrictPage(cityPage,dRu);if(pg)f={...f,_dim_district_page:pg} as any;else{const q=await dimBaseQuery(cityPage);const cid=Number(q.match(/city_id=(\d+)/)?.[1]||0);const did=cid?await dimDistrictId(cid,dUk,dRu):0;if(did)f={...f,_dim_district_id:did} as any;}}
      else if(source==="RIELTOR.UA"){const cityPage=rieltorUrl({...f,district:"",complex:""});const pth=await rieltorDistrictPath(cityPage,dRu,dUk);if(pth)f={...f,_rieltor_district:pth,_district_native:true} as any;}
      else if(source==="ЛУН"||source==="LUN"){const path=String((f as any)._lun_path||lunCityPath(f.city||""));if(path.endsWith("/flats")){const ds=ukTranslit(dUk);const ok=(await checkPage(`https://lun.ua/sale/${path.split("/")[0]}/flats-${ds}-district`)).ok;if(ok)f={...f,_lun_district:ds,_district_native:true} as any;}}
      else if(source==="REM"){f={...f,_rem_district:dUk,_district_native:true} as any;}
@@ -773,14 +782,14 @@ async function one(source:string,f:Filters){
     const pageUrl=(f as any)._dim_ids?domUrl({...f,city:"Киев",district:"",complex:"",complex_source_url:""}):(f as any)._dim_district_page||await resolvedDomUrl(f);
     const api=await dimApiSearch(f,pageUrl).catch(()=>null);
     if(api){
-      const finalF={...f,rooms:undefined,price_from:undefined,price_to:undefined,area_from:undefined,area_to:undefined,floor_from:undefined,floor_to:undefined,district:(f.district&&f.district!=="Все"&&!(f as any)._dim_district_page&&cityKeyUa(String(geo(f).city||""))!=="odessa")?f.district:"",complex:""} as any;
+      const finalF={...f,rooms:undefined,price_from:undefined,price_to:undefined,area_from:undefined,area_to:undefined,floor_from:undefined,floor_to:undefined,district:(f.district&&f.district!=="Все"&&!(f as any)._dim_district_page&&!(f as any)._dim_district_id&&cityKeyUa(String(geo(f).city||""))!=="odessa")?f.district:"",complex:""} as any;
       const items=api.items.filter(item=>passes(item,finalF)).map(item=>({...item,floor:Number(item.raw_data?.floor||0)||null,total_floors:Number(item.raw_data?.total_floors||0)||null,date_known:!!item.published_at,last_seen_at:new Date().toISOString()}));
       const extra=!!f.condition||!!f.land_area_from||!!f.land_area_to||!!f.construction_year_from||!!f.construction_year_to||!!f.verified_only||!!(f.programs||[]).length;
       const totalPages=Math.max(1,Math.ceil(api.count/api.PER));
       return{source,ok:true,status:200,url:pageUrl,search_url:api.searchUrl,page:requestedPage,pages_loaded:1,total:extra?items.length:api.count,count_is_exact:!extra,page_item_count:items.length,total_pages:totalPages,has_more:requestedPage<totalPages,items};
     }
   }
-  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=rieltorNative(await resolvedRieltorComplexUrl(f),f);else if(source==="REM"){base=remUrl(f);}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if((f as any)._district_native)f={...f,district:"",district_uk:""} as any;if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,items:[]};
+  if(source==="OLX")base=olxUrl(f);else if(source==="DIM.RIA Украина")base=await resolvedDomUrl(f);else if(source==="RIELTOR.UA")base=rieltorNative(await resolvedRieltorComplexUrl(f),f);else if(source==="REM"){base=remUrl(f);}else if(source==="ЛУН"||source==="LUN"){source="ЛУН";base=lunUrl(f);}else return{source,ok:false,error:"unsupported source",items:[]};if((f as any)._district_native)f={...f,district:"",district_uk:"",_requested_district:""} as any;if(!base)return{source,ok:true,total:0,count_is_exact:true,page:requestedPage,page_item_count:0,total_pages:1,has_more:false,items:[]};
   // DIM.RIA: one CRM page is a block of five native DIM.RIA pages (up to about
   // 100 listings). The frontend sends pages:1, but DIM.RIA must still return a
   // full page comparable to the other sources.
