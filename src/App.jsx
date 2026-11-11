@@ -3081,7 +3081,7 @@ async function presObjectPage(pages,{pal,agencyName,lang,index,total,label,title
   y=photoY+photoH+28;
   // цена
   ctx.fillStyle=pal.band;presRound(ctx,PRES_M,y,PRES_IN,112,22);ctx.fill();
-  ctx.fillStyle=pal.accent;ctx.font=`800 18px ${PRES_SANS}`;presSpaced(ctx,String(priceLabel||"").toUpperCase(),PRES_M+34,y+44,2.4);
+  ctx.fillStyle=pal.accent;ctx.font=`800 18px ${PRES_SANS}`;presSpaced(ctx,String(priceLabel||"").toUpperCase(),PRES_M+34,y+63,2.4);
   ctx.fillStyle=pal.bandInk;const ps=presFit(ctx,price,800,PRES_SANS,46,30,PRES_IN-300,1);ctx.textAlign="right";ctx.fillText(String(price||"—"),PRES_M+PRES_IN-34,y+56+ps/3);ctx.textAlign="left";
   y+=136;
   // характеристики
@@ -4815,7 +4815,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     // Зарубежная страна: площадки этой страны из каталога (все или выбранная вкладка)
     const supported=isForeign
       ? countrySourceTabs.map(t=>t.label)
-      : ["OLX","DIM.RIA Украина","REM","RIELTOR.UA"];
+      : ["OLX","DIM.RIA Украина","REM","RIELTOR.UA","ЛУН"];
     const wanted=isForeign
       ? (activeSourceTab==="ALL"?supported:[activeSourceMeta.label].filter(Boolean))
       : activeSourceTab==="ALL"
@@ -5392,6 +5392,8 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const showMoney=usd=>{const v=Number(usd||0);if(!(v>0))return tr(lang,"Цена не указана");
     if(displayCurrency==="UAH"&&fxRates.UAH_PER_USD>0)return `₴${Math.round(v*fxRates.UAH_PER_USD).toLocaleString("uk-UA")}`;
     return `$${Math.round(v).toLocaleString("uk-UA")}`;};
+  // Цена за м²: для аренды суммы маленькие — показываем с копейками
+  const showPpm=usd=>{const v=Number(usd||0);if(!(v>0))return "—";const val=displayCurrency==="UAH"&&fxRates.UAH_PER_USD>0?v*fxRates.UAH_PER_USD:v;const sym=displayCurrency==="UAH"&&fxRates.UAH_PER_USD>0?"₴":"$";return `${sym}${val<100?val.toFixed(1):Math.round(val).toLocaleString("uk-UA")}`;};
   const listingPriceText=x=>{const usd=priceUsd(x);return usd?showMoney(usd):marketMoney(x.price,marketCurrency(x));};
   const listingPriceOriginal=x=>{const c=marketCurrency(x),shown=displayCurrency==="UAH"?"UAH":"USD";return Number(x?.price||0)>0&&c!==shown?marketMoney(x.price,c):"";};
   const filteredBase=analyticsListings.filter(x=>{
@@ -5706,7 +5708,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
         const preview=cleanPresentationDescription((selectionLang==="uk"?(p.description_uk||p.description):p.description)||txt.noDescription);
         const probeCtx=document.createElement("canvas").getContext("2d");probeCtx.font=`400 25px ${PRES_SANS}`;
         const allDescriptionLines=canvasTextLines(probeCtx,preview,PRES_IN);
-        await presObjectPage(pages,{pal:pp,agencyName,lang:selectionLang,index,total:items.length,label:txt.property,title:cleanTitle,photo:photo?.url||"",price:money(p.price),priceLabel:txt.price,
+        await presObjectPage(pages,{pal:pp,agencyName,lang:selectionLang,index,total:items.length,label:txt.property,title:cleanTitle,photo:photo?.url||"",price:p.currency&&String(p.currency).toUpperCase()!=="USD"?marketMoney(p.price,String(p.currency).toUpperCase()):money(p.price),priceLabel:txt.price,
           specs:[[txt.area,p.area?`${p.area} м²`:"—"],[roomLabel,p.rooms||"—"],[txt.floor,p.floor||"—"],[floorsLabel,p.total_floors||"—"],[txt.district,p.district||"—"],[txt.type,p.type||"—"],[complexLabel,p.complex_name||"—"],[conditionLabel,p.condition||"—"]],
           aboutTitle:txt.about,about:allDescriptionLines.length>8?"":preview,hint:"",drawImage:drawAnalyticsPresentationImage,noPhotoText:selectionLang==="uk"?"Фото не передано рекламним майданчиком":"Фото не передано рекламной площадкой"});
         const previewLineCount=allDescriptionLines.length;
@@ -5862,7 +5864,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     <div className="stats" style={{marginBottom:16}}>
       <div className="stat" style={{minHeight:110}}><span>НАЙДЕНО НА САЙТАХ</span><b style={{fontSize:34}}>{liveTotal||filtered.length}</b><small className="muted">Карточек загружено сейчас: {filtered.length}</small></div>
       <div className="stat" style={{minHeight:110}}><span>{mainDeal==="Аренда"?"СРЕДНЯЯ ЦЕНА АРЕНДЫ / МЕС":"СРЕДНЯЯ ЦЕНА ПРОДАЖИ"}</span><b style={{fontSize:28}}>{avgPrice?showMoney(avgPrice):"—"}</b><small className="muted">{mainStats.count?<>{tr(lang,"Медиана")} {showMoney(mainStats.median)} · {mainStats.count} {tr(lang,"объектов")}</>:null}{otherStats?.count?<><br/>{mainDeal==="Аренда"?tr(lang,"Продажа"):tr(lang,"Аренда")}: {showMoney(otherStats.avg)}</>:null}</small></div>
-      <div className="stat" style={{minHeight:110}}><span>{mainDeal==="Аренда"?"АРЕНДА ЗА М² / МЕС":"СРЕДНЯЯ ЦЕНА / М²"}</span><b style={{fontSize:28}}>{avgM2?`${showMoney(avgM2)} / м²`:"—"}</b><small className="muted">{mainStats.ppmCount?<>{tr(lang,"по")} {mainStats.ppmCount} {tr(lang,"объектам с площадью")} · {tr(lang,"средняя площадь")} {mainStats.avgArea} м²</>:null}{otherStats?.ppmCount?<><br/>{mainDeal==="Аренда"?tr(lang,"Продажа"):tr(lang,"Аренда")}: {showMoney(otherStats.ppm)} / м²</>:null}</small></div>
+      <div className="stat" style={{minHeight:110}}><span>{mainDeal==="Аренда"?"АРЕНДА ЗА М² / МЕС":"СРЕДНЯЯ ЦЕНА / М²"}</span><b style={{fontSize:28}}>{avgM2?`${showPpm(avgM2)} / м²`:"—"}</b><small className="muted">{mainStats.ppmCount?<>{tr(lang,"по")} {mainStats.ppmCount} {tr(lang,"объектам с площадью")} · {tr(lang,"средняя площадь")} {mainStats.avgArea} м²</>:null}{otherStats?.ppmCount?<><br/>{mainDeal==="Аренда"?tr(lang,"Продажа"):tr(lang,"Аренда")}: {showPpm(otherStats.ppm)} / м²</>:null}</small></div>
       <div className="stat" style={{minHeight:110}}><span>{tr(lang,"ВАЛЮТА")}</span><div style={{display:"flex",gap:6,marginTop:6}}>{[["USD","$"],["UAH","₴"]].map(([c,l])=><button key={c} className={cn("chip",displayCurrency===c&&"active")} style={{fontWeight:900,minWidth:54}} onClick={()=>setDisplayCurrency(c)}>{l} {c}</button>)}</div><small className="muted">{fxRates.UAH_PER_USD>0?<>{tr(lang,"Курс НБУ")} {fxRates.date}: 1 $ = {fxRates.UAH_PER_USD.toFixed(2)} ₴</>:tr(lang,"Курс НБУ загружается…")}</small></div>
       <div className="stat" style={{minHeight:110}}><span>НОВЫХ ЗА 7 ДНЕЙ</span><b style={{fontSize:34}}>{newCount}</b></div>
       <div className="stat" style={{minHeight:110}}><span>ИСЧЕЗЛО / НЕАКТИВНО</span><b style={{fontSize:34}}>{inactiveCount}</b></div>
@@ -5883,7 +5885,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       <div className="card" style={{padding:22,borderRadius:24}}><h3 style={{marginTop:0}}>Предложения по районам</h3>{districtTop.length?districtTop.map(([name,count])=><div key={name} style={{margin:"13px 0"}}><div className="row" style={{fontSize:13}}><b>{name}</b><span>{count}</span></div><div style={{height:9,borderRadius:99,background:"var(--soft)",overflow:"hidden"}}><div style={{height:"100%",width:`${Math.max(5,(count/districtMax)*100)}%`,background:"linear-gradient(90deg,var(--accent),var(--accent2))",borderRadius:99}}/></div></div>):<p className="muted">Нет данных по районам.</p>}</div>
     </div>
 
-    <div className="card amber" style={{padding:24,borderRadius:24,marginBottom:16}}><div className="row"><section><div style={{fontSize:12,fontWeight:900,letterSpacing:1.5,opacity:.65}}>AI MARKET SUMMARY</div><h3 style={{margin:"6px 0"}}>✦ Автоматический обзор рынка</h3></section><span className="badge gold">{filtered.length} объектов</span></div><p style={{fontSize:16,lineHeight:1.65,marginBottom:0}}>За выбранный период в выборке <b>{filtered.length}</b> объектов. {mainDeal==="Аренда"?"Средняя цена аренды":"Средняя цена"} — <b>{avgPrice?showMoney(avgPrice):"не рассчитана"}</b>, средняя цена за м² — <b>{avgM2?`${showMoney(avgM2)} / м²`:"не рассчитана"}</b>. {trend.length>1?<>Средняя цена изменилась на <b>{changePct>0?"+":""}{changePct}%</b>. </>:null}Больше всего предложений сейчас в локации <b>{topDistrict}</b>. Объектов минимум на 10% дешевле средней цены: <b>{bargainCount}</b>.</p></div>
+    <div className="card amber" style={{padding:24,borderRadius:24,marginBottom:16}}><div className="row"><section><div style={{fontSize:12,fontWeight:900,letterSpacing:1.5,opacity:.65}}>AI MARKET SUMMARY</div><h3 style={{margin:"6px 0"}}>✦ Автоматический обзор рынка</h3></section><span className="badge gold">{filtered.length} объектов</span></div><p style={{fontSize:16,lineHeight:1.65,marginBottom:0}}>За выбранный период в выборке <b>{filtered.length}</b> объектов. {mainDeal==="Аренда"?"Средняя цена аренды":"Средняя цена"} — <b>{avgPrice?showMoney(avgPrice):"не рассчитана"}</b>, средняя цена за м² — <b>{avgM2?`${showPpm(avgM2)} / м²`:"не рассчитана"}</b>. {trend.length>1?<>Средняя цена изменилась на <b>{changePct>0?"+":""}{changePct}%</b>. </>:null}Больше всего предложений сейчас в локации <b>{topDistrict}</b>. Объектов минимум на 10% дешевле средней цены: <b>{bargainCount}</b>.</p></div>
 
     {selected.length>0&&<div className="card" style={{padding:22,borderRadius:24,border:"2px solid var(--accent)"}}>
       <div className="row"><section><h3 style={{margin:0}}>✨ VIP-подборка из аналитики</h3><p className="muted">{selected.length} объект(ов) выбрано. Можно смешивать внешние объявления и объекты из CRM.</p></section><Button variant="soft" onClick={()=>setSelected([])}>Очистить</Button></div>
@@ -5944,7 +5946,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
             <div style={{position:"absolute",left:14,top:14,display:"flex",gap:8,flexWrap:"wrap"}}><span className="badge">{x.source_name||"Источник"}</span><span className="badge" style={sellerKind(x)==="owner"?{background:"#dcfce7",color:"#166534"}:sellerKind(x)==="realtor"?{background:"#dbeafe",color:"#1d4ed8"}:{}}>{sellerKind(x)==="owner"?"👤 ":sellerKind(x)==="realtor"?"🏢 ":""}{sellerLabel(x)}</span>{crm&&<span className="badge" style={{background:"#dcfce7",color:"#166534"}}>✓ В CRM</span>}</div>
           </div>
           <div style={{padding:20}}>
-            <div className="row" style={{alignItems:"flex-start"}}><section><h3 style={{margin:"0 0 7px",fontSize:21}}>{x.title||x.complex_name||"Объект недвижимости"}</h3><p className="muted" style={{margin:0}}>📍 {[x.country,x.region,x.city,x.district,x.complex_name].filter(Boolean).join(" · ")||"Локация не указана"}</p></section><b style={{fontSize:24,whiteSpace:"nowrap",textAlign:"right"}}>{listingPriceText(x)}{listingPriceOriginal(x)&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{listingPriceOriginal(x)}</small>}{priceUsd(x)>0&&Number(x.area||0)>=10&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{showMoney(priceUsd(x)/Number(x.area))} / м²</small>}</b></div>
+            <div className="row" style={{alignItems:"flex-start"}}><section><h3 style={{margin:"0 0 7px",fontSize:21}}>{x.title||x.complex_name||"Объект недвижимости"}</h3><p className="muted" style={{margin:0}}>📍 {[x.country,x.region,x.city,x.district,x.complex_name].filter(Boolean).join(" · ")||"Локация не указана"}</p></section><b style={{fontSize:24,whiteSpace:"nowrap",textAlign:"right"}}>{listingPriceText(x)}{listingPriceOriginal(x)&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{listingPriceOriginal(x)}</small>}{priceUsd(x)>0&&Number(x.area||0)>=10&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{showPpm(priceUsd(x)/Number(x.area))} / м²</small>}</b></div>
             <div className="chips" style={{margin:"14px 0"}}>{x.rooms&&<span className="chip">{x.rooms} комн.</span>}{x.area&&<span className="chip">{x.area} м²</span>}{x.floor&&<span className="chip">{x.floor} этаж</span>}{x.deal_type&&<span className="chip">{x.deal_type}</span>}</div>
             <p className="muted" style={{fontSize:13}}>Обновлено: {getListingDate(x)?new Date(getListingDate(x)).toLocaleString():"—"}</p>{sellerKind(x)==="realtor"&&contactPhone(x)&&<div style={{margin:"-2px 0 12px",padding:"9px 12px",borderRadius:12,background:"color-mix(in srgb,#3b82f6 8%,var(--card))",fontWeight:800}}>☎ Риэлтор: <a href={`tel:${contactPhone(x).replace(/[^+\d]/g,"")}`} style={{color:"inherit"}}>{contactPhone(x)}</a></div>}
             <div className="grid2">

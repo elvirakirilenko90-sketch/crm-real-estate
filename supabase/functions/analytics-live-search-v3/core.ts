@@ -361,7 +361,7 @@ function parseDom(html:string,f:Filters){
 
 const lunCitySlug=(value="")=>{const c=String(value||"").toLowerCase();if(/одес|odes/.test(c))return"odesa";if(/ки[еї]в|kyiv|kiev/.test(c))return"kyiv";if(/льв[іо]в|lviv/.test(c))return"lviv";if(/дн[іе]пр|dnipr/.test(c))return"dnipro";return latin(c)||"odesa"};
 const lunComplexSlug=(value="")=>normalizeComplexNumbers(String(value||"")).replace(/^\s*(?:жк\s+|жил(?:ой|ого)?\s+комплекс\s+|житлов(?:ий|ого)?\s+комплекс\s+)/i," ").split(/[^a-zа-яіїєґ0-9]+/i).map(part=>latin(part)).filter(Boolean).join("-");
-const lunUrl=(f:Filters)=>{const city=lunCitySlug(f.city||"Одесса"),group=propertyGroup(f);if(group!=="apartment")return"";const slug=f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):"flats";return `https://lun.ua/sale/${city}/${slug}`};
+const lunUrl=(f:Filters)=>{const city=lunCitySlug(f.city||"Одесса"),group=propertyGroup(f);if(group!=="apartment")return"";const rent=isRent(f),slug=!rent&&f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):"flats";return `https://lun.ua/${rent?"rent":"sale"}/${city}/${slug}`};
 
 function parseLun(html:string,f:Filters){
   const exactUrls=new Map([...html.matchAll(/\\\"id\\\":(\d+),\\\"groupId\\\":\\\"[^\\\"]*\\\",\\\"urlRaw\\\":\\\"([^\\\"]+)/g)].map(m=>[String(m[1]),decodeHtml(m[2]).replace(/\\\\\//g,"/")]));
