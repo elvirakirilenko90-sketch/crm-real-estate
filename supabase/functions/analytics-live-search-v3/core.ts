@@ -75,7 +75,7 @@ async function presentationDetail(value:string){
       const desktop=new URL(url.toString());desktop.hostname="www.olx.ua";desktop.searchParams.set("currency","USD");fetchCandidates.push(desktop);
     }
     let response:Response|null=null;
-    for(const candidate of fetchCandidates){try{const attempt=await fetch(candidate,{headers:{...HEADERS,"Sec-Fetch-Dest":"document","Sec-Fetch-Mode":"navigate","Upgrade-Insecure-Requests":"1"},redirect:"follow",signal:controller.signal});if(attempt.ok){response=attempt;url=new URL(attempt.url);break}}catch{/* try canonical variant */}}
+    for(const candidate of fetchCandidates){for(let tryNo=0;tryNo<3&&!response;tryNo++){try{const attempt=await fetch(candidate,{headers:{...HEADERS,"Sec-Fetch-Dest":"document","Sec-Fetch-Mode":"navigate","Upgrade-Insecure-Requests":"1"},redirect:"follow",signal:controller.signal});if(attempt.ok){response=attempt;url=new URL(attempt.url);break}if(![403,429,503].includes(attempt.status))break;await sleep(900*(tryNo+1))}catch{break}}if(response)break}
     if(!response)return new Response(JSON.stringify({error:"listing upstream unavailable"}),{status:502,headers:CORS});
     if(!response.ok)return new Response(JSON.stringify({error:`listing upstream ${response.status}`}),{status:502,headers:CORS});
     const html=await response.text();
@@ -161,7 +161,45 @@ async function presentationDetail(value:string){
       .replace(/\bhttps?:\/\/[^\s<>"']+/gi," ")
       .replace(/\bwww\.[^\s<>"']+/gi," ")
       .replace(/\s+/g," ").trim();
-    return new Response(JSON.stringify({success:true,url:url.toString(),title:cleanDetailText(title),description:cleanDetailText(description),images,details}),{headers:CORS});
+    // REM / RIELTOR.UA / ЛУН: точные поля, полный опис и только фото этого объявления
+    let outTitle=title,outDescription=description,outImages=images,outDetails:any=details;
+    const pick=(re:RegExp)=>clean(pageText.match(re)?.[1]||"");
+    const isRem=host.endsWith("rem.ua"),isRieltor=host.endsWith("rieltor.ua"),isLun=host.endsWith("lun.ua");
+    if(isRem||isRieltor||isLun){
+      const fd:any={...details};
+      if(isRem){
+        outTitle=rawTitle.replace(/\s*\|\s*REM\.ua.*$/i,"").trim();
+        outDescription=pick(/Поділитися\s+([\s\S]{30,6000}?)\s+(?:Додаткова інформація|Характеристики\s+Покази)/i)||pick(/Поделиться\s+([\s\S]{30,6000}?)\s+(?:Дополнительная информация|Характеристики)/i)||description.replace(/^[\d\s]+\$\s+R\d+\s+/,"");
+        fd.rooms=num(pick(/(?:Кімнат|Комнат):\s*(\d{1,2})/i))||null;fd.area=num(pick(/(?:Загальна площа|Общая площадь):\s*(\d{1,4}(?:[.,]\d+)?)/i))||null;
+        fd.kitchen_area=num(pick(/(?:Площа кухні|Площадь кухни):\s*(\d{1,3}(?:[.,]\d+)?)/i))||null;fd.floor=num(pick(/(?:Поверх|Этаж):\s*(\d{1,3})/i))||fd.floor;fd.total_floors=num(pick(/(?:Поверховість|Этажность):\s*(\d{1,3})/i))||fd.total_floors;
+        fd.condition=pick(/(?:Стан|Состояние):\s*([^:]{2,40}?)\s+(?:Матеріал|Материал|Вікна|Окна|Опалення|Отопление)/i);fd.wall_type=pick(/(?:Матеріал|Материал):\s*([^:]{2,40}?)\s+(?:Вікна|Окна|Опалення|Отопление)/i);fd.layout="";
+        const objId=html.match(/apartments_\d+_(\d+)|images\/apartments\/(\d+)/i);const id=objId?.[1]||objId?.[2]||"";
+        const own=[...html.matchAll(/https?:\/\/storage\.rem\.ua\/rem-storage\/uploads\/objects\/[^"'\s<>]+\.(?:jpe?g|png|webp)/gi)].map(m=>m[0]).filter(u=>!id||u.includes(id));
+        if(own.length)outImages=[...new Set(own)].slice(0,40);
+      }else{
+        // RIELTOR.UA и ЛУН используют одно хранилище фото (lunstatic): берём крупнейший вариант каждого снимка, без аватаров и видео
+        const best=new Map<string,{u:string,w:number}>();
+        for(const m of html.matchAll(/https?:\/\/market-images\.lunstatic\.net\/lun-ua\/(?:t\.[\d.]+\/)?(\d+|origin)\/?(\d+)?\/?images\/offers\/([A-Za-z0-9]+)\.(jpe?g|png)(?![.\w])/gi)){const w=m[1]==="origin"?9999:Number(m[1]||0),k=m[3];const prev=best.get(k);if(!prev||w>prev.w)best.set(k,{u:m[0],w})}
+        const own=[...best.values()].filter(x=>x.w>=400).map(x=>x.u);
+        if(own.length)outImages=own.slice(0,40);
+        if(isRieltor){
+          outTitle=rawTitle.replace(/\s+-\s+Оголошення\s*№?\s*\d+[\s\S]*$/i,"").replace(/\s+-\s+Объявление\s*№?\s*\d+[\s\S]*$/i,"").replace(/^(?:Продаж|Оренда|Продажа|Аренда)\s+[^:]{2,40}:\s*/i,"").trim();
+          outDescription=pick(/\bОпис\s+([\s\S]{30,6000}?)(?=\s+(?:Комунікації|Планування|Записатись на перегляд|Показати телефон|Історія зміни ціни|Рекомендувати))/i)||pick(/\bОписание\s+([\s\S]{30,6000}?)(?=\s+(?:Коммуникации|Планировка|Показать телефон|История изменения цены))/i)||description;
+          fd.rooms=num(pick(/(?:Кількість кімнат|Количество комнат):\s*(\d{1,2})/i))||null;fd.area=num(pick(/(?:Загальна площа|Общая площадь):\s*(\d{1,4}(?:[.,]\d+)?)/i))||null;
+          fd.floor=num(pick(/(?:Поверх|Этаж):\s*(\d{1,3})/i))||fd.floor;fd.total_floors=num(pick(/(?:Поверховість|Этажность):\s*(\d{1,3})/i))||fd.total_floors;
+          fd.condition=pick(/(?:Загальний стан квартири|Загальний стан|Общее состояние квартиры|Общее состояние):\s*([^:]{2,40}?)\s+(?:Тип кухні|Тип кухни|Кількість|Количество|Висота|Высота)/i);fd.wall_type=pick(/(?:Технологія будівництва|Технология строительства):\s*([^:]{2,40}?)\s+(?:Рік|Год|Інфраструктура|Инфраструктура)/i);fd.layout="";
+        }else{
+          outTitle=rawTitle.replace(/\s+—\s+ЛУН.*$/i,"").replace(/,\s*[\d\s]+\s*(?:\$|грн|€)\s*$/i,"").trim();
+          outDescription=pick(/\bОпис\s+([\s\S]{30,6000}?)(?=\s+(?:В квартирі є|У квартирі є|В будинку є|Фототур|Історія зміни ціни|Місцезнаходження|Розміщено))/i)||pick(/\bОписание\s+([\s\S]{30,6000}?)(?=\s+(?:В квартире есть|Фототур|История изменения цены|Местоположение))/i)||description;
+          const areas=pageText.match(/(\d{1,4}(?:[.,]\d+)?)\s*(?:\/\s*[\d.,]+\s*){0,2}м²/);fd.area=areas?num(areas[1]):null;
+          fd.rooms=num(pick(/(\d{1,2})\s+(?:кімнат|комнат)/i))||num(outTitle.match(/(\d)-кімнатн|(\d)-комнатн/i)?.slice(1).find(Boolean)||"")||null;
+          const fl=pageText.match(/поверх\s+(\d{1,3})\s+з\s+(\d{1,3})|этаж\s+(\d{1,3})\s+из\s+(\d{1,3})/i);if(fl){fd.floor=num(fl[1]||fl[3]);fd.total_floors=num(fl[2]||fl[4]);}
+          fd.condition=/з ремонтом|с ремонтом/i.test(pageText.slice(0,4000))?"З ремонтом":"";fd.layout="";
+        }
+      }
+      outDetails=fd;
+    }
+    return new Response(JSON.stringify({success:true,url:url.toString(),title:cleanDetailText(outTitle),description:cleanDetailText(outDescription),images:outImages,details:outDetails}),{headers:CORS});
   }catch(e){return new Response(JSON.stringify({error:e instanceof Error?e.message:String(e)}),{status:502,headers:CORS})}
   finally{clearTimeout(timer)}
 }
@@ -608,6 +646,8 @@ export async function handler(req:Request):Promise<Response>{
     const body:any=await req.json().catch(()=>({}));
     if(body?.action==="presentation_image")return proxyPresentationImage(body.url);
     if(body?.action==="presentation_detail")return presentationDetail(body.url);
+    // Курс НБУ для пересчёта гривны/евро в доллары в Аналитике
+    if(body?.action==="rates"){try{const r=await fetch("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json");const j=await r.json();const pick=(c:string)=>Number((j||[]).find((x:any)=>x?.cc===c)?.rate||0);return new Response(JSON.stringify({success:true,source:"НБУ",date:(j||[])[0]?.exchangedate||"",UAH_PER_USD:pick("USD"),UAH_PER_EUR:pick("EUR")}),{headers:CORS})}catch(e){return new Response(JSON.stringify({success:false,error:String(e)}),{headers:CORS})}}
     const f:Filters=body;
     if(String(f.country||"").trim()&&!/^(украина|україна|ukraine|все)$/i.test(String(f.country).trim()))return foreignSearch(f);
     (f as any)._requested_city=String(body?.city||"");(f as any)._requested_district=String(body?.district||"");
