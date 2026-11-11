@@ -266,12 +266,40 @@ async function resolvedDomUrl(f:Filters){const fallback=domUrl(f);if(propertyGro
 const rieltorCitySlug=(v="")=>{const key=String(v||"").trim().toLowerCase();if(/^(лиманка|таїрове|таирово)$/.test(key))return"limanka";return citySlug(v)};
 function rieltorUrl(f:Filters){const g=geo(f),slug=portalSlug("rieltor",g.city)??rieltorCitySlug(g.city),group=propertyGroup(f),section:any=(isRent(f)?{apartment:"flats-rent",house:"houses-rent",land:"areas-rent",commercial:"commercials-rent",room:"rooms-rent",garage:"flats-rent",other:"flats-rent"}:{apartment:"flats-sale",house:"houses-sale",land:"areas-sale",commercial:"commercials-sale",room:"rooms-sale",garage:"flats-sale",other:"flats-sale"})[group]||(isRent(f)?"flats-rent":"flats-sale"),paths:any={"Киевский":"%D0%9A%D0%B8%D1%97%D0%B2%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d24","Приморский":"%D0%9F%D1%80%D0%B8%D0%BC%D0%BE%D1%80%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d23","Хаджибейский":"%D0%A5%D0%B0%D0%B4%D0%B6%D0%B8%D0%B1%D0%B5%D0%B9%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d27","Пересыпский":"%D0%9F%D0%B5%D1%80%D0%B5%D1%81%D0%B8%D0%BF%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d30"};if(group==="apartment"&&slug==="odessa"&&paths[g.district])return `https://rieltor.ua/odessa/${section}/${paths[g.district]}/`;return slug?`https://rieltor.ua/${slug}/${section}/`:`https://rieltor.ua/${section}/`;}
 const resolvedRieltorComplexCache=new Map<string,{url:string;at:number}>();
+// ЖК на RIELTOR.UA по собственному алфавитному каталогу площадки (/novostroyki/<буква>/):
+// там у каждого ЖК номер (-nID). Проверяем кандидатов в нужном городе и берём тот, где есть объявления.
+const rieltorIndexCache=new Map<string,{list:{name:string,id:string}[],at:number}>();
+async function rieltorIndexLetter(letter:string){
+  const key=letter,c=rieltorIndexCache.get(key);if(c&&Date.now()-c.at<6*3600000)return c.list;
+  const base=letter==="a-z"?"https://rieltor.ua/novostroyki/a-z/":`https://rieltor.ua/novostroyki/${encodeURIComponent(letter)}/`;
+  const list:{name:string,id:string}[]=[];const seen=new Set<string>();
+  const grab=(html:string)=>{for(const m of html.matchAll(/href=["'](?:https:\/\/rieltor\.ua)?\/flats-sale\/([^"'\/]+)-n(\d+)\/?["']/gi)){if(seen.has(m[2]))continue;seen.add(m[2]);let name=m[1];try{name=decodeURIComponent(name.replace(/\+/g," "))}catch{}list.push({name,id:m[2]})}};
+  const r=await politeFetch(base);if(!r.ok)return list;const html=await r.text();grab(html);
+  const last=Math.min(8,Math.max(1,...[...html.matchAll(/[?&]page=(\d+)/g)].map(m=>Number(m[1]))));
+  for(let p=2;p<=last;p++){await sleep(300);const rp=await politeFetch(`${base}?page=${p}`);if(rp.ok)grab(await rp.text())}
+  rieltorIndexCache.set(key,{list,at:Date.now()});return list;
+}
+async function rieltorComplexFromIndex(f:Filters){
+  const g=geo(f),slug=portalSlug("rieltor",g.city)??rieltorCitySlug(g.city);if(!slug)return"";
+  const raw=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк|Жк)(?=\s|$)/g," ").replace(/[«»"“”]/g,"").trim();if(!raw)return"";
+  const first=(raw.match(/[A-Za-zА-ЯЁЄІЇҐа-яёєіїґ0-9]/)?.[0]||"").toUpperCase();if(!first)return"";
+  const alt:any={"Э":["Е"],"Ы":["И"],"Ё":["Е"],"Е":["Є"],"И":["І"],"І":["И"],"Г":["Ґ"]};
+  const letters=/[A-Z0-9]/.test(first)?["a-z"]:[first,...(alt[first]||[])];
+  const wanted=complexCanon(raw);let cands:{name:string,id:string,score:number}[]=[];
+  for(const L of letters){for(const x of await rieltorIndexLetter(L)){const c=complexCanon(x.name);const score=c===wanted?3:complexMatches(x.name,raw)?((c.includes(wanted)||wanted.includes(c))?2:1):0;if(score)cands.push({...x,score})}}
+  if(!cands.length)return"";
+  cands.sort((a,b)=>b.score-a.score);cands=cands.filter(c=>c.score===cands[0].score).slice(0,5);
+  let best="",bestCount=0;
+  for(const c of cands){const url=`https://rieltor.ua/${slug}/flats-sale/${encodeURIComponent(c.name).replace(/%20/g,"+")}-n${c.id}/`;const r=await politeFetch(url);if(!r.ok)continue;const html=await r.text();const n=Number(countFrom(html,"RIELTOR.UA")||0)||[...new Set([...html.matchAll(/flats-sale\/view\/(\d+)/g)].map(m=>m[1]))].length;if(n>bestCount){best=url;bestCount=n}}
+  return best;
+}
 async function resolvedRieltorComplexUrl(f:Filters){
   const fallback=rieltorUrl(f);
   if(propertyGroup(f)!=="apartment"||isRent(f)||!f.complex||f.complex==="Все")return fallback;
   if(complexMatches(f.complex,"Акварель 3")&&/одес|odes/i.test(String(geo(f).city||"")))return "https://rieltor.ua/odessa/flats-sale/%D0%90%D0%BA%D0%B2%D0%B0%D1%80%D0%B5%D0%BB%D1%8C-3-n18807/";
   const key=`${latin(geo(f).city)}|${complexCanon(f.complex)}`,cached=resolvedRieltorComplexCache.get(key);
   if(cached&&Date.now()-cached.at<900000)return cached.url;
+  try{const viaIndex=await rieltorComplexFromIndex(f);if(viaIndex){resolvedRieltorComplexCache.set(key,{url:viaIndex,at:Date.now()});return viaIndex}}catch{/* дальше — прежний способ */}
   try{
     // Resolve the exact RIELTOR ЖК catalog from a real RIELTOR card already
     // grouped under the requested ЖК by LUN. This avoids searching only the
@@ -652,6 +680,8 @@ async function one(source:string,f:Filters){
       pages.push(...await Promise.all(Array.from({length:size},(_,i)=>{const page=firstPage+offset+i;return page===1&&firstProbe?firstProbe:fetchPage(page)})));
     }
   }else{const conc=source==="OLX"?3:2;for(let offset=0;offset<pageCount;offset+=conc){const size=Math.min(conc,pageCount-offset);pages.push(...await Promise.all(Array.from({length:size},(_,i)=>{const page=firstPage+offset+i;return page===1&&firstProbe?firstProbe:fetchPage(page)})));if(offset+conc<pageCount&&source!=="OLX")await sleep(250)}}
+  // страницы, которые площадка не отдала с первого раза (429/403), запрашиваем ещё раз по одной
+  for(let i=0;i<pages.length;i++){const x=pages[i];if(x&&x.status>=200&&x.status<300&&x.html)continue;if(!x?.page||![0,403,429,500,502,503].includes(Number(x.status)))continue;await sleep(1200);pages[i]=await fetchPage(x.page)}
   const successful=pages.filter(x=>x.status>=200&&x.status<300&&x.html);
   if(!successful.length){const st=pages[0]?.status||0;return{source,ok:false,status:st,url:pages[0]?.url||base,error:st===403||st===429?`${source} сейчас закрыл доступ для автоматического поиска (защита сайта). Откройте этот же поиск на сайте по ссылке — CRM повторит запрос при следующем обновлении.`:`${source} не ответил (код ${st||"нет связи"}). Откройте поиск на сайте по ссылке.`,items:[]}}
   const scanFilters={...f,condition:"",floor_from:undefined,floor_to:undefined,construction_year_from:undefined,construction_year_to:undefined,verified_only:false,programs:[]};
