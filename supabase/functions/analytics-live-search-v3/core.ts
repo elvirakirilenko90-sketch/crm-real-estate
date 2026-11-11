@@ -713,9 +713,8 @@ async function one(source:string,f:Filters){
   if(/^(Таунхаус|Дуплекс|Коттедж)$/i.test(selectedSubtype)){
     const subtypePattern=/^Таунхаус$/i.test(selectedSubtype)?/таунхаус|townhouse/i:/^Дуплекс$/i.test(selectedSubtype)?/дуплекс|duplex/i:/коттедж|котедж|cottage/i;
     parsed=parsed.filter(item=>subtypePattern.test(`${item.title||""} ${item.description||""}`));
-  }else if(/^Дом$/i.test(selectedSubtype)){
-    parsed=parsed.filter(item=>!/таунхаус|townhouse|дуплекс|duplex|коттедж|котедж|cottage/i.test(`${item.title||""} ${item.description||""}`));
   }
+  // «Дом» = раздел домов площадки целиком (как на сайте: котеджі, дуплекси тоже там); подтипы выбираются отдельно
   parsed=parsed.map(item=>({...item,raw_data:{...(item.raw_data||{}),construction_year:Number(item.raw_data?.construction_year||f._complex_year||0),floor:Number(item.raw_data?.floor||floorFromText(`${item.title||""} ${item.description||""}`).floor||0),total_floors:Number(item.raw_data?.total_floors||floorFromText(`${item.title||""} ${item.description||""}`).total||0)}}));
   if(source!=="OLX"&&source!=="REM"&&(f.floor_from||f.floor_to)){
     // Keep the existing DIM.RIA limit unchanged. For REM, RIELTOR and LUN,
