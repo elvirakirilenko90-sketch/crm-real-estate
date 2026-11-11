@@ -2,6 +2,8 @@
 // Подключается из index.ts по закреплённому коммиту; авторизация — в index.ts.
 import { UA_SLUGS, UA_UK } from "./ua_slugs.ts";
 import { REM_LUN_CITIES } from "./cities_rem_lun.ts";
+import { REM_ALL } from "./rem_all.ts";
+import { OBLASTS } from "./oblasts.ts";
 import { foreignSearch } from "./foreign.ts";
 
 const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization,apikey,content-type,x-client-info","content-type":"application/json; charset=utf-8"};
@@ -269,7 +271,7 @@ function domUrl(f:Filters){const g=geo(f),slug=portalSlug("dim",g.city)??citySlu
 const resolvedDomCache=new Map<string,{url:string;at:number}>();
 async function resolvedDomUrl(f:Filters){const fallback=domUrl(f);if(propertyGroup(f)!=="apartment"||isRent(f))return fallback;const raw=String(f.complex_source_url||""),cached=resolvedDomCache.get(raw);if(cached&&Date.now()-cached.at<900000)return cached.url;try{const source=new URL(raw);if(source.protocol!=="https:"||source.hostname!=="dom.ria.com"||!source.pathname.includes("/novostroyka-"))return fallback;const response=await fetch(source.toString(),{headers:HEADERS,redirect:"follow"});if(!response.ok)return fallback;const html=await response.text(),escaped=html.replace(/&amp;/g,"&"),id=source.pathname.match(/-(\d+)\/?$/)?.[1]||"";const links=[...escaped.matchAll(/href=["']([^"']*\/uk\/prodazha-kvartir\/[^"']*-zhk-[^"']+-\d+\/?)["']/gi)].map(m=>m[1]);const exact=links.find(link=>!!id&&new RegExp(`-${id}\\/?(?:[?#]|$)`).test(link))||links[0];if(exact){const url=new URL(exact,source.origin).toString();resolvedDomCache.set(raw,{url,at:Date.now()});return url}const slugMatch=source.pathname.match(/\/novostroyka-zhk-(.+)-(\d+)\/?$/i);if(!slugMatch)return fallback;const complexSlug=slugMatch[1].replace(/perlyna/gi,"zhemchuzhyna"),complexId=slugMatch[2],g=geo(f),mapped=citySlug(g.city);const prefixes=[mapped,/одес|одеськ/i.test(String(g.region||""))?"myzykevycha-ovydyopol":"",/одес|одеськ/i.test(String(g.region||""))?"odessa":""].filter(Boolean);const candidates=[...new Set(prefixes)].map(prefix=>`https://dom.ria.com/uk/prodazha-kvartir/${prefix}-zhk-${complexSlug}-${complexId}/`);const checked=await Promise.all(candidates.map(async url=>{try{const r=await fetch(url,{headers:HEADERS,redirect:"follow"});const text=r.ok?await r.text():"";return r.ok&&new RegExp(`-${complexId}\\/?(?:[?#]|$)`).test(r.url)&&Number(countFrom(text,"DIM.RIA Украина")||0)>0?r.url:""}catch{return""}}));const found=checked.find(Boolean)||fallback;if(found!==fallback)resolvedDomCache.set(raw,{url:found,at:Date.now()});return found}catch{return fallback}};
 const rieltorCitySlug=(v="")=>{const key=String(v||"").trim().toLowerCase();if(/^(лиманка|таїрове|таирово)$/.test(key))return"limanka";return citySlug(v)};
-function rieltorUrl(f:Filters){const g=geo(f),slug=portalSlug("rieltor",g.city)??rieltorCitySlug(g.city),group=propertyGroup(f),section:any=(isRent(f)?{apartment:"flats-rent",house:"houses-rent",land:"areas-rent",commercial:"commercials-rent",room:"rooms-rent",garage:"flats-rent",other:"flats-rent"}:{apartment:"flats-sale",house:"houses-sale",land:"areas-sale",commercial:"commercials-sale",room:"rooms-sale",garage:"flats-sale",other:"flats-sale"})[group]||(isRent(f)?"flats-rent":"flats-sale"),paths:any={"Киевский":"%D0%9A%D0%B8%D1%97%D0%B2%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d24","Приморский":"%D0%9F%D1%80%D0%B8%D0%BC%D0%BE%D1%80%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d23","Хаджибейский":"%D0%A5%D0%B0%D0%B4%D0%B6%D0%B8%D0%B1%D0%B5%D0%B9%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d27","Пересыпский":"%D0%9F%D0%B5%D1%80%D0%B5%D1%81%D0%B8%D0%BF%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d30"};if(group==="apartment"&&slug==="odessa"&&paths[g.district])return `https://rieltor.ua/odessa/${section}/${paths[g.district]}/`;return slug?`https://rieltor.ua/${slug}/${section}/`:`https://rieltor.ua/${section}/`;}
+function rieltorUrl(f:Filters){const g=geo(f),slug=(f as any)._rieltor_slug||(portalSlug("rieltor",g.city)??rieltorCitySlug(g.city)),group=propertyGroup(f),section:any=(isRent(f)?{apartment:"flats-rent",house:"houses-rent",land:"areas-rent",commercial:"commercials-rent",room:"rooms-rent",garage:"flats-rent",other:"flats-rent"}:{apartment:"flats-sale",house:"houses-sale",land:"areas-sale",commercial:"commercials-sale",room:"rooms-sale",garage:"flats-sale",other:"flats-sale"})[group]||(isRent(f)?"flats-rent":"flats-sale"),paths:any={"Киевский":"%D0%9A%D0%B8%D1%97%D0%B2%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d24","Приморский":"%D0%9F%D1%80%D0%B8%D0%BC%D0%BE%D1%80%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d23","Хаджибейский":"%D0%A5%D0%B0%D0%B4%D0%B6%D0%B8%D0%B1%D0%B5%D0%B9%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d27","Пересыпский":"%D0%9F%D0%B5%D1%80%D0%B5%D1%81%D0%B8%D0%BF%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-d30"};if(group==="apartment"&&slug==="odessa"&&paths[g.district])return `https://rieltor.ua/odessa/${section}/${paths[g.district]}/`;return slug?`https://rieltor.ua/${slug}/${section}/`:`https://rieltor.ua/${section}/`;}
 const resolvedRieltorComplexCache=new Map<string,{url:string;at:number}>();
 // ЖК на RIELTOR.UA по собственному алфавитному каталогу площадки (/novostroyki/<буква>/):
 // там у каждого ЖК номер (-nID). Проверяем кандидатов в нужном городе и берём тот, где есть объявления.
@@ -425,7 +427,7 @@ const lunCitySlug=(value="")=>{const c=String(value||"").toLowerCase();if(/од�
 const lunComplexSlug=(value="")=>normalizeComplexNumbers(String(value||"")).replace(/^\s*(?:жк\s+|жил(?:ой|ого)?\s+комплекс\s+|житлов(?:ий|ого)?\s+комплекс\s+)/i," ").split(/[^a-zа-яіїєґ0-9]+/i).map(part=>latin(part)).filter(Boolean).join("-");
 // Город → адрес ЛУН (регион/flats или регион/flats-город); "" = на ЛУН нет такого города
 const lunCityPath=(cityName="")=>{const k=String(cityName||"").trim().toLowerCase();const rec:any=(REM_LUN_CITIES as any)[k]||Object.values(REM_LUN_CITIES).find((x:any)=>String(x.uk).toLowerCase()===k)||(REM_LUN_CITIES as any)[String((UA_UK as any)[k]||"")];if(rec)return String(rec.lun||"");if(!k)return"odesa/flats";return""};
-const lunUrl=(f:Filters)=>{const group=propertyGroup(f);const kind=group==="apartment"?"flats":group==="house"?"houses":group==="land"?"land":"";if(!kind)return"";const path=lunCityPath(f.city||"Одесса");if(!path)return"";const [city,cityPart]=path.split("/");const rent=isRent(f);if(rent&&kind==="land")return"";const townSuffix=cityPart.replace(/^flats/,"");const slug=kind==="flats"&&!rent&&f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):`${kind}${townSuffix}`;const lunDistricts:any={"Киевский":"kyivskyi","Приморский":"prymorskyi","Хаджибейский":"khadzhybeiskyi","Пересыпский":"peresypskyi"};const g=geo(f),dSlug=kind==="flats"&&slug==="flats"&&city==="odesa"&&!townSuffix?lunDistricts[g.district]:"";const u=new URL(`https://lun.ua/${rent?"rent":"sale"}/${city}/${slug}${dSlug?`-${dSlug}-district`:""}`);
+const lunUrl=(f:Filters)=>{const group=propertyGroup(f);const kind=group==="apartment"?"flats":group==="house"?"houses":group==="land"?"land":"";if(!kind)return"";const path=(f as any)._lun_path||lunCityPath(f.city||"Одесса");if(!path)return"";const [city,cityPart]=path.split("/");const rent=isRent(f);if(rent&&kind==="land")return"";const townSuffix=cityPart.replace(/^flats/,"");const slug=kind==="flats"&&!rent&&f.complex&&f.complex!=="Все"?lunComplexSlug(f.complex):`${kind}${townSuffix}`;const lunDistricts:any={"Киевский":"kyivskyi","Приморский":"prymorskyi","Хаджибейский":"khadzhybeiskyi","Пересыпский":"peresypskyi"};const g=geo(f),dSlug=kind==="flats"&&slug==="flats"&&city==="odesa"&&!townSuffix?lunDistricts[g.district]:"";const u=new URL(`https://lun.ua/${rent?"rent":"sale"}/${city}/${slug}${dSlug?`-${dSlug}-district`:""}`);
   // родные фильтры ЛУН: комнаты и цена в $ (счётчик «N квартир» на странице учитывает их)
   const r=parseInt(String(f.rooms||""))||0;if(kind==="flats"&&r>=1&&r<=3&&/^[1-3]$/.test(String(f.rooms)))u.searchParams.set("roomCount",String(r));
   if(f.price_from||f.price_to){if(f.price_from)u.searchParams.set("priceMin",String(f.price_from));if(f.price_to)u.searchParams.set("priceMax",String(f.price_to));u.searchParams.set("currency","USD");}
@@ -570,24 +572,65 @@ function dimPeriodParams(f:any,u:URLSearchParams){
   if(f.date_from&&/^\d{4}-\d{2}-\d{2}$/.test(String(f.date_from)))u.set("date_from",String(f.date_from));
   if(f.date_to&&/^\d{4}-\d{2}-\d{2}$/.test(String(f.date_to)))u.set("date_to",String(f.date_to));
 }
+// ===== Любой населённый пункт Украины =====
+// В справочнике CRM 120 городов; остальные (сёла, посёлки, малые города) приходят по-украински из подсказок DIM.RIA
+// (city_meta: uk, state_uk, dim_state_id, dim_city_id). Для каждой площадки адрес берётся у неё самой и проверяется.
+const normUk=(v="")=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").replace(/\s+/g," ").trim();
+type Settlement={key:string;uk:string;oblastUk:string;oblast:any;catalog:boolean;dim:{stateId:number,cityId:number}|null};
+function settlementOf(f:Filters):Settlement|null{
+  const city=String(geo(f).city||"").trim();if(!city)return null;const key=city.toLowerCase();
+  const rec:any=(REM_LUN_CITIES as any)[key];const meta:any=(f as any).city_meta||{};
+  const uk=String(rec?.uk||meta.uk||city);
+  const reg=String(f.region||"");const ob=OBLASTS.find(o=>o.ru===reg)||OBLASTS.find(o=>meta.state_uk&&normUk(o.uk)===normUk(String(meta.state_uk).replace(/\s*область$/i,"")))||null;
+  const dim=meta.dim_city_id?{stateId:Number(meta.dim_state_id),cityId:Number(meta.dim_city_id)}:null;
+  return{key,uk,oblastUk:String(meta.state_uk||ob?.uk||""),oblast:ob,catalog:!!rec||!!(UA_SLUGS as any)[key],dim};
+}
+// транслит укр. → латиница (как у ЛУН: Ірпінь → irpin, Крижанівка → kryzhanivka)
+const UKLAT:any={а:"a",б:"b",в:"v",г:"h",ґ:"g",д:"d",е:"e",є:"ie",ж:"zh",з:"z",и:"y",і:"i",ї:"i",й:"i",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"kh",ц:"ts",ч:"ch",ш:"sh",щ:"shch",ь:"",ю:"iu",я:"ia"};const UKFIRST:any={є:"ye",ї:"yi",й:"y",ю:"yu",я:"ya"};
+const ukTranslit=(v="")=>normUk(v).replace(/\s*\(.*?\)\s*/g," ").trim().split(/[\s-]+/).map(w=>w.replace(/зг/g,"zgh").split("").map((c,i)=>i===0&&UKFIRST[c]?UKFIRST[c]:(UKLAT[c]??c)).join("")).join("-").replace(/[^a-z0-9-]/g,"");
+const pageExists=new Map<string,{ok:boolean,title:string,at:number}>();
+async function checkPage(url:string){const c=pageExists.get(url);if(c&&Date.now()-c.at<12*3600000)return c;let ok=false,title="";try{const r=await politeFetch(url);ok=r.ok;const html=ok?await r.text():"";title=(html.match(/<title>([^<]{0,200})/)||[])[1]||""}catch{/* нет ответа */}const v={ok,title,at:Date.now()};pageExists.set(url,v);return v}
+// ЛУН: регион/flats-<населённый пункт>
+async function lunPathLive(st:Settlement){
+  const lun=st.oblast?.lun;if(!lun)return"";
+  const isCenter=st.oblast&&normUk(String((REM_LUN_CITIES as any)[String(st.oblast.center).toLowerCase()]?.uk||""))===normUk(st.uk);
+  const path=isCenter?`${lun}/flats`:`${lun}/flats-${ukTranslit(st.uk)}`;
+  const c=await checkPage(`https://lun.ua/sale/${path}`);return c.ok?path:"";
+}
+// RIELTOR.UA: список населённых пунктов области на странице областного центра + проверка заголовка страницы
+const rieltorNavCache=new Map<string,{list:{name:string,slug:string}[],at:number}>();
+async function rieltorCityLive(st:Settlement){
+  const center=String(st.oblast?.center||"");if(!center)return"";
+  const centerSlug=portalSlug("rieltor",center)??rieltorCitySlug(center);
+  const navUrl=centerSlug&&centerSlug!=="kiev"?`https://rieltor.ua/${centerSlug}/flats-sale/`:"https://rieltor.ua/flats-sale/";
+  let nav=rieltorNavCache.get(navUrl);
+  if(!nav||Date.now()-nav.at>12*3600000){const list:{name:string,slug:string}[]=[];try{const r=await politeFetch(navUrl);if(r.ok){const html=await r.text();for(const m of html.matchAll(/data-index-url=["']\/([a-z0-9-]+)\/["'][\s\S]{0,400}?>\s*([^<]{2,60}?)\s*<\/div>/g))list.push({slug:m[1],name:m[2]})}}catch{/* нет ответа */}nav={list,at:Date.now()};rieltorNavCache.set(navUrl,nav)}
+  const want=normUk(st.uk);const hit=nav.list.find(x=>normUk(x.name.replace(/\s*\(.*?\)\s*/g,""))===want||normUk(x.name)===want);if(hit)return hit.slug;
+  // адреса RIELTOR.UA — русская транслитерация (kryzhanovka, belaja-tserkov); пробуем из украинского написания
+  const R:any={а:"a",б:"b",в:"v",г:"g",ґ:"g",д:"d",е:"e",є:"e",ж:"zh",з:"z",и:"y",і:"i",ї:"i",й:"j",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sch",ь:"",ю:"ju",я:"ja"};
+  const base=normUk(st.uk).replace(/\s*\(.*?\)\s*/g," ").trim();const t1=base.split("").map(c=>R[c]??c).join("").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+  const stem=normUk(st.uk).slice(0,Math.max(4,normUk(st.uk).length-3));
+  for(const cand of [...new Set([t1,t1.replace(/ivka$/,"ovka"),t1.replace(/ivka$/,"evka"),t1.replace(/ne$/,"noe"),t1.replace(/ske$/,"skoe")])]){const c=await checkPage(`https://rieltor.ua/${cand}/flats-sale/`);if(c.ok&&normUk(c.title).includes(stem)&&!/києві/i.test(c.title))return cand}
+  return"";
+}
 // Город без адреса в справочнике OLX: адрес из подсказок самого OLX (normalized_name)
 const olxSlugCache=new Map<string,{slug:string,at:number}>();
-async function olxCitySlugLive(cityName:string){
-  const k=String(cityName||"").trim().toLowerCase();if(!k)return"";
-  const rec:any=(REM_LUN_CITIES as any)[k];const uk=String(rec?.uk||cityName);
+async function olxCitySlugLive(cityName:string,ukName="",oblastUk=""){
+  const k=String(cityName||"").trim().toLowerCase()+"|"+normUk(oblastUk);if(!k)return"";
+  const rec:any=(REM_LUN_CITIES as any)[String(cityName||"").trim().toLowerCase()];const uk=String(ukName||rec?.uk||cityName);
   const c=olxSlugCache.get(k);if(c&&Date.now()-c.at<12*3600000)return c.slug;
   let slug="";
-  try{const r=await politeFetch(`https://www.olx.ua/api/v1/geo-encoder/location-autocomplete/?query=${encodeURIComponent(uk)}`);if(r.ok){const j:any=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const hit=(j?.data||[]).find((x:any)=>x?.city&&!x?.district&&norm(x.city.name)===norm(uk));slug=String(hit?.city?.normalized_name||"")}}catch{/* нет ответа */}
+  try{const r=await politeFetch(`https://www.olx.ua/api/v1/geo-encoder/location-autocomplete/?query=${encodeURIComponent(uk)}`);if(r.ok){const j:any=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).slice(0,5);const hit=(j?.data||[]).find((x:any)=>x?.city&&!x?.district&&norm(x.city.name)===norm(uk)&&(!ob||norm(x?.region?.name||"").startsWith(ob)))||(j?.data||[]).find((x:any)=>x?.city&&!x?.district&&norm(x.city.name)===norm(uk));slug=String(hit?.city?.normalized_name||"")}}catch{/* нет ответа */}
   olxSlugCache.set(k,{slug,at:Date.now()});return slug;
 }
 // Город без отдельной страницы на DIM.RIA: номер города из подсказок самой площадки (как при вводе города на сайте)
 const dimIdsCache=new Map<string,{ids:{stateId:number,cityId:number}|null,at:number}>();
-async function dimCityIds(cityName:string){
-  const k=String(cityName||"").trim().toLowerCase();if(!k)return null;
-  const rec:any=(REM_LUN_CITIES as any)[k];const uk=String(rec?.uk||cityName);
+async function dimCityIds(cityName:string,ukName="",oblastUk=""){
+  const k=String(cityName||"").trim().toLowerCase()+"|"+normUk(oblastUk);if(!k)return null;
+  const rec:any=(REM_LUN_CITIES as any)[String(cityName||"").trim().toLowerCase()];const uk=String(ukName||rec?.uk||cityName);
   const c=dimIdsCache.get(k);if(c&&Date.now()-c.at<12*3600000)return c.ids;
   let ids:any=null;
-  try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(uk)}&langId=4`);if(r.ok){const list:any[]=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const hit=list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk))||null;if(hit?.payload?.cityId)ids={stateId:Number(hit.payload.stateId),cityId:Number(hit.payload.cityId)}}}catch{/* нет ответа — честно сообщим */}
+  try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(uk)}&langId=4`);if(r.ok){const list:any[]=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).replace(/\s*область$/,"").slice(0,5);const hit=list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk))||null;if(hit?.payload?.cityId)ids={stateId:Number(hit.payload.stateId),cityId:Number(hit.payload.cityId)}}}catch{/* нет ответа — честно сообщим */}
   dimIdsCache.set(k,{ids,at:Date.now()});return ids;
 }
 async function dimApiSearch(f:Filters,pageUrl:string){
@@ -638,7 +681,7 @@ async function dimApiSearch(f:Filters,pageUrl:string){
 
 // REM: фильтры сайта rem.ua (комнаты — в адресе, цена/площадь/этаж/ЖК — параметрами формы поиска)
 // Город → адрес REM (rem.ua/ua/prodazha-kvartir-<город>); "" = на REM нет такого города
-const remCitySlug=(cityName="")=>{const k=String(cityName||"").trim().toLowerCase();if(!k)return"odessa";const rec:any=(REM_LUN_CITIES as any)[k]||Object.values(REM_LUN_CITIES).find((x:any)=>String(x.uk).toLowerCase()===k)||(REM_LUN_CITIES as any)[String((UA_UK as any)[k]||"")];return rec?String(rec.rem||""):""};
+const remCitySlug=(cityName="")=>{const k=String(cityName||"").trim().toLowerCase();if(!k)return"odessa";const rec:any=(REM_LUN_CITIES as any)[k]||Object.values(REM_LUN_CITIES).find((x:any)=>String(x.uk).toLowerCase()===k)||(REM_LUN_CITIES as any)[String((UA_UK as any)[k]||"")];if(rec)return String(rec.rem||"");return String((REM_ALL as any)[normUk(k)]||(REM_ALL as any)[normUk(String((UA_UK as any)[k]||""))]||"")};
 function remUrl(f:Filters){
   const group=propertyGroup(f);const rent=isRent(f);const city=remCitySlug(geo(f).city);if(!city)return "";
   const deal=rent?"arenda":"prodazha";
@@ -676,11 +719,21 @@ function rieltorNative(url:string,f:Filters){
 async function one(source:string,f:Filters){
   // Город, которого нет на площадке: не подменяем его общей выдачей по Украине
   {const wantCity=String(geo(f).city||"").trim();const portal:any={"OLX":"olx","DIM.RIA Украина":"dim","RIELTOR.UA":"rieltor"}[source];
+   const none=(name:string)=>({source:name,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ${name} нет отдельной выдачи по населённому пункту «${wantCity}»`,items:[]});
+   const st=settlementOf(f);
+   if(st&&!st.catalog){
+     // населённый пункт не из справочника CRM: адрес спрашиваем у самой площадки
+     if(source==="OLX"){const sl=await olxCitySlugLive(wantCity,st.uk,st.oblastUk);if(!sl)return none(source);f={...f,_olx_slug:sl} as any;}
+     else if(source==="DIM.RIA Украина"){const ids=st.dim||await dimCityIds(wantCity,st.uk,st.oblastUk);if(!ids)return none(source);f={...f,_dim_ids:ids} as any;}
+     else if(source==="RIELTOR.UA"){const sl=await rieltorCityLive(st);if(!sl)return none(source);f={...f,_rieltor_slug:sl} as any;}
+     else if(source==="REM"){if(!remCitySlug(st.uk))return none(source);}
+     else if(source==="ЛУН"||source==="LUN"){const pth=await lunPathLive(st);if(!pth)return none("ЛУН");f={...f,_lun_path:pth} as any;}
+   }else{
    if(wantCity&&portal==="olx"&&(REM_LUN_CITIES as any)[wantCity.toLowerCase()]){const sl=await olxCitySlugLive(wantCity);if(sl)f={...f,_olx_slug:sl} as any;}
    if(wantCity&&portal==="dim"&&portalSlug("dim",wantCity)===""){const ids=await dimCityIds(wantCity);if(ids)f={...f,_dim_ids:ids} as any;}
    if(wantCity&&portal&&!(portal==="dim"&&(f as any)._dim_ids)&&!(portal==="olx"&&(f as any)._olx_slug)){const s=portalSlug(portal,wantCity)??(portal==="rieltor"?rieltorCitySlug(wantCity):citySlug(wantCity));if(!s)return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ${source} нет отдельной выдачи по городу «${wantCity}»`,items:[]}}
    if(source==="REM"&&wantCity&&!remCitySlug(wantCity))return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На REM нет отдельной выдачи по городу «${wantCity}»`,items:[]};
-   if((source==="ЛУН"||source==="LUN")&&wantCity&&!lunCityPath(wantCity))return{source:"ЛУН",ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ЛУН нет отдельной выдачи по городу «${wantCity}»`,items:[]};}
+   if((source==="ЛУН"||source==="LUN")&&wantCity&&!lunCityPath(wantCity))return{source:"ЛУН",ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ЛУН нет отдельной выдачи по городу «${wantCity}»`,items:[]};}}
   if(propertyGroup(f)!=="apartment")f={...f,complex:"",complex_source_url:""};
   const requestedPage=Math.max(1,Number(f.page||1));
   let base="";
@@ -883,6 +936,10 @@ export async function handler(req:Request):Promise<Response>{
     if(body?.action==="presentation_image")return proxyPresentationImage(body.url);
     if(body?.action==="presentation_detail")return presentationDetail(body.url);
     // Курс НБУ для пересчёта гривны/евро в доллары в Аналитике
+    // подсказки населённых пунктов Украины (как в поиске площадок): «Крижан…» → Крижанівка, Одеська обл.
+    if(body?.action==="geo_suggest"){const text=String(body?.text||"").trim();if(text.length<2)return new Response(JSON.stringify({success:true,items:[]}),{headers:{...CORS,"content-type":"application/json"}});
+      let items:any[]=[];try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(text)}&langId=4`);if(r.ok){const list:any[]=await r.json();items=list.filter(x=>x?.type==="city"&&x?.payload?.cityId).slice(0,15).map(x=>{const st=String(x.stateName||"");const isKyiv=normUk(x.cityName)==="київ";const ob=isKyiv?OBLASTS[0]:OBLASTS.find(o=>o.ru!=="г. Киев"&&normUk(o.uk).slice(0,5)===normUk(st).slice(0,5));const catalogRu=Object.entries(REM_LUN_CITIES as any).find(([ru,v]:any)=>normUk(v.uk)===normUk(x.cityName)&&ob&&OBLASTS.find(o=>o.ru===ob.ru))?.[0]||"";return{name:String(x.cityName),state_uk:st,label:String(x.text||x.output||x.cityName),region_ru:ob?.ru||"",catalog_city:catalogRu,dim_state_id:Number(x.payload.stateId),dim_city_id:Number(x.payload.cityId)}})}}catch{/* нет ответа */}
+      return new Response(JSON.stringify({success:true,items}),{headers:{...CORS,"content-type":"application/json"}});}
     if(body?.action==="rates"){try{const r=await fetch("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json");const j=await r.json();const pick=(c:string)=>Number((j||[]).find((x:any)=>x?.cc===c)?.rate||0);return new Response(JSON.stringify({success:true,source:"НБУ",date:(j||[])[0]?.exchangedate||"",UAH_PER_USD:pick("USD"),UAH_PER_EUR:pick("EUR")}),{headers:CORS})}catch(e){return new Response(JSON.stringify({success:false,error:String(e)}),{headers:CORS})}}
     const f:Filters=body;
     if(String(f.country||"").trim()&&!/^(украина|україна|ukraine|все)$/i.test(String(f.country).trim()))return foreignSearch(f);
