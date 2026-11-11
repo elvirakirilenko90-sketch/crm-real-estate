@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { uiExtra, uiTemplates } from "./i18n-extra.js";
 import { supabase, SUPABASE_URL, SUPABASE_KEY } from "./supabaseClient";
 const stages = ["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
@@ -1963,6 +1963,364 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
   </Modal>;
 }
 
+// ===== Автоподбор при первом назначении клиента менеджеру =====
+// Клиент (leads) не меняется: параметры подбора — в lead_match_profiles, состояние — в lead_matching,
+// варианты — в lead_match_results, подборки для клиента — в client_selections (веб-ссылка по токену + PDF).
+const AM_STATUS = {awaiting_manager:"Ожидает назначения менеджера",awaiting_params:"Ожидает заполнения параметров",ready:"Готов к автоподбору",running:"Подбор выполняется",needs_decision:"Требуется решение менеджера",found:"Варианты найдены",none:"Вариантов нет",viewed:"Подбор просмотрен",selection_created:"Подборка создана",sent:"Отправлено клиенту",source_error:"Ошибка источника",newbuild_waiting:"Новострой ожидает подключения"};
+const AM_NEWBUILD_WAIT = "Автоподбор новостроев будет доступен после подключения раздела «Новострой»";
+const amRatesCache = {v:null, at:0};
+async function amRates(){
+  if(amRatesCache.v && Date.now()-amRatesCache.at < 3600000) return amRatesCache.v;
+  try{ const {data} = await supabase.functions.invoke("analytics-live-search-v3",{body:{action:"rates"}});
+    if(data?.UAH_PER_USD){ amRatesCache.v = {source:data.source||"НБУ", date:data.date||"", UAH_PER_USD:data.UAH_PER_USD, UAH_PER_EUR:data.UAH_PER_EUR}; amRatesCache.at = Date.now(); } }catch{}
+  return amRatesCache.v;
+}
+const amMoney = (v, cur="USD") => v==null||v==="" ? "—" : `${cur==="UAH"?"₴":cur==="EUR"?"€":"$"}${Math.round(Number(v)).toLocaleString("ru-RU")}`;
+const amSelectionLink = token => `${window.location.origin}/?sel=${token}`;
+// профиль подбора создаётся из заметки клиента (клиента не меняем); менеджер проверяет и правит
+async function amEnsureProfile(lead){
+  const id = Number(lead.id);
+  const {data} = await supabase.from("lead_match_profiles").select("*").eq("lead_id", id).maybeSingle();
+  if(data) return data;
+  const t = `${lead.notes || ""}`.toLowerCase(); const p = nbParseRequest(t);
+  const row = {lead_id:id, agency_id:lead.agency_id||null,
+    deal_type:/аренд|оренд|снять|зняти/.test(t)?"Аренда":/купит|купів|продаж|покуп/.test(t)||p.budget?"Продажа":null,
+    property_type:/(^|\s)(дом|будинок|таунхаус|дуплекс)/.test(t)?"Дом":/участ|ділян/.test(t)?"Участок":(p.rooms||/кварт|студи|смарт/.test(t))?"Квартира":null,
+    city:/одес/.test(t)?"Одесса":/киев|київ/.test(t)?"Киев":/льв[оі]в/.test(t)?"Львов":/днепр|дніпр/.test(t)?"Днепр":/харк|харьк/.test(t)?"Харьков":null,
+    district:p.district||null, rooms_min:p.rooms||null, rooms_max:p.rooms||null, budget:p.budget||null,
+    currency:/грн|₴|uah|гривн/.test(t)?"UAH":/€|eur|евро|євро/.test(t)?"EUR":"USD",
+    payment_type:/рассроч|розстроч|перв(ый|ого)\s+взнос|перш(ий|ого)\s+внес/.test(t)?"installment":/ипотек|іпотек/.test(t)?"mortgage":/налич|готівк|100\s*%|полн(ая|ой)\s+оплат|повн(а|ою)\s+оплат|кеш|cash/.test(t)?"full":"unknown",
+    filled_from:"notes"};
+  const {data:ins} = await supabase.from("lead_match_profiles").upsert(row,{onConflict:"lead_id",ignoreDuplicates:true}).select().maybeSingle();
+  if(ins) return ins;
+  const {data:again} = await supabase.from("lead_match_profiles").select("*").eq("lead_id", id).maybeSingle();
+  return again || row;
+}
+
+// Окно «Первое касание»: одно на клиента, только назначенному менеджеру
+function FirstTouchWatcher({currentProfile, leads=[], onOpenLead, lang="ru"}){
+  const me = String(currentProfile?.email || "").toLowerCase();
+  const [m,setM] = useState(null); const [lead,setLead] = useState(null); const [prof,setProf] = useState(null); const [busy,setBusy] = useState(false); const busyRef = useRef(false);
+  const check = useCallback(async () => {
+    if(!me || busyRef.current) return;
+    const {data} = await supabase.from("lead_matching").select("*").eq("assigned_manager_email", me).is("notification_seen_at", null).order("first_assignment_at",{ascending:true}).limit(1);
+    const row = (data || [])[0]; if(!row) { setM(null); return; }
+    busyRef.current = true; setBusy(true);
+    try{
+      let l = leads.find(x => String(x.id) === String(row.lead_id));
+      if(!l){ const {data:ld} = await supabase.from("leads").select("id,name,notes,agency_id").eq("id", row.lead_id).maybeSingle(); l = ld; }
+      if(!l){ setM(null); return; }
+      setLead(l); setM(row);
+      const p = await amEnsureProfile(l); setProf(p);
+      if(row.status === "ready" || (row.status === "awaiting_params" && !row.initial_matching_completed_at)){
+        setM({...row, status:"running"});
+        await supabase.rpc("lead_match_run",{p_lead:row.lead_id, p_rates:await amRates(), p_force:false});
+        const {data:fresh} = await supabase.from("lead_matching").select("*").eq("lead_id", row.lead_id).maybeSingle(); setM(fresh || row);
+      }
+    } finally { busyRef.current = false; setBusy(false); }
+  }, [me, leads]);
+  useEffect(() => { check(); const t = setInterval(check, 60000); return () => clearInterval(t); }, [check]);
+  if(!m || !lead) return null;
+  const close = async () => { await supabase.rpc("lead_match_seen",{p_lead:m.lead_id, p_reminder:false}); setM(null); setLead(null); setTimeout(check, 300); };
+  const answer = async (a) => { setBusy(true); await supabase.rpc("lead_match_budget_answer",{p_lead:m.lead_id, p_answer:a, p_rates:await amRates()}); const {data} = await supabase.from("lead_matching").select("*").eq("lead_id", m.lead_id).maybeSingle(); setM(data); setBusy(false); };
+  const offer = async (a) => { await supabase.rpc("lead_match_offer",{p_lead:m.lead_id, p_kind:"analytics", p_answer:a}); setM({...m, analytics_offer_status:a}); };
+  const running = busy || m.status === "running";
+  const askBudget = !running && prof?.budget && ["pending","later"].includes(m.budget_extension_status) && m.status !== "awaiting_params";
+  return <Modal onClose={close}>
+    <div className="row"><h2 style={{margin:0}}>🔔 {tr(lang,"Первое касание")}</h2><button className="icon" onClick={close}>×</button></div>
+    <p style={{fontSize:17,fontWeight:700,margin:"10px 0 4px"}}>{tr(lang,"Вам назначен новый клиент")}: {lead.name}</p>
+    {running ? <p className="muted">⏳ {tr(lang,"Подбор выполняется…")}</p>
+      : m.status === "awaiting_params" ? <p>{tr(lang,"Заполните параметры подбора в карточке клиента")}: <b>{String(m.no_results_reason||"").replace(/^Заполните:\s*/,"")}</b></p>
+      : m.matched_objects_count > 0 ? <p>{tr(lang,"Найдены подходящие объекты")}: <b>{m.matched_objects_count}</b>. {tr(lang,"Проверьте параметры и создайте подборку")}.</p>
+      : <p>{tr(lang,"Подходящих объектов в базе CRM нет")}. <span className="muted">{m.no_results_reason}</span></p>}
+    {askBudget && <div className="card amber" style={{margin:"10px 0"}}>
+      <b>{tr(lang,"Добавить в подборку объекты стоимостью до")} {amMoney(Number(m.matching_parameters?.budget_usd || prof.budget) + Number(m.budget_extension_amount || 10000))}?</b>
+      <div className="chips" style={{marginTop:8,flexWrap:"wrap"}}>
+        <button className="chip" disabled={busy} onClick={()=>answer("yes")}>{tr(lang,"Да, показать до +10 000 $")}</button>
+        <button className="chip" disabled={busy} onClick={()=>answer("no")}>{tr(lang,"Нет, оставить бюджет клиента")}</button>
+        <button className="chip" disabled={busy} onClick={()=>answer("later")}>{tr(lang,"Решить позже")}</button>
+      </div></div>}
+    {!running && m.analytics_offer_status === "offered" && <div className="card" style={{margin:"10px 0"}}>
+      <b>{tr(lang,"Добавить актуальные варианты из раздела «Аналитика»?")}</b>
+      <div className="chips" style={{marginTop:8,flexWrap:"wrap"}}><button className="chip" onClick={()=>offer("accepted")}>{tr(lang,"Да, найти")}</button><button className="chip" onClick={()=>offer("declined")}>{tr(lang,"Нет")}</button></div></div>}
+    {!running && m.newbuild_offer_status === "waiting_connection" && <p className="muted">🏗 {tr(lang,AM_NEWBUILD_WAIT)}</p>}
+    <div className="row" style={{marginTop:12,gap:8}}>
+      <Button onClick={async()=>{ const id = m.lead_id; await close(); onOpenLead?.(id); }}>{tr(lang,"Открыть клиента")}</Button>
+      <Button variant="soft" onClick={close}>{tr(lang,"Закрыть")}</Button>
+    </div>
+  </Modal>;
+}
+
+// PDF-презентация подборки в фирменном стиле CRM (обложка, объекты, контакты)
+async function amBuildSelectionPdf({selection, items, currentProfile, agencyName, lang="uk"}){
+  const brand = loadAgencyBrand(currentProfile?.agency_id), txt = vipPresentationText(lang), pages = [];
+  const theme = currentProfile?.theme || "dark"; const pp = presPal("luxuryDark", theme);
+  await presCoverPage(pages,{pal:pp, brand, agencyName, headline:selection.title, dateLine:`${txt.date}: ${formatPresentationDate(lang)}`, preparedLabel:txt.prepared,
+    client:selection.show_client_name ? (selection.client_display_name || "") : "", subtitle:`${items.length} ${lang==="uk"?"об'єктів":"объектов"}`, hero:(items[0]?.public_data?.photos||[])[0]||""});
+  for(let i=0;i<items.length;i++){
+    const d = items[i].public_data || {};
+    const L = (ru, uk) => lang==="uk" ? uk : ru;
+    await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:d.title || `${txt.property} ${i+1}`,
+      photo:(d.photos||[])[0]||"", price:amMoney(d.price, d.currency), priceLabel:txt.price,
+      specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"],[L("ЖК","ЖК"), d.complex_name||"—"],[txt.type, d.property_type||"—"]],
+      aboutTitle:txt.about, about:[items[i].manager_comment, d.description].filter(Boolean).join("\n\n").slice(0,900), hint:d.address||"",
+      noPhotoText:L("Фото уточняйте у менеджера","Фото уточнюйте в менеджера")});
+  }
+  await presContactPage(pages,{pal:pp, brand, contactTitle:txt.contact, manager:selection.manager_name || managerDisplayName(currentProfile), contactLine:selection.manager_phone || selection.manager_email || "", thanks:txt.thanks});
+  return buildPdfFromCanvasPages(pages);
+}
+
+// Блок «Автоподбор» в карточке клиента
+function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="", lang="ru"}){
+  const leadId = isDbLeadId(lead.id) ? Number(lead.id) : null;
+  const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
+  const [m,setM] = useState(null); const [prof,setProf] = useState(null); const [results,setResults] = useState([]); const [sels,setSels] = useState([]); const [log,setLog] = useState([]); const [events,setEvents] = useState([]);
+  const [loaded,setLoaded] = useState(false); const [busy,setBusy] = useState(""); const [editProf,setEditProf] = useState(false); const [draft,setDraft] = useState({});
+  const [showRejected,setShowRejected] = useState(false); const [manualId,setManualId] = useState("");
+  const [an,setAn] = useState(null); // поиск в «Аналитике»: {loading, items, picked}
+  const [selForm,setSelForm] = useState({title:`Подборка для ${lead.name||"клиента"}`, comment:"", showName:false, hideAddress:false, days:"30"});
+  const idemRef = useRef(null); const remindedRef = useRef(false);
+  const load = useCallback(async () => {
+    if(!leadId) return;
+    const [a,b,c,d,e] = await Promise.all([
+      supabase.from("lead_matching").select("*").eq("lead_id", leadId).maybeSingle(),
+      supabase.from("lead_match_profiles").select("*").eq("lead_id", leadId).maybeSingle(),
+      supabase.from("lead_match_results").select("*").eq("lead_id", leadId).order("position",{ascending:true}),
+      supabase.from("client_selections").select("*").eq("lead_id", leadId).order("created_at",{ascending:false}),
+      supabase.from("lead_matching_log").select("*").eq("lead_id", leadId).order("created_at",{ascending:false}).limit(30)]);
+    setM(a.data || null); setProf(b.data || null); setResults(c.data || []); setSels(d.data || []); setLog(e.data || []);
+    const ids = (d.data || []).map(s => s.id);
+    if(ids.length){ const {data:ev} = await supabase.from("client_selection_events").select("selection_id,item_id,kind,comment,created_at").in("selection_id", ids).order("created_at",{ascending:false}).limit(500); setEvents(ev || []); }
+    setLoaded(true);
+  }, [leadId]);
+  useEffect(() => { load(); }, [load]);
+  // «Решить позже»: вопрос показывается при следующем открытии карточки — один раз
+  const remindNow = !!m && m.budget_extension_status === "later" && !m.budget_extension_reminded_at;
+  useEffect(() => { if(remindNow && !remindedRef.current){ remindedRef.current = true; supabase.rpc("lead_match_seen",{p_lead:leadId, p_reminder:true}); } }, [remindNow, leadId]);
+  if(!leadId) return null;
+  if(!loaded) return <div className="card"><h3>🤖 {tr(lang,"Автоподбор")}</h3><p className="muted">⏳</p></div>;
+
+  const rates = async () => await amRates();
+  const run = async (force=false) => { setBusy("run"); try{ if(!prof) setProf(await amEnsureProfile(lead)); const {error} = await supabase.rpc(force?"lead_match_run":"lead_match_refresh", force?{p_lead:leadId,p_rates:await rates(),p_force:true}:{p_lead:leadId,p_rates:await rates()}); if(error) alert(error.message); await load(); } finally { setBusy(""); } };
+  const answer = async (a) => { setBusy("answer"); const {error} = await supabase.rpc("lead_match_budget_answer",{p_lead:leadId, p_answer:a, p_rates:await rates()}); if(error) alert(error.message); await load(); setBusy(""); };
+  const saveProfile = async () => {
+    setBusy("profile");
+    const num = v => v===""||v==null ? null : Number(String(v).replace(/[^\d.]/g,"")) || null;
+    const row = {...draft, lead_id:leadId, agency_id:lead.agency_id||prof?.agency_id||null, filled_from:"manager", updated_by:currentProfile?.email||null, updated_at:new Date().toISOString()};
+    ["rooms_min","rooms_max","area_from","area_to","floor_from","floor_to","floors_from","floors_to","year_from","land_from","land_to","budget","first_payment","first_payment_pct","installment_months","monthly_payment"].forEach(k => { if(k in row) row[k] = num(row[k]); });
+    const {error} = await supabase.from("lead_match_profiles").upsert(row,{onConflict:"lead_id"}); if(error){ alert(error.message); setBusy(""); return; }
+    setEditProf(false); if(m) await supabase.rpc("lead_match_refresh",{p_lead:leadId, p_rates:await rates()}); await load(); setBusy("");
+  };
+  const setState = async (r, state) => { await supabase.from("lead_match_results").update({state, updated_at:new Date().toISOString()}).eq("id", r.id); setResults(rs => rs.map(x => x.id===r.id ? {...x,state} : x)); };
+  const setComment = async (r, comment) => { await supabase.from("lead_match_results").update({manager_comment:comment}).eq("id", r.id); };
+  const move = async (r, dir) => {
+    const list = [...results].sort((a,b)=>(a.position||0)-(b.position||0)); const i = list.findIndex(x=>x.id===r.id); const j = i+dir; if(j<0||j>=list.length) return;
+    const a = list[i], b = list[j]; const pa = a.position ?? i+1, pb = b.position ?? j+1;
+    await Promise.all([supabase.from("lead_match_results").update({position:pb}).eq("id",a.id), supabase.from("lead_match_results").update({position:pa}).eq("id",b.id)]);
+    setResults(rs => rs.map(x => x.id===a.id?{...x,position:pb}:x.id===b.id?{...x,position:pa}:x));
+  };
+  const addManual = async () => {
+    const p = properties.find(x => String(x.id) === String(manualId)); if(!p) return;
+    const {error} = await supabase.from("lead_match_results").insert({lead_id:leadId, source:"manual", property_id:Number(p.id), dedupe_key:`crm:${p.id}`, title:p.title||"Объект", price:Number(p.price)||null, currency:p.currency||"USD", price_usd:(p.currency||"USD")==="USD"?Number(p.price)||null:null, state:"selected", position:(results.length+1), matched:["добавлен вручную"], snapshot:{city:p.city,district:p.district,rooms:p.rooms,area:p.area}});
+    if(error && !/duplicate/i.test(error.message)) alert(error.message); setManualId(""); await load();
+  };
+  // «Аналитика»: поиск по параметрам клиента на 5 площадках, дубли объединяются
+  const searchAnalytics = async () => {
+    if(!prof) return alert(tr(lang,"Сначала заполните параметры подбора"));
+    setAn({loading:true, items:[], picked:{}});
+    const limit = Number(m?.matching_parameters?.limit_usd || 0) || null;
+    const rooms = prof.rooms_min && prof.rooms_min === prof.rooms_max ? String(prof.rooms_min) : (prof.rooms_min ? `${prof.rooms_min}+` : null);
+    const body = {country:"Украина", city:prof.city||"", district:prof.district||"", property_type:prof.property_type||"", deal_type:prof.deal_type||"Продажа", rooms, price_to:limit, area_from:prof.area_from, area_to:prof.area_to, floor_from:prof.floor_from, floor_to:prof.floor_to, complex:prof.complex_name||"", page:1, pages:1};
+    const srcs = ["OLX","DIM.RIA Украина","RIELTOR.UA","REM","ЛУН"];
+    const res = await Promise.all(srcs.map(s => supabase.functions.invoke("analytics-live-search-v3",{body:{...body, sources:[s]}}).then(r => r.data?.results||[]).catch(()=>[])));
+    const all = res.flat().flatMap(r => (r.items||[]).map(x => ({...x, _src:r.source})));
+    // дубли: одна ссылка или тот же объект на разных площадках (комнаты, площадь, цена ±5%)
+    const seen = new Map(); const out = [];
+    for(const x of all){
+      const url = String(x.source_url||"").replace(/[?#].*$/,""); if(!url) continue;
+      const key2 = `${Number(x.rooms)||0}|${Math.round(Number(x.area)||0)}|${Math.round((Number(x.price)||0)/2000)}`;
+      const dup = out.find(o => o._url===url || (Number(x.area) && o._k2===key2 && Math.abs((Number(o.price)||0)-(Number(x.price)||0)) <= 0.05*Math.max(Number(o.price)||1,1)));
+      if(dup){ dup._also = [...(dup._also||[]), {source:x._src, url}]; continue; }
+      if(results.some(r => r.dedupe_key === `url:${url.toLowerCase()}`)) continue;
+      out.push({...x, _url:url, _k2:key2}); if(out.length >= 60) break;
+    }
+    setAn({loading:false, items:out, picked:{}, errors:res.flat().filter(r=>r.ok===false).map(r=>r.source)});
+  };
+  const addAnalytics = async () => {
+    const picked = an.items.filter(x => an.picked[x._url]); if(!picked.length) return;
+    setBusy("an");
+    for(const x of picked){
+      // перед добавлением — проверка актуальности объявления и цены на самой площадке
+      let status = "ok", price = Number(x.price)||null, detail = null;
+      try{ const {data} = await supabase.functions.invoke("analytics-live-search-v3",{body:{action:"presentation_detail", url:x._url}}); detail = data; if(!data || data.ok===false || data.error) status = "unavailable"; else if(data.price && Math.abs(Number(data.price)-price) > 1) { status = "changed"; price = Number(data.price); } }catch{ status = "unknown"; }
+      const photos = (detail?.images || x.photo_urls || [x.main_photo_url]).filter(Boolean).slice(0,12);
+      await supabase.from("lead_match_results").insert({lead_id:leadId, source:"analytics", source_url:x._url, dedupe_key:`url:${x._url.toLowerCase()}`, title:x.title, price, currency:x.currency||"USD", price_usd:(x.currency||"USD")==="USD"?price:null,
+        within_budget:!m?.matching_parameters?.budget_usd || (price||0) <= Number(m.matching_parameters.budget_usd), over_budget_by:m?.matching_parameters?.budget_usd && price > Number(m.matching_parameters.budget_usd) ? price - Number(m.matching_parameters.budget_usd) : null,
+        state:status==="unavailable"?"rejected":"selected", check_status:status, checked_at:new Date().toISOString(), position:(results.length+1), matched:[`источник: ${x._src}`],
+        snapshot:{link:x._url, also:x._also||[], city:x.city, district:x.district, address:x.address, complex_name:x.complex_name, property_type:x.property_type, area:x.area, rooms:x.rooms, floor:x.floor, total_floors:x.total_floors, description:String(detail?.description||x.description||"").slice(0,3000), photos}});
+    }
+    await supabase.rpc("lead_match_offer",{p_lead:leadId, p_kind:"analytics", p_answer:"done"});
+    setAn(null); setBusy(""); await load();
+  };
+  const createSelection = async () => {
+    const picked = [...results].filter(r => r.state === "selected").sort((a,b)=>(a.position||0)-(b.position||0));
+    if(!picked.length) return alert(tr(lang,"Отметьте объекты для подборки"));
+    if(!idemRef.current) idemRef.current = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+    setBusy("sel");
+    const items = picked.map(r => r.property_id && r.source !== "analytics" ? {source:"crm", property_id:r.property_id, manager_comment:r.manager_comment||""}
+      : {source:"analytics", dedupe_key:r.dedupe_key, manager_comment:r.manager_comment||"", checked_at:r.checked_at, check_status:r.check_status, data:{...r.snapshot, title:r.title, price:r.price, currency:r.currency}});
+    const expires = selForm.days ? new Date(Date.now()+Number(selForm.days)*86400000).toISOString() : null;
+    const {data, error} = await supabase.rpc("client_selection_create",{p_lead:leadId, p_title:selForm.title, p_items:items, p_opts:{show_client_name:selForm.showName, hide_address:selForm.hideAddress, general_comment:selForm.comment, expires_at:expires, publish:true}, p_idem:idemRef.current});
+    setBusy(""); if(error) return alert(error.message);
+    idemRef.current = null; await load();
+    if(data?.token){ try{ await navigator.clipboard.writeText(amSelectionLink(data.token)); }catch{} alert(tr(lang,"Подборка создана, ссылка скопирована")); }
+  };
+  const checkSel = async (s) => { setBusy("check:"+s.id); const {data,error} = await supabase.rpc("client_selection_check",{p_selection:s.id}); setBusy(""); if(error) return alert(error.message); alert(`${tr(lang,"Проверено")}. ${tr(lang,"Цена изменилась")}: ${data.changed}, ${tr(lang,"неактуальны")}: ${data.unavailable}`); await load(); };
+  const pdfSel = async (s) => {
+    setBusy("pdf:"+s.id);
+    try{ const {data:items} = await supabase.from("client_selection_items").select("*").eq("selection_id", s.id).order("position");
+      const live = (items||[]).filter(i => i.price_status !== "unavailable");
+      const blob = await amBuildSelectionPdf({selection:s, items:live, currentProfile, agencyName, lang:lang==="ru"?"ru":"uk"});
+      const up = await uploadToFirstAvailableBucket(["presentations"], `selections/${leadId}-${s.id}.pdf`, blob, {upsert:true, contentType:"application/pdf", cacheControl:"60"});
+      const url = up?.publicUrl || URL.createObjectURL(blob);
+      if(up?.publicUrl) await supabase.from("client_selections").update({pdf_url:up.publicUrl, updated_at:new Date().toISOString()}).eq("id", s.id);
+      const a = document.createElement("a"); a.href = url; a.download = `${(s.title||"podborka").replace(/[^\wа-яіїєґ-]+/gi,"_")}.pdf`; a.target = "_blank"; a.click();
+      await load();
+    }catch(e){ alert(tr(lang,"Не удалось создать PDF")+": "+(e?.message||e)); } finally { setBusy(""); }
+  };
+  const sendSel = async (s, via) => {
+    const link = amSelectionLink(s.token), text = `${s.title}: ${link}`;
+    const urls = {telegram:`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(s.title)}`, viber:`viber://forward?text=${encodeURIComponent(text)}`, whatsapp:`https://wa.me/?text=${encodeURIComponent(text)}`};
+    if(via === "copy"){ try{ await navigator.clipboard.writeText(link); }catch{} } else window.open(urls[via], "_blank");
+    await supabase.rpc("client_selection_mark_sent",{p_selection:s.id, p_via:via}); await load();
+  };
+  const toggleSel = async (s) => { await supabase.from("client_selections").update({status:s.status==="disabled"?"published":"disabled", updated_at:new Date().toISOString()}).eq("id", s.id); await load(); };
+
+  const pr = prof || {}; const D = editProf ? draft : pr;
+  const F = (k, label, type="text", opts) => <Field label={tr(lang,label)}>{opts
+    ? <select className="input" disabled={!editProf} value={D[k]??""} onChange={e=>setDraft({...draft,[k]:e.target.value})}>{opts.map(([v,t])=><option key={v} value={v}>{tr(lang,t)}</option>)}</select>
+    : <input className="input" type={type} disabled={!editProf} value={D[k]??""} onChange={e=>setDraft({...draft,[k]:e.target.value})}/>}</Field>;
+  const req = (editProf ? draft.required : pr.required) || ["deal_type","property_type","city","budget"];
+  const toggleReq = k => setDraft({...draft, required: req.includes(k) ? req.filter(x=>x!==k) : [...req,k]});
+  const visible = [...results].sort((a,b)=>(a.position||0)-(b.position||0)).filter(r => showRejected || r.state !== "rejected");
+  const inBudget = visible.filter(r => r.within_budget), over = visible.filter(r => !r.within_budget);
+  const selectedCount = results.filter(r => r.state === "selected").length;
+  const evOf = (sid, kind) => events.filter(e => e.selection_id === sid && e.kind === kind);
+  const ResultRow = ({r}) => <div className="card" style={{margin:"6px 0", padding:12, opacity:r.state==="rejected"?.55:1, borderColor:r.state==="selected"?"var(--accent)":undefined}}>
+    <div style={{display:"flex", gap:10, alignItems:"flex-start"}}>
+      <input type="checkbox" style={{marginTop:4, width:20, height:20, flex:"0 0 auto"}} checked={r.state==="selected"} onChange={e=>setState(r, e.target.checked?"selected":"suggested")}/>
+      <div style={{flex:1, minWidth:0}}><b>{r.title || "Объект"}</b> · <b style={{color:"var(--accent)"}}>{amMoney(r.price, r.currency)}</b>{r.currency!=="USD"&&r.price_usd?` (${amMoney(r.price_usd)})`:""}
+        <div className="muted" style={{fontSize:13, marginTop:2}}>{[r.snapshot?.city, r.snapshot?.district, r.snapshot?.rooms&&`${r.snapshot.rooms} комн.`, r.snapshot?.area&&`${r.snapshot.area} м²`, r.snapshot?.floor&&`${r.snapshot.floor}${r.snapshot?.total_floors?`/${r.snapshot.total_floors}`:""} эт.`].filter(Boolean).join(" · ")} · {r.source==="crm"?tr(lang,"база CRM"):r.source==="analytics"?tr(lang,"Аналитика"):tr(lang,"вручную")}</div></div>
+    </div>
+    <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:6}}><button className="chip" title="↑" onClick={()=>move(r,-1)}>↑</button><button className="chip" title="↓" onClick={()=>move(r,1)}>↓</button>
+      <button className="chip" onClick={()=>setState(r, r.state==="rejected"?"suggested":"rejected")}>{r.state==="rejected"?tr(lang,"Вернуть"):tr(lang,"Не подходит")}</button></div>
+    <div className="chips" style={{margin:"6px 0",flexWrap:"wrap"}}>
+      {(r.matched||[]).map(x=><span key={"m"+x} className="chip" style={{background:"rgba(34,197,94,.15)"}}>✓ {tr(lang,x)}</span>)}
+      {(r.unmatched||[]).map(x=><span key={"u"+x} className="chip" style={{background:"rgba(239,68,68,.15)"}}>✗ {tr(lang,x)}</span>)}
+      {!r.within_budget && r.over_budget_by>0 && <span className="chip" style={{background:"rgba(245,158,11,.25)",fontWeight:800}}>{tr(lang,"Выше бюджета на")} {amMoney(r.over_budget_by)}</span>}
+      {r.check_status && <span className="chip">{r.check_status==="ok"?"✓ "+tr(lang,"актуально"):r.check_status==="changed"?"⚠ "+tr(lang,"цена изменилась"):r.check_status==="unavailable"?"⛔ "+tr(lang,"снято с продажи"):"? "+tr(lang,"не проверено")}</span>}
+      {r.source_url && <a className="chip" href={r.source_url} target="_blank" rel="noreferrer">↗ {tr(lang,"объявление")}</a>}
+    </div>
+    <input className="input" placeholder={tr(lang,"Комментарий для клиента к этому объекту")} defaultValue={r.manager_comment||""} onBlur={e=>{ if(e.target.value!==(r.manager_comment||"")) setComment(r, e.target.value); }}/>
+  </div>;
+
+  return <div className="card" style={{display:"grid", gap:10, minWidth:0, overflowWrap:"anywhere"}}>
+    <div className="row"><h3 style={{margin:0}}>🤖 {tr(lang,"Автоподбор")}</h3>
+      <span className="chip active">{m ? tr(lang, AM_STATUS[busy==="run"?"running":m.status] || m.status) : tr(lang,"Не запускался")}</span></div>
+    {!m && <p className="muted">{tr(lang,"Автоподбор запускается при первом назначении клиента менеджеру. Для клиентов, распределённых раньше, его может запустить администратор.")}</p>}
+    {m && <small className="muted">{tr(lang,"Назначен")}: {m.assigned_manager_name || m.assigned_manager_email || "—"} · {m.first_assignment_at?new Date(m.first_assignment_at).toLocaleString("uk-UA"):"—"} · {tr(lang,"запуск")}: {m.initial_matching_started_at?new Date(m.initial_matching_started_at).toLocaleString("uk-UA"):"—"} · {tr(lang,"обновлено")}: {m.updated_at?new Date(m.updated_at).toLocaleString("uk-UA"):"—"}</small>}
+
+    {/* параметры подбора */}
+    <details open={editProf || !prof}><summary style={{cursor:"pointer",fontWeight:800}}>{tr(lang,"Параметры подбора")} {prof?.filled_from==="notes"&&<small className="muted">({tr(lang,"из заметки — проверьте")})</small>}</summary>
+      <div className="formGrid" style={{marginTop:8}}>
+        {F("deal_type","Тип сделки","text",[["",""],["Продажа","Продажа"],["Аренда","Аренда"]])}
+        {F("property_type","Тип недвижимости","text",[["",""],["Квартира","Квартира"],["Дом","Дом"],["Участок","Участок"],["Коммерция","Коммерция"]])}
+        {F("market","Рынок","text",[["",""],["Новостройка","Новостройка"],["Вторичка","Вторичка"]])}
+        {F("city","Город / населённый пункт")}{F("district","Район")}{F("complex_name","ЖК")}
+        {F("rooms_min","Комнат от","number")}{F("rooms_max","Комнат до","number")}
+        {F("area_from","Площадь от, м²","number")}{F("area_to","Площадь до, м²","number")}
+        {F("floor_from","Этаж от","number")}{F("floor_to","Этаж до","number")}
+        {F("floors_from","Этажность от","number")}{F("floors_to","Этажность до","number")}
+        {F("condition","Состояние / ремонт")}{F("year_from","Год постройки от","number")}
+        {F("land_from","Участок от, соток","number")}{F("land_to","Участок до, соток","number")}
+        {F("budget","Бюджет","number")}{F("currency","Валюта","text",[["USD","USD"],["UAH","UAH"],["EUR","EUR"]])}
+        {F("payment_type","Способ оплаты","text",[["unknown","Не указан"],["full","100% оплата"],["installment","Рассрочка"],["mortgage","Ипотека"]])}
+        {F("first_payment","Первый взнос","number")}{F("installment_months","Срок рассрочки, мес.","number")}{F("monthly_payment","Ежемесячный платёж","number")}
+      </div>
+      <div className="chips" style={{marginTop:6,flexWrap:"wrap"}}><small className="muted" style={{alignSelf:"center"}}>{tr(lang,"Обязательные (строго)")}:</small>
+        {[["deal_type","Тип сделки"],["property_type","Тип недвижимости"],["city","Город"],["budget","Бюджет"],["rooms","Комнаты"],["district","Район"],["complex_name","ЖК"]].map(([k,t])=>
+          <label key={k} className={cn("chip", req.includes(k)&&"active")}><input type="checkbox" disabled={!editProf} checked={req.includes(k)} onChange={()=>toggleReq(k)}/> {tr(lang,t)}</label>)}</div>
+      <div className="row" style={{gap:8, marginTop:8}}>{editProf
+        ? <><Button disabled={busy==="profile"} onClick={saveProfile}>{tr(lang,"Сохранить параметры и обновить подбор")}</Button><Button variant="soft" onClick={()=>setEditProf(false)}>{tr(lang,"Отмена")}</Button></>
+        : <Button variant="soft" onClick={async()=>{ const p = prof || await amEnsureProfile(lead); setProf(p); setDraft({...p}); setEditProf(true); }}>✏️ {tr(lang,"Изменить параметры")}</Button>}</div>
+    </details>
+
+    {m && <div style={{display:"grid", gap:4}}>
+      <small>{tr(lang,"Бюджет клиента")}: <b>{amMoney(pr.budget, pr.currency)}</b>{pr.currency&&pr.currency!=="USD"&&m.matching_parameters?.budget_usd?` = ${amMoney(m.matching_parameters.budget_usd)}`:""} · {tr(lang,"лимит подбора")}: <b>{amMoney(m.matching_parameters?.limit_usd)}</b>{m.rate_info?.UAH_PER_USD&&pr.currency!=="USD"?` · ${tr(lang,"курс")} ${m.rate_info.source||"НБУ"} ${m.rate_info.date||""}: ${m.rate_info.UAH_PER_USD} ₴/$`:""}</small>
+      <small>{tr(lang,"Расширение бюджета на +10 000 $")}: <b>{m.budget_extension_status==="yes"?tr(lang,"да"):m.budget_extension_status==="no"?tr(lang,"нет"):m.budget_extension_status==="later"?tr(lang,"решить позже"):tr(lang,"не решено")}</b>{m.budget_extension_answered_at?` · ${new Date(m.budget_extension_answered_at).toLocaleString("uk-UA")} · ${m.budget_extension_answered_by||""}`:""}</small>
+      {pr.budget>0 && ["pending","later"].includes(m.budget_extension_status) && m.status!=="awaiting_params" && <div className={cn("card", remindNow&&"amber")} style={{padding:10,minWidth:0,overflowWrap:"anywhere"}}>
+        <b>{tr(lang,"Добавить в подборку объекты стоимостью до")} {amMoney(Number(m.matching_parameters?.budget_usd||pr.budget)+Number(m.budget_extension_amount||10000))}?</b>
+        <div className="chips" style={{marginTop:6,flexWrap:"wrap"}}><button className="chip" disabled={!!busy} onClick={()=>answer("yes")}>{tr(lang,"Да, показать до +10 000 $")}</button><button className="chip" disabled={!!busy} onClick={()=>answer("no")}>{tr(lang,"Нет, оставить бюджет клиента")}</button>{m.budget_extension_status!=="later"&&<button className="chip" disabled={!!busy} onClick={()=>answer("later")}>{tr(lang,"Решить позже")}</button>}</div></div>}
+      {m.newbuild_offer_status==="waiting_connection" && <small>🏗 {tr(lang,AM_NEWBUILD_WAIT)}. {tr(lang,"Параметры рассрочки сохранены.")}</small>}
+      {m.status==="awaiting_params" && <small style={{color:"#f59e0b"}}>⚠ {m.no_results_reason}</small>}
+      {m.status==="source_error" && <small style={{color:"#ef4444"}}>⚠ {m.matching_error}</small>}
+      {["none","newbuild_waiting"].includes(m.status) && m.no_results_reason && <small style={{color:"#f59e0b"}}>ℹ {m.no_results_reason}</small>}
+    </div>}
+
+    <div className="chips" style={{flexWrap:"wrap"}}>
+      {m && <button className="chip" disabled={!!busy} onClick={()=>run(false)}>↻ {tr(lang,"Обновить подбор")}</button>}
+      {isAdmin && <button className="chip" disabled={!!busy} onClick={()=>{ if(window.confirm(tr(lang,"Запустить автоподбор повторно?"))) run(true); }}>⚙ {tr(lang,m?"Повторно запустить (админ)":"Запустить автоподбор (админ)")}</button>}
+      {m && <button className="chip" disabled={!!busy || an?.loading} onClick={searchAnalytics}>📊 {tr(lang,"Найти в «Аналитике»")}{m.payment_type==="installment"||m.payment_type==="mortgage"?` (${tr(lang,"вручную")})`:""}</button>}
+    </div>
+    {busy==="run" && <p className="muted">⏳ {tr(lang,"Подбор выполняется…")}</p>}
+
+    {an && <div className="card" style={{padding:10}}>
+      <div className="row"><b>{tr(lang,"Варианты из «Аналитики»")}</b><button className="icon" onClick={()=>setAn(null)}>×</button></div>
+      {an.loading ? <p className="muted">⏳ {tr(lang,"Ищу на площадках по параметрам клиента…")}</p> : <>
+        {an.errors?.length>0 && <small className="muted">{tr(lang,"Не ответили")}: {an.errors.join(", ")}</small>}
+        {an.items.length===0 && <p className="muted">{tr(lang,"Новых вариантов не найдено")}</p>}
+        {an.items.map(x=><div key={x._url} style={{display:"flex",gap:10,margin:"8px 0",alignItems:"flex-start"}}><input type="checkbox" style={{marginTop:4,width:20,height:20,flex:"0 0 auto"}} checked={!!an.picked[x._url]} onChange={e=>setAn({...an,picked:{...an.picked,[x._url]:e.target.checked}})}/>
+          <div style={{flex:1,minWidth:0}}><b>{x.title}</b> · {amMoney(x.price,x.currency)}<div className="muted" style={{fontSize:13}}>{x._src}{x._also?.length?` + ${x._also.map(a=>a.source).join(", ")} (${tr(lang,"тот же объект")})`:""} · {[x.district,x.rooms&&`${x.rooms} комн.`,x.area&&`${x.area} м²`].filter(Boolean).join(" · ")} <a href={x._url} target="_blank" rel="noreferrer">↗</a></div></div></div>)}
+        {an.items.length>0 && <Button disabled={busy==="an"} onClick={addAnalytics}>{busy==="an"?"⏳":"✓"} {tr(lang,"Проверить актуальность и добавить выбранные")}</Button>}
+      </>}
+    </div>}
+
+    {m && results.length>0 && <div>
+      <div className="row"><b>{tr(lang,"Найденные варианты")}: {results.filter(r=>r.state!=="rejected").length}</b><label className="chip"><input type="checkbox" checked={showRejected} onChange={e=>setShowRejected(e.target.checked)}/> {tr(lang,"показать исключённые")}</label></div>
+      {inBudget.map(r=><ResultRow key={r.id} r={r}/>)}
+      {over.length>0 && <><b style={{display:"block",margin:"10px 0 4px",color:"#f59e0b"}}>{tr(lang,"Выше бюджета клиента")}</b>{over.map(r=><ResultRow key={r.id} r={r}/>)}</>}
+    </div>}
+    {m && <div className="row" style={{gap:6}}><select className="input" value={manualId} onChange={e=>setManualId(e.target.value)}><option value="">{tr(lang,"+ Добавить объект из базы вручную")}</option>{properties.filter(p=>isDbLeadId(p.id)).map(p=><option key={p.id} value={p.id}>{p.title} · {amMoney(p.price,p.currency||"USD")}</option>)}</select>{manualId&&<Button variant="soft" onClick={addManual}>{tr(lang,"Добавить")}</Button>}</div>}
+
+    {m && selectedCount>0 && <div className="card" style={{padding:10, display:"grid", gap:6}}>
+      <b>{tr(lang,"Подборка для клиента")} · {tr(lang,"выбрано")} {selectedCount}</b>
+      <input className="input" value={selForm.title} onChange={e=>setSelForm({...selForm,title:e.target.value})} placeholder={tr(lang,"Название подборки")}/>
+      <textarea className="input" value={selForm.comment} onChange={e=>setSelForm({...selForm,comment:e.target.value})} placeholder={tr(lang,"Общий комментарий для клиента")}/>
+      <div className="chips" style={{flexWrap:"wrap"}}><label className={cn("chip",selForm.showName&&"active")}><input type="checkbox" checked={selForm.showName} onChange={e=>setSelForm({...selForm,showName:e.target.checked})}/> {tr(lang,"Показать имя клиента")}</label>
+        <label className={cn("chip",selForm.hideAddress&&"active")}><input type="checkbox" checked={selForm.hideAddress} onChange={e=>setSelForm({...selForm,hideAddress:e.target.checked})}/> {tr(lang,"Скрыть адрес")}</label>
+        <select className="input" style={{width:"auto"}} value={selForm.days} onChange={e=>setSelForm({...selForm,days:e.target.value})}><option value="7">{tr(lang,"Ссылка: 7 дней")}</option><option value="30">{tr(lang,"Ссылка: 30 дней")}</option><option value="">{tr(lang,"Ссылка: без срока")}</option></select></div>
+      <Button disabled={busy==="sel"} onClick={createSelection}>{busy==="sel"?"⏳":"✨"} {tr(lang,"Создать подборку")}</Button>
+    </div>}
+
+    {sels.length>0 && <div style={{display:"grid", gap:6}}><b>{tr(lang,"Подборки клиента")}</b>
+      {sels.map(s=><div key={s.id} className="card" style={{padding:10}}>
+        <div className="row"><b>{s.title}</b><span className="chip">{s.status==="disabled"?tr(lang,"ссылка отключена"):s.sent_at?tr(lang,"отправлено"):tr(lang,"создана")}</span></div>
+        <small className="muted">{new Date(s.created_at).toLocaleString("uk-UA")} · {tr(lang,"открытий")}: {s.open_count||0}{s.last_opened_at?` (${new Date(s.last_opened_at).toLocaleString("uk-UA")})`:""} · 👍 {evOf(s.id,"interested").length} · 👎 {evOf(s.id,"not_suitable").length}{s.expires_at?` · ${tr(lang,"до")} ${new Date(s.expires_at).toLocaleDateString("uk-UA")}`:""}</small>
+        {evOf(s.id,"comment").slice(0,3).map((e,i)=><small key={i} style={{display:"block"}}>💬 {e.comment}</small>)}
+        <div className="chips" style={{marginTop:6,flexWrap:"wrap"}}>
+          <button className="chip" onClick={()=>sendSel(s,"copy")}>🔗 {tr(lang,"Копировать ссылку")}</button>
+          <a className="chip" href={amSelectionLink(s.token)} target="_blank" rel="noreferrer">👁 {tr(lang,"Открыть")}</a>
+          <button className="chip" disabled={busy==="check:"+s.id} onClick={()=>checkSel(s)}>{busy==="check:"+s.id?"⏳":"✓"} {tr(lang,"Проверить цены и актуальность")}</button>
+          <button className="chip" disabled={busy==="pdf:"+s.id} onClick={()=>pdfSel(s)}>{busy==="pdf:"+s.id?"⏳":"⬇"} PDF</button>
+          <button className="chip" onClick={()=>sendSel(s,"telegram")}>Telegram</button><button className="chip" onClick={()=>sendSel(s,"viber")}>Viber</button><button className="chip" onClick={()=>sendSel(s,"whatsapp")}>WhatsApp</button>
+          <button className="chip" onClick={()=>toggleSel(s)}>{s.status==="disabled"?tr(lang,"Включить ссылку"):tr(lang,"Отключить ссылку")}</button>
+        </div></div>)}</div>}
+
+    {log.length>0 && <details><summary style={{cursor:"pointer"}}>{tr(lang,"История автоподбора")}</summary>
+      {log.map(l=><small key={l.id} style={{display:"block",margin:"3px 0"}}>{new Date(l.created_at).toLocaleString("uk-UA")} · {l.text}{l.actor?` · ${l.actor}`:""}</small>)}</details>}
+  </div>;
+}
+
 function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile,onOpenLead,properties=[],agencyName="",lang="ru"}) {
   const [local,setLocal] = useState(lead);
   const [showMatch,setShowMatch] = useState(false);
@@ -2070,6 +2428,7 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
     <Field label="Заметки менеджера"><textarea value={local.notes} onChange={e=>setLocal({...local,notes:e.target.value})}/></Field>
     <Button className="full matchOpenBtn" onClick={()=>setShowMatch(true)}>🔎 Подобрать объекты</Button>
     {showMatch && <ClientMatch lead={local} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setShowMatch(false)}/>}
+    <AutoMatchBlock lead={lead} role={role} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang}/>
 
     <div className="card">
       <h3>История работы с клиентом</h3>
@@ -9207,6 +9566,7 @@ export default function App(){
         {page==="newbuilds"&&<NewBuildsHub currentProfile={currentProfile} role={role} lang={lang}/>}
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
+        {currentProfile?.email&&<FirstTouchWatcher currentProfile={currentProfile} leads={leads} onOpenLead={openLeadById} lang={lang}/>}
         {lead&&<LeadModal key={lead.id} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang}/>} 
         {property&&<PropertyModal property={property} setProperties={setProperties} onClose={()=>setProperty(null)} users={users} currentProfile={currentProfile} role={role} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}  
       </main>
