@@ -644,3 +644,49 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 .nbBuilderIcon{font-size:30px}
 .nbSteps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:4px;font-size:14px}
 .matchItem .nbInstal{color:var(--accent,#F5C518);font-weight:700}
+
+/* ===== История работы с клиентом: каждый комментарий своим цветом, ответ директора — ярко ===== */
+.lhList{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.lhItem{border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.lhComment,.lhQuestion{border:2px solid var(--lh,#3b82f6);border-left-width:7px;background:color-mix(in srgb,var(--lh,#3b82f6) 14%,var(--card,#18181B))}
+.lhQuestion{--lh:#f59e0b}
+.lhHead{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.lhHead b{color:var(--lh,#3b82f6);font-size:14px;filter:brightness(1.25)}
+.lhHead small,.lhItem small{font-size:12px;opacity:.85}
+.lhText{white-space:pre-wrap;line-height:1.45;font-size:15px}
+.lhSys{flex-direction:row;align-items:baseline;gap:8px;padding:6px 10px;border:1.5px dashed var(--line,#55555F);font-size:13px;opacity:.9;flex-wrap:wrap}
+.lhSys small{margin-left:auto}
+.lh-stage{border-color:#8b5cf6;color:inherit}
+.lh-event{border-color:#0ea5e9}
+.lhReply{background:linear-gradient(135deg,#FFE600,#FFB300);color:#111!important;border:3px solid #ff3b30;box-shadow:0 0 0 4px rgba(255,59,48,.25),0 10px 28px rgba(255,180,0,.35);padding:14px 16px}
+.lhReply .lhText{font-size:17px;font-weight:800;color:#111}
+.lhReply small{color:#3a2a00;opacity:1;font-weight:700}
+.lhReplyHead{font-size:13px;font-weight:900;letter-spacing:.06em;background:#ff3b30;color:#fff;align-self:flex-start;border-radius:999px;padding:4px 12px}
+/* вопрос директору в карточке клиента */
+.helpInCard{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.helpQ{border-left:6px solid #f59e0b;background:rgba(245,158,11,.14);border-radius:12px;padding:10px 12px}
+.helpQ b{color:#f59e0b}
+.helpQ p{margin:4px 0 0;white-space:pre-wrap}
+.helpWait{margin:0;font-weight:700;opacity:.9}
+/* раздел «Помощь менеджерам» */
+.helpCard{display:flex;flex-direction:column;gap:10px}
+.helpCard.open{border:2px solid #f59e0b!important}
+.helpStatus{font-weight:900;font-size:13px;border-radius:999px;padding:6px 12px;white-space:nowrap}
+.helpStatus.wait{background:#f59e0b;color:#111}
+.helpStatus.done{background:rgba(34,197,94,.2);color:#4ade80}
+.helpHistToggle{align-self:flex-start;border:1.5px solid var(--line,#55555F);background:none;color:inherit;border-radius:10px;padding:8px 12px;font:inherit;font-weight:800;cursor:pointer}
+.helpHist{max-height:460px;overflow:auto;padding-right:4px}
+/* баннеры оповещений (поверх всех экранов) */
+.helpAlerts{position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;width:min(560px,calc(100vw - 20px))}
+.helpAlert{border-radius:16px;padding:14px 16px;box-shadow:0 14px 40px rgba(0,0,0,.45);animation:helpPop .35s ease-out,helpGlow 1.6s ease-in-out 3}
+.helpAlert.reply{background:linear-gradient(135deg,#FFE600,#FFB300);color:#111;border:3px solid #ff3b30}
+.helpAlert.question{background:#1f1300;color:#fff;border:3px solid #f59e0b}
+.helpAlertHead{font-weight:900;font-size:15px}
+.helpAlertText{margin:6px 0 10px;font-size:16px;font-weight:700;white-space:pre-wrap;max-height:30vh;overflow:auto}
+.helpAlertBtns{display:flex;gap:8px;flex-wrap:wrap}
+.helpAlertBtns button{border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:900;cursor:pointer;background:#111;color:#FFE600}
+.helpAlert.question .helpAlertBtns button{background:#f59e0b;color:#111}
+.helpAlertBtns button.ghost{background:transparent;color:inherit;border:2px solid currentColor}
+@keyframes helpPop{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
+@keyframes helpGlow{0%,100%{box-shadow:0 14px 40px rgba(0,0,0,.45)}50%{box-shadow:0 0 0 6px rgba(255,59,48,.45),0 14px 40px rgba(0,0,0,.45)}}
+.lhItem.lhReply small,.lhItem.lhReply .lhHead small{color:#3a2a00!important;opacity:1!important;font-weight:800}
