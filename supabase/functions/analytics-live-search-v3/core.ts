@@ -610,7 +610,7 @@ async function rieltorCityLive(st:Settlement){
   const R:any={а:"a",б:"b",в:"v",г:"g",ґ:"g",д:"d",е:"e",є:"e",ж:"zh",з:"z",и:"y",і:"i",ї:"i",й:"j",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sch",ь:"",ю:"ju",я:"ja"};
   const base=normUk(st.uk).replace(/\s*\(.*?\)\s*/g," ").trim();const t1=base.split("").map(c=>R[c]??c).join("").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
   const stem=normUk(st.uk).slice(0,Math.max(4,normUk(st.uk).length-3));
-  for(const cand of [...new Set([t1,t1.replace(/ivka$/,"ovka"),t1.replace(/ivka$/,"evka"),t1.replace(/ne$/,"noe"),t1.replace(/ske$/,"skoe"),t1.replace(/iv$/,"ov"),t1.replace(/i/,"e"),t1.replace(/i/,"e").replace(/yn$/,"in")])]){const c=await checkPage(`https://rieltor.ua/${cand}/flats-sale/`);if(c.ok&&normUk(c.title).includes(stem)&&!/києві/i.test(c.title))return cand}
+  for(const cand of [...new Set([t1,t1.replace(/ivka$/,"ovka"),t1.replace(/ivka$/,"evka"),t1.replace(/ne$/,"noe"),t1.replace(/ske$/,"skoe"),t1.replace(/iv$/,"ov"),t1.replace(/i/,"e"),t1.replace(/i/,"e").replace(/yn$/,"in"),t1.replace(/y/g,"i")])]){const c=await checkPage(`https://rieltor.ua/${cand}/flats-sale/`);if(c.ok&&normUk(c.title).includes(stem)&&!/києві/i.test(c.title))return cand}
   return"";
 }
 // ===== Районы городов: район передаётся самой площадке =====
