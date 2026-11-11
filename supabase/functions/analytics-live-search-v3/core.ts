@@ -287,6 +287,8 @@ async function rieltorComplexFromIndex(f:Filters){
   const letters=/[0-9]/.test(first)?["0-9"]:/[A-Z]/.test(first)?["a-z"]:[first,...(alt[first]||[])];
   const wanted=complexCanon(raw);let cands:{name:string,id:string,score:number}[]=[];
   for(const L of letters){for(const x of await rieltorIndexLetter(slug,L)){const c=complexCanon(x.name);const score=c===wanted?3:complexMatches(x.name,raw)?((c.includes(wanted)||wanted.includes(c))?2:1):0;if(score)cands.push({...x,score})}}
+  // название в CRM кириллицей, а на площадке латиницей (Кадорр Сити → KADORR City) — смотрим и латинский раздел
+  if(!cands.length&&!letters.includes("a-z")){for(const x of await rieltorIndexLetter(slug,"a-z")){if(complexMatches(x.name,raw))cands.push({...x,score:1})}}
   if(!cands.length)return"";
   cands.sort((a,b)=>b.score-a.score);cands=cands.filter(c=>c.score===cands[0].score).slice(0,5);
   let best="",bestCount=0;
