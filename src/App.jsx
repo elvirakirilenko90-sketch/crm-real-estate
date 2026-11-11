@@ -5434,7 +5434,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     // ремонт, участок, год, госпрограммы): повторно их не проверяем, иначе разные «угадывания» по тексту
     // давали «найдено 37», а в списке — ни одного. Интерфейс сам проверяет только то, чего сервер не знает.
     const checks=[
-      ["Без цены",p>0],
+      ["Без цены",live||p>0],
       ["Вкладка площадки",activeTabMatches(x)],
       ["Период",inMarketPeriod(x)],
       ["Быстрый поиск",searchMatches(x)],
@@ -5455,7 +5455,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       ["Тип сделки",dealFilter==="Все"||dealCanon(x.deal_type)===dealCanon(dealFilter)],
       ["Выбранные источники",!selectedSources.length||selectedSources.some(name=>sourceMatches(x,name))],
       ["Комнаты",live||roomsFilter==="Все"||(roomsFilter==="4+"?num(x.rooms)>=4:String(num(x.rooms))===roomsFilter)],
-      ["Цена",!priceFilterActive||(p>0&&(!priceFrom||p>=num(priceFrom))&&(!priceTo||p<=num(priceTo)))],
+      ["Цена",live||!priceFilterActive||(p>0&&(!priceFrom||p>=num(priceFrom))&&(!priceTo||p<=num(priceTo)))],
       ["Площадь",live||!areaFilterActive||(a>0&&(!areaFrom||a>=num(areaFrom))&&(!areaTo||a<=num(areaTo)))],
     ];
     const failed=checks.find(([,ok])=>!ok);
