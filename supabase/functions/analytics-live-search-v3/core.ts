@@ -269,14 +269,14 @@ const resolvedRieltorComplexCache=new Map<string,{url:string;at:number}>();
 // ЖК на RIELTOR.UA по собственному алфавитному каталогу площадки (/novostroyki/<буква>/):
 // там у каждого ЖК номер (-nID). Проверяем кандидатов в нужном городе и берём тот, где есть объявления.
 const rieltorIndexCache=new Map<string,{list:{name:string,id:string}[],at:number}>();
-async function rieltorIndexLetter(letter:string){
-  const key=letter,c=rieltorIndexCache.get(key);if(c&&Date.now()-c.at<6*3600000)return c.list;
-  const base=letter==="a-z"?"https://rieltor.ua/novostroyki/a-z/":`https://rieltor.ua/novostroyki/${encodeURIComponent(letter)}/`;
+async function rieltorIndexLetter(slug:string,letter:string){
+  const key=`${slug}|${letter}`,c=rieltorIndexCache.get(key);if(c&&Date.now()-c.at<6*3600000)return c.list;
+  const base=`https://rieltor.ua/${slug}/novostroyki/${letter==="a-z"?"a-z":encodeURIComponent(letter)}/`;
   const list:{name:string,id:string}[]=[];const seen=new Set<string>();
-  const grab=(html:string)=>{for(const m of html.matchAll(/href=["'](?:https:\/\/rieltor\.ua)?\/flats-sale\/([^"'\/]+)-n(\d+)\/?["']/gi)){if(seen.has(m[2]))continue;seen.add(m[2]);let name=m[1];try{name=decodeURIComponent(name.replace(/\+/g," "))}catch{}list.push({name,id:m[2]})}};
+  const grab=(html:string)=>{for(const m of html.matchAll(/href=["'](?:https:\/\/rieltor\.ua)?(?:\/[a-z0-9-]+)?\/flats-sale\/([^"'\/]+)-n(\d+)\/?["']/gi)){if(seen.has(m[2]))continue;seen.add(m[2]);let name=m[1];try{name=decodeURIComponent(name.replace(/\+/g," "))}catch{}list.push({name,id:m[2]})}};
   const r=await politeFetch(base);if(!r.ok)return list;const html=await r.text();grab(html);
   const last=Math.min(8,Math.max(1,...[...html.matchAll(/[?&]page=(\d+)/g)].map(m=>Number(m[1]))));
-  for(let p=2;p<=last;p++){await sleep(300);const rp=await politeFetch(`${base}?page=${p}`);if(rp.ok)grab(await rp.text())}
+  for(let p=2;p<=last;p++){await sleep(300);const rp=await politeFetch(`${base}?per-page=40&page=${p}`);if(rp.ok)grab(await rp.text())}
   rieltorIndexCache.set(key,{list,at:Date.now()});return list;
 }
 async function rieltorComplexFromIndex(f:Filters){
@@ -284,9 +284,9 @@ async function rieltorComplexFromIndex(f:Filters){
   const raw=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк|Жк)(?=\s|$)/g," ").replace(/[«»"“”]/g,"").trim();if(!raw)return"";
   const first=(raw.match(/[A-Za-zА-ЯЁЄІЇҐа-яёєіїґ0-9]/)?.[0]||"").toUpperCase();if(!first)return"";
   const alt:any={"Э":["Е"],"Ы":["И"],"Ё":["Е"],"Е":["Є"],"И":["І"],"І":["И"],"Г":["Ґ"]};
-  const letters=/[A-Z0-9]/.test(first)?["a-z"]:[first,...(alt[first]||[])];
+  const letters=/[0-9]/.test(first)?["0-9"]:/[A-Z]/.test(first)?["a-z"]:[first,...(alt[first]||[])];
   const wanted=complexCanon(raw);let cands:{name:string,id:string,score:number}[]=[];
-  for(const L of letters){for(const x of await rieltorIndexLetter(L)){const c=complexCanon(x.name);const score=c===wanted?3:complexMatches(x.name,raw)?((c.includes(wanted)||wanted.includes(c))?2:1):0;if(score)cands.push({...x,score})}}
+  for(const L of letters){for(const x of await rieltorIndexLetter(slug,L)){const c=complexCanon(x.name);const score=c===wanted?3:complexMatches(x.name,raw)?((c.includes(wanted)||wanted.includes(c))?2:1):0;if(score)cands.push({...x,score})}}
   if(!cands.length)return"";
   cands.sort((a,b)=>b.score-a.score);cands=cands.filter(c=>c.score===cands[0].score).slice(0,5);
   let best="",bestCount=0;
