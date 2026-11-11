@@ -4891,7 +4891,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     if(error)throw error;
     const results=Array.isArray(data?.results)?data.results:[];
     const mergedResults=[...results,...storedResults];
-    setLiveSourceMeta(mergedResults.map(x=>({source:x.source,total:x.total,exact:x.count_is_exact!==false,ok:x.ok!==false,error:x.error||"",url:x.url||"",pageItemCount:Number(x.page_item_count||(x.items||[]).length||0),totalPages:Number(x.total_pages||0),hasMore:x.has_more!==false,storedReadonly:!!x.stored_readonly})));
+    setLiveSourceMeta(mergedResults.map(x=>({source:x.source,total:x.total,exact:x.count_is_exact!==false,capped:!!x.count_capped,ok:x.ok!==false,error:x.error||"",url:x.url||"",pageItemCount:Number(x.page_item_count||(x.items||[]).length||0),totalPages:Number(x.total_pages||0),hasMore:x.has_more!==false,storedReadonly:!!x.stored_readonly})));
     return mergedResults.flatMap(x=>(x.items||[]).map((row,index)=>({...row,
       id:`live-${x.source}-${row.external_id||row.id||index}`,origin:row.origin||"live",live_total:x.total,
       last_seen_at:row.last_seen_at||new Date().toISOString(),
@@ -5510,7 +5510,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const liveTotals=liveSourceMeta.filter(x=>x.ok&&Number(x.total)>0);
   const liveTotal=liveTotals.reduce((sum,x)=>sum+Number(x.total||0),0);
   const maxLivePages=Math.max(1,...liveSourceMeta.filter(x=>x.ok).map(x=>Number(x.totalPages||0)).filter(Boolean));
-  const sourceSummary=(()=>{const m=new Map();liveSourceMeta.filter(x=>x.ok).forEach(x=>m.set(x.source,[x.source,Number(x.total||x.pageItemCount||0),x.exact]));Object.entries(sourceCounts).forEach(([name,count])=>{if(!m.has(name))m.set(name,[name,count,true]);});return [...m.values()].filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);})();
+  const sourceSummary=(()=>{const m=new Map();liveSourceMeta.filter(x=>x.ok).forEach(x=>m.set(x.source,[x.source,Number(x.total||x.pageItemCount||0),x.exact,x.capped]));Object.entries(sourceCounts).forEach(([name,count])=>{if(!m.has(name))m.set(name,[name,count,true]);});return [...m.values()].filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);})();
 
   const normalizeUrl=v=>String(v||"").trim();
   const sourceUrlInUsd=(value,source="")=>{
@@ -5902,7 +5902,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       <div className="stat" style={{minHeight:110}}><span>{tr(lang,"ВАЛЮТА")}</span><div style={{display:"flex",gap:6,marginTop:6}}>{[["USD","$"],["UAH","₴"]].map(([c,l])=><button key={c} className={cn("chip",displayCurrency===c&&"active")} style={{fontWeight:900,minWidth:54}} onClick={()=>setDisplayCurrency(c)}>{l} {c}</button>)}</div><small className="muted">{fxRates.UAH_PER_USD>0?<>{tr(lang,"Курс НБУ")} {fxRates.date}: 1 $ = {fxRates.UAH_PER_USD.toFixed(2)} ₴</>:tr(lang,"Курс НБУ загружается…")}</small></div>
       <div className="stat" style={{minHeight:110}}><span>НОВЫХ ЗА 7 ДНЕЙ</span><b style={{fontSize:34}}>{newCount}</b></div>
       <div className="stat" style={{minHeight:110}}><span>ИСЧЕЗЛО / НЕАКТИВНО</span><b style={{fontSize:34}}>{inactiveCount}</b></div>
-      {sourceSummary.map(([name,count,exact])=><div className="stat" key={name} style={{minHeight:110}}><span>{name}</span><b style={{fontSize:34}}>{exact?count:`≈ ${count}`}</b></div>)}
+      {sourceSummary.map(([name,count,exact,capped])=><div className="stat" key={name} style={{minHeight:110}}><span>{name}</span><b style={{fontSize:34}}>{capped?`${count}+`:exact?count:`≈ ${count}`}</b></div>)}
     </div>
     {liveSourceMeta.some(x=>x.error)&&<div className="card" style={{padding:"12px 16px",borderRadius:18,marginBottom:16}}>
       <small className="muted">Площадки без результатов по этому запросу:</small>

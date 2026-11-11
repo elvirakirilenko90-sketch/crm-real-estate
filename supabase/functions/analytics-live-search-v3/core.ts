@@ -664,7 +664,7 @@ async function one(source:string,f:Filters){
   // full page comparable to the other sources.
   const exactComplexCatalog=source==="DIM.RIA Украина"&&/-zhk-[^/?#]+-\d+\/?(?:[?#]|$)/i.test(base);
   const exactRieltorCatalog=source==="RIELTOR.UA"&&/-n\d+\/?(?:[?#]|$)/i.test(base);
-  let pageCount=source==="DIM.RIA Украина"?(exactComplexCatalog?8:5):exactRieltorCatalog?3:f.complex?8:Math.max(1,Math.min(8,Number((f as any).pages||5)));
+  let pageCount=source==="DIM.RIA Украина"?(exactComplexCatalog?8:5):exactRieltorCatalog?3:f.complex&&source!=="OLX"?8:Math.max(1,Math.min(8,Number((f as any).pages||5)));
   const fetchPage=async(page:number)=>{const url=pageUrl(base,page);try{const r=await politeFetch(url);if(!r.ok)return{page,url,status:r.status,html:""};return{page,url,status:r.status,html:await r.text()}}catch{return{page,url,status:0,html:""}}};
   let firstProbe:any=null;
   if(requestedPage===1&&(exactComplexCatalog||exactRieltorCatalog)){
@@ -694,7 +694,7 @@ async function one(source:string,f:Filters){
   if(!successful.length){const st=pages[0]?.status||0;return{source,ok:false,status:st,url:pages[0]?.url||base,error:st===403||st===429?`${source} сейчас закрыл доступ для автоматического поиска (защита сайта). Откройте этот же поиск на сайте по ссылке — CRM повторит запрос при следующем обновлении.`:`${source} не ответил (код ${st||"нет связи"}). Откройте поиск на сайте по ссылке.`,items:[]}}
   const scanFilters={...f,condition:"",floor_from:undefined,floor_to:undefined,construction_year_from:undefined,construction_year_to:undefined,verified_only:false,programs:[]};
   const parseFilters=(exactComplexCatalog||exactRieltorCatalog)?{...scanFilters,complex:""}:scanFilters;
-  let parsed=successful.flatMap(p=>source==="OLX"?parseOlx(p.html,scanFilters):source==="DIM.RIA Украина"?parseDom(p.html,parseFilters):source==="REM"?parseRem(p.html,scanFilters):source==="ЛУН"?parseLun(p.html,parseFilters):exactRieltorCatalog?parseExactRieltorPage(p.html,parseFilters):parseGeneric(p.html,source,"https://rieltor.ua",parseFilters));
+  let parsed=successful.flatMap(p=>source==="OLX"?parseOlx(p.html,{...scanFilters,complex:""}):source==="DIM.RIA Украина"?parseDom(p.html,parseFilters):source==="REM"?parseRem(p.html,scanFilters):source==="ЛУН"?parseLun(p.html,parseFilters):exactRieltorCatalog?parseExactRieltorPage(p.html,parseFilters):parseGeneric(p.html,source,"https://rieltor.ua",parseFilters));
   if(source==="OLX"&&!parsed.length)parsed=successful.flatMap(p=>parseOlxJsonLd(p.html,scanFilters));
   if(source==="OLX"&&!parsed.length&&f.complex){try{const globalUrl=olxUrl({...f,city:""}),response=await fetch(globalUrl,{headers:HEADERS,redirect:"follow"});if(response.ok){const html=await response.text(),selected=latin(geo(f).city),allowed=selected==="odessa"?["odessa","odesa"]:selected==="myzykevychaovydyopol"||selected==="limanka"||selected==="tairove"?["limanka","tairove","tairovo","odessa","odesa"]:[selected];parsed=parseOlxJsonLd(html,scanFilters).filter(item=>{const actual=latin(item.city||"");return !selected||allowed.some(city=>actual===city||actual.includes(city)||city.includes(actual))})}}catch{/* scoped OLX result remains authoritative */}}
   const selectedSubtype=selectedPropertyType(f);
@@ -718,7 +718,7 @@ async function one(source:string,f:Filters){
   }
   const olxRoomsNative=source==="OLX"&&propertyGroup(f)==="apartment"&&/^[1-4]\+?$/.test(String(f.rooms||""));
   parsed=parsed.map(item=>Number(item.rooms||0)>0?item:{...item,rooms:roomsFromText(item.title||"")||roomsFromText(String(item.description||"").slice(0,400))||(olxRoomsNative?parseInt(String(f.rooms)):null)});
-  const finalFilters=source==="OLX"?{...f,city:String((f as any)._requested_city||f.city||""),district:String((f as any)._requested_district||f.district||""),floor_from:undefined,floor_to:undefined}:(exactRieltorCatalog?{...f,complex:""}:f);
+  const finalFilters=source==="OLX"?{...f,complex:"",city:String((f as any)._requested_city||f.city||""),district:String((f as any)._requested_district||f.district||""),floor_from:undefined,floor_to:undefined}:(exactRieltorCatalog?{...f,complex:""}:f);
   parsed=parsed.filter(item=>passes(item,finalFilters));
   // Період подачі — как на DIM.RIA: за сьогодні / за добу / дата від–до (без даты объявление не проходит)
   const pf:any=f;const periodActive=pf.period==="per_day"||pf.period==="per_allday"||!!pf.date_from||!!pf.date_to;
@@ -732,7 +732,7 @@ async function one(source:string,f:Filters){
   if(isRent(f))parsed=parsed.filter(item=>!(Number(item.price||0)>20000));
   if(exactComplexCatalog&&f.complex){const matching=parsed.filter(item=>complexMatches(`${item.complex_name||""} ${item.title||""} ${item.description||""}`,f.complex||""));if(matching.length)parsed=matching;}
   const checkedAt=new Date().toISOString(),seen=new Set<string>();
-  const items=parsed.filter(item=>{const key=`${item.source_name}|${item.external_id||item.source_url}`;if(seen.has(key))return false;seen.add(key);return true}).map(item=>({...item,floor:Number(item.raw_data?.floor||0)||null,total_floors:Number(item.raw_data?.total_floors||0)||null,construction_year:Number(item.raw_data?.construction_year||0)||null,complex_name:f.complex&&f.complex!=="Все"?String(f.complex):item.complex_name,published_at:item.published_at||null,date_known:!!item.published_at,last_seen_at:checkedAt}));
+  let items=parsed.filter(item=>{const key=`${item.source_name}|${item.external_id||item.source_url}`;if(seen.has(key))return false;seen.add(key);return true}).map(item=>({...item,floor:Number(item.raw_data?.floor||0)||null,total_floors:Number(item.raw_data?.total_floors||0)||null,construction_year:Number(item.raw_data?.construction_year||0)||null,complex_name:f.complex&&f.complex!=="Все"?String(f.complex):item.complex_name,published_at:item.published_at||null,date_known:!!item.published_at,last_seen_at:checkedAt}));
   const first=successful[0];
   // Totals usually live only on page 1. Fetch that small metadata page when
   // the user is browsing later pages, otherwise the UI falsely hides sources.
@@ -753,7 +753,7 @@ async function one(source:string,f:Filters){
   // cards that actually passed every filter and is returned to the CRM.
   // Advertising-site headline counters may include promoted, inaccessible or
   // merely keyword-related listings, so never present them as filtered cards.
-  const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const olxAllNative=source==="OLX"&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/textQuery=/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const rieltorAllNative=source==="RIELTOR.UA"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-d\d+\/?/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const lunAllNative=source==="ЛУН"&&!f.complex&&!exactComplexCatalog&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-district/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
@@ -761,6 +761,10 @@ async function one(source:string,f:Filters){
   const rieltorComplexNative=exactRieltorCatalog&&!postParseFilterActive&&Number(nativeTotal)>0&&Number(nativeTotal)<5000;
   const total=rieltorComplexNative?Math.max(Number(nativeTotal),items.length):(olxAllNative||remAllNative||rieltorAllNative||lunAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
   const countExact=olxAllNative||remAllNative||rieltorAllNative||lunAllNative||!postParseFilterActive||!!f.complex;
+  // OLX на последней странице дописывает «інші результати, пов'язані з пошуком» — это уже не выдача по фильтру
+  if(olxAllNative&&pageCount===1){const left=Number(nativeTotal)-(requestedPage-1)*40;if(left>0&&left<items.length)items=items.slice(0,left)}
+  // OLX показывает «понад 1 000» — точное число выше 1000 площадка не сообщает
+  const countCapped=source==="OLX"&&olxAllNative&&Number(nativeTotal)>=1000;
   const pageItemCount=items.length;
   // ЛУН не сообщает общее число объявлений: страница полная — значит, есть следующая
   const lunOpenEnded=source==="ЛУН"&&!lunAllNative&&!(Number(nativeTotal)>0)&&!exactComplexCatalog&&!f.complex&&pageItemCount>=20;
@@ -768,7 +772,7 @@ async function one(source:string,f:Filters){
   const nativePages=Number(nativeTotal)>0?Math.max(1,Math.ceil(Number(nativeTotal)/(cardsPerNativePage*pageCount))):null;
   const totalPages=f.complex&&source!=="REM"?1:postParseFilterActive?(nativePages||1):(Number(total)>0?Math.max(1,Math.ceil(Number(total)/(cardsPerNativePage*pageCount))):null);
   const debug=(f as any).debug?{pages:successful.map(x=>x.page),item_text:items[0]?.description||"",raw_card_markers:(successful[0]?.html.match(/data-cy=["']l-card["']/gi)||[]).length,raw_listing_links:(successful[0]?.html.match(/\/d\/(?:uk\/)?obyavlenie\//gi)||[]).length,raw_text:clean(successful[0]?.html||"").slice(0,5000),raw_html_sample:(()=>{const h=successful[0]?.html||"";const at=source==="RIELTOR.UA"?Math.max(h.indexOf("115 000"),h.indexOf("catalog-card"),h.indexOf("flats-sale/")):source==="REM"?((h.toLowerCase().indexOf("complex")>=0)?h.toLowerCase().indexOf("complex"):Math.max(h.indexOf("-db"),h.indexOf("object-param"))):h.indexOf("/d/uk/obyavlenie/");return at>=0?h.slice(Math.max(0,at-2000),at+8000):""})()}:undefined;
-  return{source,ok:true,status:first.status,url:first.url,page:requestedPage,pages_loaded:successful.length,total,count_is_exact:lunOpenEnded?false:countExact,page_item_count:pageItemCount,total_pages:lunOpenEnded?requestedPage+1:totalPages,has_more:lunOpenEnded?true:(totalPages?requestedPage<totalPages:pageItemCount>0),items,debug};
+  return{source,ok:true,status:first.status,url:first.url,page:requestedPage,pages_loaded:successful.length,total,count_is_exact:lunOpenEnded||countCapped?false:countExact,count_capped:countCapped,page_item_count:pageItemCount,total_pages:lunOpenEnded?requestedPage+1:totalPages,has_more:lunOpenEnded?true:(totalPages?requestedPage<totalPages:pageItemCount>0),items,debug};
 }
 
 let complexDirectoryCache:{at:number;items:any[]}|null=null;
