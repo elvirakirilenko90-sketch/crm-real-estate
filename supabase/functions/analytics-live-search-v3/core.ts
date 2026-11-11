@@ -521,6 +521,8 @@ function parseGeneric(html:string,source:string,base:string,f:Filters){
 }
 
 function parseExactRieltorPage(html:string,f:Filters){
+  // ниже «Вас також можуть зацікавити оголошення поруч» — чужие объявления, не из этого ЖК
+  const cut=html.search(/data-listing-add-title|можуть зацікавити оголошення поруч|могут заинтересовать объявления рядом/i);if(cut>0)html=html.slice(0,cut);
   const starts=[...html.matchAll(/<div class=["']catalog-card\s/gi)].map(m=>m.index||0);
   const out:Item[]=[];
   for(let i=0;i<starts.length;i++){
