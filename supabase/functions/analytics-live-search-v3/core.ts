@@ -12,7 +12,9 @@ async function politeFetch(url:string,tries=3){let last:Response|null=null;for(l
 // Комнаты из заголовка/описания, если площадка не дала поле (часто у OLX)
 const roomsFromText=(t:string)=>{const s=String(t||"").toLowerCase();const d=s.match(/(?<!\d[\s.,]?)(\d)\s*[-‐–]?\s*(?:х|x)?\s*[-‐–]?\s*(?:кімн|комн|к\.?\s*кв|к(?![а-яіїєґa-z])|кім(?![а-яіїєґ])|ком(?![а-яіїєґ])|спальн)/i)?.[1];if(d)return Number(d);if(/студі|студи|smart|смарт|однокімн|однокомн|1-?но\s*кім|однушк|гостинк/.test(s))return 1;if(/двокімн|двухкомн|двухкімн|двушк|двох\s*кім|євродвушк|евродвушк/.test(s))return 2;if(/трикімн|трехкомн|трьохкімн|трешк|трьох\s*кім|євротрешк|евротрешк/.test(s))return 3;if(/чотирикімн|четырехкомн|четырёхкомн/.test(s))return 4;return 0};
 // Город карточки → ключ (Київ/Киев/Kyiv → kiev)
-const cityKeyUa=(v:string)=>{const k=String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();return latin(UA_UK[k]||k)};
+// укр. название → рус. ключ CRM: общий словарь + все города справочника (REM_LUN_CITIES.uk)
+const UK_TO_RU:Record<string,string>=(()=>{const m:Record<string,string>={};for(const [ru,v] of Object.entries(REM_LUN_CITIES as any)){const uk=String((v as any).uk||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();if(uk)m[uk]=ru}return m})();
+const cityKeyUa=(v:string)=>{const k=String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();return latin(UA_UK[k]||UK_TO_RU[k]||k)};
 const IMAGE_HOST_SUFFIXES=["olxcdn.com","ria.com","riastatic.com","rieltor.ua","rieltor.com","rem.ua","lunstatic.net"];
 const LISTING_HOST_SUFFIXES=["olx.ua","dom.ria.com","rieltor.ua","rem.ua","lun.ua"];
 const clean=(s="")=>String(s).replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#0*39;|&apos;/gi,"'").replace(/\s+/g," ").trim();
