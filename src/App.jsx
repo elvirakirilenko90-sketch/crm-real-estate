@@ -4658,6 +4658,12 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       if(alive&&pick("USD")>0)setFxRates({UAH_PER_USD:pick("USD"),UAH_PER_EUR:pick("EUR"),date:(j||[])[0]?.exchangedate||""});}catch(e){}
   })();return()=>{alive=false;};},[]);
   const marketLoadSeq=useRef(0);
+  // Поисковая сессия: новый набор фильтров = новая сессия; листание страниц — та же сессия.
+  // Результаты живут только в памяти страницы; при сбросе, уходе из раздела и 30 мин бездействия очищаются.
+  const searchSessionRef=useRef({id:"",key:""});
+  const lastActivityRef=useRef(Date.now());
+  const closeSearchSession=(reason)=>{const id=searchSessionRef.current.id;if(!id)return;searchSessionRef.current={id:"",key:""};supabase.functions.invoke("analytics-live-search-v3",{body:{action:"close_search_session",search_session_id:id,reason}}).catch(()=>{});};
+  const newSearchSessionId=()=>{try{return crypto.randomUUID();}catch{return "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g,()=>Math.floor(Math.random()*16).toString(16));}};
 
   const agencyId=currentProfile?.agency_id;
 
@@ -4860,7 +4866,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       period:period==="1"?"per_day":period==="day"?"per_allday":period==="custom"?"custom":"",
       date_from:period==="custom"&&dateFrom?dateFrom:null,
       date_to:period==="custom"&&dateTo?dateTo:null,
-      page:livePage,pages:1,sources:[src]
+      page:livePage,pages:1,sources:[src],search_session_id:searchSessionRef.current.id||undefined
     }}).then(r=>r.error?{data:{results:[{source:src,ok:false,error:`${src}: площадка не ответила вовремя — обновите поиск`,items:[]}]},error:null}:r).catch(()=>({data:{results:[{source:src,ok:false,error:`${src}: площадка не ответила`,items:[]}]},error:null}));
     const edgeCall=dealType=>Promise.all(wanted.map(src=>edgeCallOne(dealType,src))).then(list=>({data:{results:list.flatMap(r=>r?.data?.results||[])},error:null}));
     // «Все» = продажа и аренда одновременно; ответы одной площадки складываем.
@@ -4911,6 +4917,9 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const loadMarket=async()=>{
     if(!agencyId)return;
     const seq=++marketLoadSeq.current;
+    lastActivityRef.current=Date.now();
+    {const key=JSON.stringify([activeSourceTab,country,region,city,districtFilter,dealFilter,roomsFilter,priceFrom,priceTo,areaFrom,areaTo,period,dateFrom,dateTo,complexFilter,propertyKindFilter,constructionYearFrom,constructionYearTo,conditionFilter,landAreaFrom,landAreaTo,verifiedOnly,floorFrom,floorTo]);
+     if(searchSessionRef.current.key!==key){closeSearchSession("new_search");searchSessionRef.current={id:newSearchSessionId(),key};}}
     setLoadingMarket(true);setMarketError("");
     try{
       const [rows,sourceRes]=await Promise.all([
@@ -4947,6 +4956,15 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     const t=setTimeout(()=>{loadMarket();},650);
     return()=>clearTimeout(t);
   },[agencyId,activeSourceTab,country,region,city,districtFilter,dealFilter,roomsFilter,priceFrom,priceTo,areaFrom,areaTo,period,dateFrom,dateTo,complexFilter,propertyKindFilter,constructionYearFrom,constructionYearTo,governmentPrograms.join("|"),conditionFilter,landAreaFrom,landAreaTo,verifiedOnly,floorFrom,floorTo,livePage]);
+  // Уход из раздела Аналитики — сессия поиска закрывается.
+  useEffect(()=>()=>closeSearchSession("leave"),[]);
+  // 30 минут без действий — результаты прошлого поиска очищаются (менеджер нажмёт «Обновить» и получит свежую выдачу).
+  useEffect(()=>{
+    const mark=()=>{lastActivityRef.current=Date.now();};
+    window.addEventListener("pointerdown",mark);window.addEventListener("keydown",mark);
+    const timer=setInterval(()=>{if(Date.now()-lastActivityRef.current>30*60000&&searchSessionRef.current.id){closeSearchSession("idle");marketLoadSeq.current++;setMarketListings([]);setLiveSourceMeta([]);setMarketError("Результаты поиска очищены после 30 минут без действий — нажмите «Обновить», чтобы получить актуальную выдачу.");}},60000);
+    return()=>{clearInterval(timer);window.removeEventListener("pointerdown",mark);window.removeEventListener("keydown",mark);};
+  },[]);
 
   const syncMarket=async()=>{
     if(!agencyId)return;
@@ -5779,7 +5797,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
     finally{setCreatingSelection(false);}
   };
 
-  const resetFilters=()=>{setLivePage(1);setActiveSourceTab("ALL");setPeriod("all");setDateFrom("");setDateTo("");setCountry("Все");setRegion("Все");setCity("Все");setDistrictFilter("Все");setComplexFilter("Все");setPropertyKindFilter("Все");setSellerFilter("Все");setConditionFilter("Все");setFloorFrom("");setFloorTo("");setLandAreaFrom("");setLandAreaTo("");setVerifiedOnly(false);setNoDuplicates(false);setGroupDuplicates(true);setConstructionYearFrom("");setConstructionYearTo("");setGovernmentPrograms([]);setDealFilter("Продажа");setSelectedSources([]);setSourceCountry("Все");setSearchQuery("");setRoomsFilter("Все");setPriceFrom("");setPriceTo("");setAreaFrom("");setAreaTo("");setPriceSort("none");setSelected([]);clearAnalyticsMarketCache();};
+  const resetFilters=()=>{closeSearchSession("reset");marketLoadSeq.current++;setMarketListings([]);setLiveSourceMeta([]);setLivePage(1);setActiveSourceTab("ALL");setPeriod("all");setDateFrom("");setDateTo("");setCountry("Все");setRegion("Все");setCity("Все");setDistrictFilter("Все");setComplexFilter("Все");setPropertyKindFilter("Все");setSellerFilter("Все");setConditionFilter("Все");setFloorFrom("");setFloorTo("");setLandAreaFrom("");setLandAreaTo("");setVerifiedOnly(false);setNoDuplicates(false);setGroupDuplicates(true);setConstructionYearFrom("");setConstructionYearTo("");setGovernmentPrograms([]);setDealFilter("Продажа");setSelectedSources([]);setSourceCountry("Все");setSearchQuery("");setRoomsFilter("Все");setPriceFrom("");setPriceTo("");setAreaFrom("");setAreaTo("");setPriceSort("none");setSelected([]);clearAnalyticsMarketCache();};
 
   const filterBox={padding:16,border:"1px solid rgba(148,163,184,.24)",borderRadius:18,background:"rgba(255,255,255,.72)"};
   const actionStyle={minHeight:46,fontWeight:800,borderRadius:14};

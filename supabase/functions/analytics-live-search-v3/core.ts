@@ -978,10 +978,30 @@ async function hydrateComplexFilter(f:Filters,req:Request){
   }catch{/* keep original filters */}
 }
 
+// ===== Поисковые сессии и технический журнал (таблицы analytics_search_sessions / analytics_search_log) =====
+// Результаты поиска в базе не хранятся — только служебная запись: какая площадка, адрес запроса, счётчик, ошибка, время.
+// Сессия живёт 30 минут с последнего запроса; журнал хранится 7 дней (очистка по расписанию pg_cron).
+const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function jwtUser(req:Request){try{const t=(req.headers.get("authorization")||"").replace(/^Bearer\s+/i,"").split(".")[1];if(!t)return null;const j=JSON.parse(atob(t.replace(/-/g,"+").replace(/_/g,"/")));return j?.role==="authenticated"&&UUID_RE.test(String(j?.sub||""))?String(j.sub):null}catch{return null}}
+async function journalRest(path:string,method:string,payload:unknown,prefer=""){
+  const base=Deno.env.get("SUPABASE_URL")||"",key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"";if(!base||!key)return;
+  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),2500);
+  try{await fetch(`${base}/rest/v1/${path}`,{method,signal:ctrl.signal,headers:{apikey:key,authorization:`Bearer ${key}`,"content-type":"application/json",...(prefer?{prefer}:{})},body:JSON.stringify(payload)})}catch{/* журнал не должен мешать поиску */}finally{clearTimeout(timer)}
+}
+async function touchSession(id:string,req:Request,filters:any){
+  if(!UUID_RE.test(id))return;const now=Date.now();
+  await journalRest("analytics_search_sessions?on_conflict=id","POST",{id,user_id:jwtUser(req),last_seen_at:new Date(now).toISOString(),expires_at:new Date(now+30*60000).toISOString(),closed_at:null,close_reason:null,filters},"resolution=merge-duplicates,return=minimal");
+}
+async function journalResults(id:string,req:Request,results:any[],ms:number){
+  if(!UUID_RE.test(id))return;const user=jwtUser(req);
+  await journalRest("analytics_search_log","POST",results.map(r=>({session_id:id,user_id:user,source:String(r.source||""),request_url:String(r.url||r.search_url||"").slice(0,1000),total:Number.isFinite(Number(r.total))?Math.round(Number(r.total)):null,count_is_exact:r.count_is_exact!==false,ok:r.ok!==false,error:r.error?String(r.error).slice(0,500):null,duration_ms:ms})),"return=minimal");
+}
 export async function handler(req:Request):Promise<Response>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:CORS});
   try{
     const body:any=await req.json().catch(()=>({}));
+    // менеджер ушёл из раздела / сбросил фильтры / вышел: сессия закрывается сразу
+    if(body?.action==="close_search_session"){const id=String(body?.search_session_id||"");if(UUID_RE.test(id))await journalRest(`analytics_search_sessions?id=eq.${id}`,"PATCH",{closed_at:new Date().toISOString(),close_reason:String(body?.reason||"closed").slice(0,40),expires_at:new Date().toISOString()},"return=minimal");return new Response(JSON.stringify({success:true}),{headers:CORS})}
     if(body?.action==="presentation_image")return proxyPresentationImage(body.url);
     if(body?.action==="presentation_detail")return presentationDetail(body.url);
     // Курс НБУ для пересчёта гривны/евро в доллары в Аналитике
@@ -1008,10 +1028,12 @@ export async function handler(req:Request):Promise<Response>{
     const requestedSources=[...new Set(rawSources.map(normalizeSource))];
     const sources=requestedSources.filter(x=>["OLX","DIM.RIA Украина","REM","RIELTOR.UA","ЛУН"].includes(x));
     if(isRent(f))await loadUah();
+    const sessionId=String(body?.search_session_id||"");const startedAt=Date.now();if(sessionId)await touchSession(sessionId,req,{city:f.city,district:f.district,complex:f.complex,property_type:f.property_type,deal_type:f.deal_type,sources});
     const results=(await Promise.all(sources.map(s=>one(s,f)))).map((r:any)=>isRent(f)?{...r,items:(r.items||[]).map((i:any)=>({...i,deal_type:"Аренда"}))}:r);
     // No exchange-rate conversion is performed. Every returned price is the
     // USD amount printed by the advertising source itself.
-    return new Response(JSON.stringify({success:true,live:true,persisted:false,currency:"USD",price_mode:"source_usd_only",results}),{headers:CORS});
+    if(sessionId)await journalResults(sessionId,req,results,Date.now()-startedAt);
+    return new Response(JSON.stringify({success:true,live:true,persisted:false,currency:"USD",price_mode:"source_usd_only",search_session_id:sessionId||null,results}),{headers:CORS});
   }catch(e){
     return new Response(JSON.stringify({success:false,error:e instanceof Error?e.message:String(e)}),{status:500,headers:CORS});
   }
