@@ -583,7 +583,7 @@ function settlementOf(f:Filters):Settlement|null{
   const uk=String(rec?.uk||meta.uk||city).replace(/\s*\(.*?\)\s*/g," ").replace(/\s+/g," ").trim();
   const reg=String(f.region||"");const ob=OBLASTS.find(o=>o.ru===reg)||OBLASTS.find(o=>meta.state_uk&&normUk(o.uk)===normUk(String(meta.state_uk).replace(/\s*область$/i,"")))||null;
   const dim=meta.dim_city_id?{stateId:Number(meta.dim_state_id),cityId:Number(meta.dim_city_id)}:null;
-  return{key,uk,oblastUk:String(meta.state_uk||ob?.uk||""),oblast:ob,catalog:!!rec||!!(UA_SLUGS as any)[key],dim};
+  return{key,uk,oblastUk:String(meta.state_uk||ob?.uk||""),oblast:ob,catalog:!!rec||!!(UA_SLUGS as any)[key]||!!(UA_SLUGS as any)[(UA_UK as any)[cityKey(key)]||""]||!!(UA_SLUGS as any)[(UA_UK as any)[key]||""]||Object.values(REM_LUN_CITIES as any).some((v:any)=>normUk(v.uk)===normUk(city)),dim};
 }
 // транслит укр. → латиница (как у ЛУН: Ірпінь → irpin, Крижанівка → kryzhanivka)
 const UKLAT:any={а:"a",б:"b",в:"v",г:"h",ґ:"g",д:"d",е:"e",є:"ie",ж:"zh",з:"z",и:"y",і:"i",ї:"i",й:"i",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"kh",ц:"ts",ч:"ch",ш:"sh",щ:"shch",ь:"",ю:"iu",я:"ia"};const UKFIRST:any={є:"ye",ї:"yi",й:"y",ю:"yu",я:"ya"};
