@@ -502,6 +502,8 @@ async function one(source:string,f:Filters){
   parsed=parsed.map(item=>Number(item.rooms||0)>0?item:{...item,rooms:roomsFromText(item.title||"")||roomsFromText(String(item.description||"").slice(0,400))||(olxRoomsNative?parseInt(String(f.rooms)):null)});
   const finalFilters=source==="OLX"?{...f,city:String((f as any)._requested_city||f.city||""),district:String((f as any)._requested_district||f.district||""),floor_from:undefined,floor_to:undefined}:(exactRieltorCatalog?{...f,complex:""}:f);
   parsed=parsed.filter(item=>passes(item,finalFilters));
+  // В аренде иногда попадаются объявления о продаже (цена в сотни тысяч $) — это не аренда
+  if(isRent(f))parsed=parsed.filter(item=>!(Number(item.price||0)>20000));
   if(exactComplexCatalog&&f.complex){const matching=parsed.filter(item=>complexMatches(`${item.complex_name||""} ${item.title||""} ${item.description||""}`,f.complex||""));if(matching.length)parsed=matching;}
   const checkedAt=new Date().toISOString(),seen=new Set<string>();
   const items=parsed.filter(item=>{const key=`${item.source_name}|${item.external_id||item.source_url}`;if(seen.has(key))return false;seen.add(key);return true}).map(item=>({...item,floor:Number(item.raw_data?.floor||0)||null,total_floors:Number(item.raw_data?.total_floors||0)||null,construction_year:Number(item.raw_data?.construction_year||0)||null,complex_name:f.complex&&f.complex!=="Все"?String(f.complex):item.complex_name,published_at:item.published_at||checkedAt,last_seen_at:checkedAt}));

@@ -690,3 +690,13 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 @keyframes helpPop{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
 @keyframes helpGlow{0%,100%{box-shadow:0 14px 40px rgba(0,0,0,.45)}50%{box-shadow:0 0 0 6px rgba(255,59,48,.45),0 14px 40px rgba(0,0,0,.45)}}
 .lhItem.lhReply small,.lhItem.lhReply .lhHead small{color:#3a2a00!important;opacity:1!important;font-weight:800}
+
+/* Аналитика: быстрый переход к объявлениям площадок */
+.marketJump{display:flex;flex-direction:column;gap:10px;padding:16px 18px;border:2px solid var(--accent,#F5C518)!important;border-radius:20px}
+.marketJumpHead{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.marketJumpChips{display:flex;gap:8px;flex-wrap:wrap}
+.marketJumpChips .chip{font-weight:800}
+.marketJumpFab{position:fixed;right:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:60;border:0;border-radius:999px;padding:12px 16px;font:inherit;font-weight:900;background:var(--accent,#F5C518);color:#111;box-shadow:0 10px 26px rgba(0,0,0,.35);cursor:pointer}
+@media (min-width:900px){.marketJumpFab{bottom:24px}}
+/* На телефоне карточки объявлений — в одну колонку, чтобы заголовок и цена не обрезались */
+@media (max-width:700px){.grid2.marketCards{grid-template-columns:1fr!important}.grid2.marketCards h3{font-size:18px;overflow-wrap:anywhere}}
