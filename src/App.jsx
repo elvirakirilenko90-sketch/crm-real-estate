@@ -3165,14 +3165,14 @@ function addSelectionComparisonPages(pages,{items,themeId,visualId,lang,agencyNa
   const headers=lang==="en"?["#","Property","Price","Area","Price/m²","District","Floor"]:lang==="uk"?["#","Об'єкт","Ціна","Площа","Ціна/м²","Район","Поверх"]:["#","Объект","Цена","Площадь","Цена/м²","Район","Этаж"];
   const title=lang==="en"?"COMPARISON OF OFFERS":lang==="uk"?"ПОРІВНЯННЯ ПРОПОЗИЦІЙ":"СРАВНЕНИЕ ПРЕДЛОЖЕНИЙ";
   const per=11,chunks=[];for(let i=0;i<items.length;i+=per) chunks.push(items.slice(i,i+per));
-  const cols=[[PRES_M+18,46],[PRES_M+72,330],[PRES_M+420,150],[PRES_M+584,112],[PRES_M+706,128],[PRES_M+846,140],[PRES_M+994,54]];
+  const cols=[[PRES_M+18,46],[PRES_M+70,320],[PRES_M+402,150],[PRES_M+562,110],[PRES_M+682,130],[PRES_M+822,150],[PRES_M+972,60]];
   chunks.forEach((chunk,pageIndex)=>{
     const {c,ctx}=presCanvas(pal.paper);
     presChrome(ctx,pal,{agencyName,label:chunks.length>1?`${pageIndex+1}/${chunks.length}`:"",lang});
     ctx.fillStyle=pal.ink;presFit(ctx,title,700,PRES_SERIF,44,32,PRES_IN,1);ctx.fillText(title,PRES_M,190);
     ctx.fillStyle=pal.accent;ctx.fillRect(PRES_M,214,90,5);
     let y=260;ctx.fillStyle=pal.band;presRound(ctx,PRES_M,y,PRES_IN,62,16);ctx.fill();
-    ctx.fillStyle=pal.bandInk;ctx.font=`800 17px ${PRES_SANS}`;headers.forEach((h,i)=>ctx.fillText(String(h).toUpperCase(),cols[i][0],y+39));
+    ctx.fillStyle=pal.bandInk;ctx.font=`800 16px ${PRES_SANS}`;headers.forEach((h,i)=>ctx.fillText(String(h).toUpperCase(),cols[i][0],y+39));
     y+=74;const rowH=106;
     chunk.forEach((p,idx)=>{
       const i=pageIndex*per+idx,ppm=Number(p.area)?Math.round(Number(p.price||0)/Number(p.area)):0;
