@@ -768,9 +768,9 @@ async function one(source:string,f:Filters){
   const pageItemCount=items.length;
   // ЛУН не сообщает общее число объявлений: страница полная — значит, есть следующая
   const lunOpenEnded=source==="ЛУН"&&!lunAllNative&&!(Number(nativeTotal)>0)&&!exactComplexCatalog&&!f.complex&&pageItemCount>=20;
-  const cardsPerNativePage=source==="DIM.RIA Украина"?20:source==="REM"?25:Math.max(1,Math.ceil(pageItemCount/Math.max(1,successful.length)));
+  const cardsPerNativePage=source==="DIM.RIA Украина"?20:source==="REM"?25:source==="OLX"?40:Math.max(1,Math.ceil(pageItemCount/Math.max(1,successful.length)));
   const nativePages=Number(nativeTotal)>0?Math.max(1,Math.ceil(Number(nativeTotal)/(cardsPerNativePage*pageCount))):null;
-  const totalPages=f.complex&&source!=="REM"?1:postParseFilterActive?(nativePages||1):(Number(total)>0?Math.max(1,Math.ceil(Number(total)/(cardsPerNativePage*pageCount))):null);
+  const totalPages=f.complex&&source!=="REM"&&!(source==="OLX"&&olxAllNative)?1:postParseFilterActive?(nativePages||1):(Number(total)>0?Math.max(1,Math.ceil(Number(total)/(cardsPerNativePage*pageCount))):null);
   const debug=(f as any).debug?{pages:successful.map(x=>x.page),item_text:items[0]?.description||"",raw_card_markers:(successful[0]?.html.match(/data-cy=["']l-card["']/gi)||[]).length,raw_listing_links:(successful[0]?.html.match(/\/d\/(?:uk\/)?obyavlenie\//gi)||[]).length,raw_text:clean(successful[0]?.html||"").slice(0,5000),raw_html_sample:(()=>{const h=successful[0]?.html||"";const at=source==="RIELTOR.UA"?Math.max(h.indexOf("115 000"),h.indexOf("catalog-card"),h.indexOf("flats-sale/")):source==="REM"?((h.toLowerCase().indexOf("complex")>=0)?h.toLowerCase().indexOf("complex"):Math.max(h.indexOf("-db"),h.indexOf("object-param"))):h.indexOf("/d/uk/obyavlenie/");return at>=0?h.slice(Math.max(0,at-2000),at+8000):""})()}:undefined;
   return{source,ok:true,status:first.status,url:first.url,page:requestedPage,pages_loaded:successful.length,total,count_is_exact:lunOpenEnded||countCapped?false:countExact,count_capped:countCapped,page_item_count:pageItemCount,total_pages:lunOpenEnded?requestedPage+1:totalPages,has_more:lunOpenEnded?true:(totalPages?requestedPage<totalPages:pageItemCount>0),items,debug};
 }
