@@ -583,6 +583,8 @@ function remParams(base:string,f:Filters,apartment:boolean){
   if(f.area_from)u.searchParams.set("areaTotalMin",String(f.area_from));if(f.area_to)u.searchParams.set("areaTotalMax",String(f.area_to));
   if(apartment&&f.floor_from)u.searchParams.set("floorMin",String(f.floor_from));if(apartment&&f.floor_to)u.searchParams.set("floorMax",String(f.floor_to));
   const cx=String(f.complex||"").replace(/(?:^|\s)(?:ЖК|жк)(?=\s|$)/g," ").trim();if(apartment&&cx&&cx!=="Все")u.searchParams.set("textQuery",cx);
+  // район: REM ищет его через строку поиска (без ЖК — иначе поиск идёт по ЖК)
+  else{const d=({"Киевский":"Київський","Приморский":"Приморський","Хаджибейский":"Хаджибейський","Пересыпский":"Пересипський"} as any)[geo(f).district];if(d)u.searchParams.set("textQuery",d);}
   return u.toString();
 }
 // RIELTOR.UA: фильтры сайта — комнаты в адресе (/2-rooms/), цена — price_min/price_max (в $)
@@ -714,7 +716,7 @@ async function one(source:string,f:Filters){
   // Advertising-site headline counters may include promoted, inaccessible or
   // merely keyword-related listings, so never present them as filtered cards.
   const olxAllNative=source==="OLX"&&!periodActive&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
-  const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&!f.district&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const remAllNative=source==="REM"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/textQuery=/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const rieltorAllNative=source==="RIELTOR.UA"&&!f.complex&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-d\d+\/?/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const lunAllNative=source==="ЛУН"&&!f.complex&&!exactComplexCatalog&&!periodActive&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.area_from&&!f.area_to&&!f.floor_from&&!f.floor_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.district||/-district/.test(base))&&(!f.rooms||/^[1-3]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
   const total=(olxAllNative||remAllNative||rieltorAllNative||lunAllNative)?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
