@@ -498,7 +498,8 @@ async function one(source:string,f:Filters){
       for(const result of enriched)parsed[result.index]=result.item;
     }
   }
-  parsed=parsed.map(item=>Number(item.rooms||0)>0?item:{...item,rooms:roomsFromText(item.title||"")||roomsFromText(String(item.description||"").slice(0,400))||null});
+  const olxRoomsNative=source==="OLX"&&propertyGroup(f)==="apartment"&&/^[1-4]\+?$/.test(String(f.rooms||""));
+  parsed=parsed.map(item=>Number(item.rooms||0)>0?item:{...item,rooms:roomsFromText(item.title||"")||roomsFromText(String(item.description||"").slice(0,400))||(olxRoomsNative?parseInt(String(f.rooms)):null)});
   const finalFilters=source==="OLX"?{...f,city:String((f as any)._requested_city||f.city||""),district:String((f as any)._requested_district||f.district||""),floor_from:undefined,floor_to:undefined}:(exactRieltorCatalog?{...f,complex:""}:f);
   parsed=parsed.filter(item=>passes(item,finalFilters));
   if(exactComplexCatalog&&f.complex){const matching=parsed.filter(item=>complexMatches(`${item.complex_name||""} ${item.title||""} ${item.description||""}`,f.complex||""));if(matching.length)parsed=matching;}
@@ -524,12 +525,15 @@ async function one(source:string,f:Filters){
   // cards that actually passed every filter and is returned to the CRM.
   // Advertising-site headline counters may include promoted, inaccessible or
   // merely keyword-related listings, so never present them as filtered cards.
-  const total=(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
+  const olxAllNative=source==="OLX"&&!f.complex&&!propertySubtypeActive&&!f.condition&&!f.land_area_from&&!f.land_area_to&&!f.construction_year_from&&!f.construction_year_to&&!f.verified_only&&!(f.programs||[]).length&&(!f.rooms||/^[1-4]$/.test(String(f.rooms)))&&Number(nativeTotal)>0;
+  const total=olxAllNative?Number(nativeTotal):(f.complex||postParseFilterActive)?items.length:(nativeCountIsExact?Number(nativeTotal):items.length);
+  const countExact=olxAllNative||!postParseFilterActive||!!f.complex;
   const pageItemCount=items.length;
   const cardsPerNativePage=source==="DIM.RIA Украина"?20:source==="REM"?25:Math.max(1,Math.ceil(pageItemCount/Math.max(1,successful.length)));
-  const totalPages=(f.complex||postParseFilterActive)?1:(Number(total)>0?Math.max(1,Math.ceil(Number(total)/(cardsPerNativePage*pageCount))):null);
+  const nativePages=Number(nativeTotal)>0?Math.max(1,Math.ceil(Number(nativeTotal)/(cardsPerNativePage*pageCount))):null;
+  const totalPages=f.complex?1:postParseFilterActive?(nativePages||1):(Number(total)>0?Math.max(1,Math.ceil(Number(total)/(cardsPerNativePage*pageCount))):null);
   const debug=(f as any).debug?{pages:successful.map(x=>x.page),item_text:items[0]?.description||"",raw_card_markers:(successful[0]?.html.match(/data-cy=["']l-card["']/gi)||[]).length,raw_listing_links:(successful[0]?.html.match(/\/d\/(?:uk\/)?obyavlenie\//gi)||[]).length,raw_text:clean(successful[0]?.html||"").slice(0,5000),raw_html_sample:(()=>{const h=successful[0]?.html||"";const at=source==="RIELTOR.UA"?Math.max(h.indexOf("115 000"),h.indexOf("catalog-card"),h.indexOf("flats-sale/")):source==="REM"?((h.toLowerCase().indexOf("complex")>=0)?h.toLowerCase().indexOf("complex"):Math.max(h.indexOf("-db"),h.indexOf("object-param"))):h.indexOf("/d/uk/obyavlenie/");return at>=0?h.slice(Math.max(0,at-2000),at+8000):""})()}:undefined;
-  return{source,ok:true,status:first.status,url:first.url,page:requestedPage,pages_loaded:successful.length,total,count_is_exact:true,page_item_count:pageItemCount,total_pages:totalPages,has_more:totalPages?requestedPage<totalPages:pageItemCount>0,items,debug};
+  return{source,ok:true,status:first.status,url:first.url,page:requestedPage,pages_loaded:successful.length,total,count_is_exact:countExact,page_item_count:pageItemCount,total_pages:totalPages,has_more:totalPages?requestedPage<totalPages:pageItemCount>0,items,debug};
 }
 
 let complexDirectoryCache:{at:number;items:any[]}|null=null;
