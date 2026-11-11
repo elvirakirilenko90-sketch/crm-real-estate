@@ -4839,6 +4839,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       city:city==="Все"?"":city,
       city_meta:cityMeta&&city===cityMeta.name?{uk:cityMeta.name,state_uk:cityMeta.state_uk,dim_state_id:cityMeta.dim_state_id,dim_city_id:cityMeta.dim_city_id}:undefined,
       district:districtFilter==="Все"?"":districtFilter,
+      district_uk:districtFilter==="Все"?"":(analyticsGeoI18n[districtFilter]?.uk||districtFilter),
       property_type:propertyKindFilter==="Все"?"":propertyKindFilter,
       deal_type:dealType,
       rooms:roomsFilter==="Все"?null:roomsFilter,
