@@ -5326,7 +5326,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   // Заголовки и описания объявлений сюда намеренно не примешиваются.
   const directoryComplexNames=(complexDirectory||[])
     .filter(item=>country==="Все"||geoEq(item.country,country))
-    .filter(item=>region==="Все"||!item.region||geoEq(item.region,region))
+    .filter(item=>region==="Все"||city!=="Все"||!item.region||geoEq(item.region,region))
     .filter(item=>city==="Все"||!item.city||geoEq(item.city,city))
     .map(item=>String(item.official_name||"").trim()).filter(Boolean);
   const complexes=["Все",...Array.from(new Set(directoryComplexNames)).sort((a,b)=>a.localeCompare(b,"uk"))];
