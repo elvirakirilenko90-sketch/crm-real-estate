@@ -649,9 +649,9 @@ async function olxCitySlugLive(cityName:string,ukName="",oblastUk=""){
   const k=String(cityName||"").trim().toLowerCase()+"|"+normUk(oblastUk);if(!k)return"";
   const rec:any=(REM_LUN_CITIES as any)[String(cityName||"").trim().toLowerCase()];const uk=String(ukName||rec?.uk||cityName);
   const c=olxSlugCache.get(k);if(c&&Date.now()-c.at<12*3600000)return c.slug;
-  let slug="";
-  try{const r=await politeFetch(`https://www.olx.ua/api/v1/geo-encoder/location-autocomplete/?query=${encodeURIComponent(uk)}`);if(r.ok){const j:any=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).replace(/\s*область$/,"");const hit=(j?.data||[]).find((x:any)=>x?.city&&!x?.district&&norm(x.city.name)===norm(uk)&&(!ob||norm(x?.region?.name||"").startsWith(ob)))||(j?.data||[]).find((x:any)=>x?.city&&!x?.district&&norm(x.city.name)===norm(uk));slug=String(hit?.city?.normalized_name||"")}}catch{/* нет ответа */}
-  olxSlugCache.set(k,{slug,at:Date.now()});return slug;
+  let slug="",answered=false;
+  try{const r=await politeFetch(`https://www.olx.ua/api/v1/geo-encoder/location-autocomplete/?query=${encodeURIComponent(uk)}`);if(r.ok){answered=true;const j:any=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).replace(/\s*область$/,"");const hit=(j?.data||[]).find((x:any)=>x?.city&&!x?.district&&norm(x.city.name)===norm(uk)&&(!ob||norm(x?.region?.name||"").startsWith(ob)))||(j?.data||[]).find((x:any)=>x?.city&&!x?.district&&norm(x.city.name)===norm(uk));slug=String(hit?.city?.normalized_name||"")}}catch{/* нет ответа */}
+  if(answered)olxSlugCache.set(k,{slug,at:Date.now()});return slug;
 }
 // Город без отдельной страницы на DIM.RIA: номер города из подсказок самой площадки (как при вводе города на сайте)
 const dimIdsCache=new Map<string,{ids:{stateId:number,cityId:number}|null,at:number}>();
@@ -659,9 +659,9 @@ async function dimCityIds(cityName:string,ukName="",oblastUk=""){
   const k=String(cityName||"").trim().toLowerCase()+"|"+normUk(oblastUk);if(!k)return null;
   const rec:any=(REM_LUN_CITIES as any)[String(cityName||"").trim().toLowerCase()];const uk=String(ukName||rec?.uk||cityName);
   const c=dimIdsCache.get(k);if(c&&Date.now()-c.at<12*3600000)return c.ids;
-  let ids:any=null;
-  try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(uk)}&langId=4`);if(r.ok){const list:any[]=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).replace(/\s*область$/,"");const hit=list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk))||list.find(x=>x?.type==="city"&&norm(String(x.cityName).replace(/\s*\(.*?\)\s*/g,""))===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||null;if(hit?.payload?.cityId)ids={stateId:Number(hit.payload.stateId),cityId:Number(hit.payload.cityId)}}}catch{/* нет ответа — честно сообщим */}
-  dimIdsCache.set(k,{ids,at:Date.now()});return ids;
+  let ids:any=null,answered=false;
+  try{const r=await politeFetch(`https://dom.ria.com/node/api/autocompleteCities?text=${encodeURIComponent(uk)}&langId=4`);if(r.ok){answered=true;const list:any[]=await r.json();const norm=(v:string)=>String(v||"").toLowerCase().replace(/[’'`ʼ]/g,"").trim();const ob=norm(String(oblastUk||"")).replace(/\s*область$/,"");const hit=list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||list.find(x=>x?.type==="city"&&norm(x.cityName)===norm(uk))||list.find(x=>x?.type==="city"&&norm(String(x.cityName).replace(/\s*\(.*?\)\s*/g,""))===norm(uk)&&(!ob||norm(x.stateName).startsWith(ob)))||null;if(hit?.payload?.cityId)ids={stateId:Number(hit.payload.stateId),cityId:Number(hit.payload.cityId)}}}catch{/* нет ответа — честно сообщим */}
+  if(answered)dimIdsCache.set(k,{ids,at:Date.now()});return ids;
 }
 async function dimApiSearch(f:Filters,pageUrl:string){
   const base=await dimBaseQuery(pageUrl);
@@ -761,8 +761,9 @@ async function one(source:string,f:Filters){
      else if(source==="REM"){if(!remCitySlug(st.uk))return none(source);}
      else if(source==="ЛУН"||source==="LUN"){const pth=await lunPathLive(st);if(!pth)return none("ЛУН");f={...f,_lun_path:pth} as any;}
    }else{
-   if(wantCity&&portal==="olx"&&(REM_LUN_CITIES as any)[wantCity.toLowerCase()]){const sl=await olxCitySlugLive(wantCity);if(sl)f={...f,_olx_slug:sl} as any;}
-   if(wantCity&&portal==="dim"&&!portalSlug("dim",wantCity)){const ids=await dimCityIds(wantCity);if(ids)f={...f,_dim_ids:ids} as any;}
+   const obUk=String((OBLASTS.find(o=>o.ru===String(f.region||""))||{} as any).uk||"");
+   if(wantCity&&portal==="olx"&&(REM_LUN_CITIES as any)[wantCity.toLowerCase()]){const sl=await olxCitySlugLive(wantCity,"",obUk);if(sl)f={...f,_olx_slug:sl} as any;}
+   if(wantCity&&portal==="dim"&&!portalSlug("dim",wantCity)){const ids=await dimCityIds(wantCity,"",obUk);if(ids)f={...f,_dim_ids:ids} as any;}
    if(wantCity&&portal&&!(portal==="dim"&&(f as any)._dim_ids)&&!(portal==="olx"&&(f as any)._olx_slug)){const s=portalSlug(portal,wantCity)??(portal==="rieltor"?rieltorCitySlug(wantCity):citySlug(wantCity));if(!s)return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ${source} нет отдельной выдачи по городу «${wantCity}»`,items:[]}}
    if(source==="REM"&&wantCity&&!remCitySlug(wantCity))return{source,ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На REM нет отдельной выдачи по городу «${wantCity}»`,items:[]};
    if((source==="ЛУН"||source==="LUN")&&wantCity&&!lunCityPath(wantCity))return{source:"ЛУН",ok:true,total:0,count_is_exact:true,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,unsupported_city:true,error:`На ЛУН нет отдельной выдачи по городу «${wantCity}»`,items:[]};}}
@@ -780,6 +781,8 @@ async function one(source:string,f:Filters){
   let base="";
   if(source==="DIM.RIA Украина"){
     const pageUrl=(f as any)._dim_ids?domUrl({...f,city:"Киев",district:"",complex:"",complex_source_url:""}):(f as any)._dim_district_page||await resolvedDomUrl(f);
+    // город указан, а площадка отдала общую выдачу по Украине — не показываем её как результат по городу
+    if(!(f as any)._dim_ids&&!(f as any)._dim_district_page&&!String(f.complex||"").trim()&&String(geo(f).city||"").trim()&&/dom\.ria\.com\/(uk\/)?[a-z-]+\/?(\?|$)/.test(pageUrl))return{source,ok:false,total:0,count_is_exact:false,page:Number(f.page||1),page_item_count:0,total_pages:1,has_more:false,error:`DIM.RIA: площадка не ответила по городу «${String(geo(f).city)}» — обновите поиск`,items:[]};
     const api=await dimApiSearch(f,pageUrl).catch(()=>null);
     if(api){
       const finalF={...f,rooms:undefined,price_from:undefined,price_to:undefined,area_from:undefined,area_to:undefined,floor_from:undefined,floor_to:undefined,district:(f.district&&f.district!=="Все"&&!(f as any)._dim_district_page&&!(f as any)._dim_district_id&&cityKeyUa(String(geo(f).city||""))!=="odessa")?f.district:"",complex:""} as any;
