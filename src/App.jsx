@@ -2504,6 +2504,8 @@ const LH_TABLE_COLS = {name:"Клиент", phone:"Телефон", messenger:"�
 const LH_DEFAULT = {view:"kanban", preset:"standard", fields:LH_PRESETS.standard.fields, density:"normal", photos:true, colors:true,
   tableCols:["name","phone","stage","budget","city","type","next","newObjs","manager","actions"], widths:{}, sort:{key:"next", dir:1}};
 const LH_CLOSED = ["Отказ","Відмова","Отложили"];
+const LH_STAGE_ALIAS = {"Відмова":"Отказ", "У роботі":"В работе", "New Lead":"Новый Лид"};
+const lhCanon = st => LH_STAGE_ALIAS[st] || st;
 const LH_STATE = {
   lime:[MC.lime.c,"Новый подходящий объект"], red:[MC.red.c,"Просрочена задача"], sun:[MC.sun.c,"Нет следующего действия"], yellow:[MC.yellow.c,"Клиент думает / ждёт ответа"],
   blue:[MC.blue.c,"Назначен показ"], purple:[MC.purple.c,"Формируется подборка"], green:[MC.green.c,"Близко к сделке"], gray:[MC.gray.c,"Отложен / закрыт"],
@@ -2600,12 +2602,12 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
   }), [leads, brief, newByLead]);
 
   const filtered = useMemo(() => { const q = search.trim().toLowerCase().replace(/\s+/g,"");
-    return items.filter(x => (stageF === "Все" || x.l.status === stageF) && (!isAdmin || mgrF === "Все" || x.l.manager_email === mgrF || x.l.manager === mgrF)
+    return items.filter(x => (stageF === "Все" || lhCanon(x.l.status) === stageF) && (!isAdmin || mgrF === "Все" || x.l.manager_email === mgrF || x.l.manager === mgrF)
       && (!q || `${x.l.name||""}${x.l.phone||""}${x.p.city||""}${x.p.district||""}`.toLowerCase().replace(/\s+/g,"").includes(q))
       && (!quick || (quick==="fresh" && x.fresh) || (quick==="overdue" && x.overdue) || (quick==="noaction" && x.noAction) || (quick==="mine" && x.l.manager_email === me)));
   }, [items, search, stageF, mgrF, quick, isAdmin, me]);
 
-  const allStages = useMemo(() => [...stages, ...[...new Set(leads.map(l => l.status).filter(st => st && !stages.includes(st)))]], [leads]);
+  const allStages = useMemo(() => [...stages, ...[...new Set(leads.map(l => lhCanon(l.status)).filter(st => st && !stages.includes(st)))]], [leads]);
   const managers = useMemo(() => [...new Map(leads.filter(l => l.manager_email || l.manager).map(l => [l.manager_email || l.manager, l.manager || l.manager_email])).entries()], [leads]);
 
   // смена этапа — оптимистично, сохраняется в базе существующим механизмом CRM
@@ -2661,12 +2663,12 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
 
   // ===== виды =====
   const kanban = () => { const cols = stageF === "Все" ? allStages : [stageF];
-    const colStats = st => { const list = filtered.filter(x => x.l.status === st); return {list, overdue:list.filter(x=>x.overdue).length, noAct:list.filter(x=>x.noAction).length, sum:list.reduce((a,x)=>a+(x.budgetUsd||0),0)}; };
+    const colStats = st => { const list = filtered.filter(x => lhCanon(x.l.status) === st); return {list, overdue:list.filter(x=>x.overdue).length, noAct:list.filter(x=>x.noAction).length, sum:list.reduce((a,x)=>a+(x.budgetUsd||0),0)}; };
     const Col = ({st}) => { const c = colStats(st); const lim = limit[st] || 30;
-      return <section className="lhCol" onDragOver={e=>e.preventDefault()} onDrop={e=>{ const id = e.dataTransfer.getData("leadId"); const lead = leads.find(l => String(l.id) === id); if(lead) moveTo(lead, st); }}
+      return <section className="lhCol" onDragOver={e=>e.preventDefault()} onDrop={e=>{ const id = e.dataTransfer.getData("leadId"); const lead = leads.find(l => String(l.id) === id); if(lead && lhCanon(lead.status) !== st) moveTo(lead, st); }}
         style={{flex:narrow?"1 1 auto":"0 0 320px", minWidth:0, display:"grid", gap:10, alignContent:"start"}}>
-        <div className="lhColHead" style={{padding:"12px 14px", borderRadius:16, background:"#A3E635", color:"#1a2e05", border:"2px solid #65A30D", boxShadow:"0 6px 18px rgba(163,230,53,.25)", display:"grid", gap:6, position:"sticky", top:0, zIndex:2}}>
-          <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1, fontSize:16, fontWeight:900, color:"#1a2e05"}}>{T(st)}</b><span className="lhCount" style={{background:"#1a2e05", color:"#A3E635"}}>{c.list.length}</span></div>
+        <div className="lhColHead" style={{padding:"12px 14px", borderRadius:16, background:"#F5C518", color:"#1a1a05", border:"2px solid #CA9A04", boxShadow:"0 6px 18px rgba(245,197,24,.25)", display:"grid", gap:6}}>
+          <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1, fontSize:16, fontWeight:900, color:"#1a1a05"}}>{T(st)}</b><span className="lhCount" style={{background:"#1a1a05", color:"#F5C518"}}>{c.list.length}</span></div>
           <div style={{display:"flex", gap:6, flexWrap:"wrap", fontSize:12, fontWeight:800}}>
             {c.overdue>0 && <McPill k="red">⚠ {c.overdue} {T("просрочено")}</McPill>}
             {c.noAct>0 && <McPill k="sun">{c.noAct} {T("без действия")}</McPill>}
@@ -2675,21 +2677,21 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
         {c.list.slice(0, lim).map(x => <KCard key={x.l.id} x={x}/>)}
         {c.list.length > lim && <McBtn tone="plain" onClick={()=>setLimit({...limit, [st]:lim+30})}>{T("Показать ещё")} {Math.min(30, c.list.length-lim)}</McBtn>}
       </section>; };
-    if(narrow){ const cur = mobileStage && cols.includes(mobileStage) ? mobileStage : (cols.find(st => filtered.some(x => x.l.status === st)) || cols[0]);
+    if(narrow){ const cur = mobileStage && cols.includes(mobileStage) ? mobileStage : (cols.find(st => filtered.some(x => lhCanon(x.l.status) === st)) || cols[0]);
       return <div style={{display:"grid", gap:10}}>
-        <div className="lhStageTabs lhNoWrap" style={{display:"flex", gap:6, paddingBottom:4}}>{cols.map(st => { const c = colStats(st); return <button key={st} onClick={()=>setMobileStage(st)} className={cn("lhTab lhLime", st===cur && "on")}
+        <div className="lhStageTabs lhNoWrap" style={{display:"flex", gap:6, paddingBottom:4}}>{cols.map(st => { const c = colStats(st); return <button key={st} onClick={()=>setMobileStage(st)} className={cn("lhTab lhGold", st===cur && "on")}
           style={{flex:"0 0 auto", minHeight:40, padding:"0 12px", borderRadius:12, fontWeight:800, boxShadow:c.overdue?`inset 0 -3px 0 ${MC.red.c}`:"none"}}>{T(st)} {c.list.length}</button>; })}</div>
         <Col st={cur}/>
         <small className="muted">{T("Сменить этап на телефоне: откройте клиента → «Этап»")}</small>
       </div>; }
-    return <div className="lhKanban" style={{display:"flex", gap:14, overflowX:"auto", alignItems:"flex-start", paddingBottom:12}}>{cols.map(st => <Col key={st} st={st}/>)}</div>;
+    return <div className="lhKanban" style={{display:"flex", gap:16, overflowX:"auto", alignItems:"flex-start", padding:"4px 16px 12px 2px"}}>{cols.map(st => <Col key={st} st={st}/>)}</div>;
   };
 
   const cell = (x, k) => { switch(k){
     case "name": return <span style={{display:"flex", gap:8, alignItems:"center"}}>{s.colors && <span style={{width:6, height:26, borderRadius:3, background:x.state?LH_STATE[x.state][0]:"transparent"}}/>}<b>{x.l.name || T("Без имени")}</b></span>;
     case "phone": return x.l.phone || "";
     case "messenger": return x.l.phone ? "Viber · WhatsApp · Telegram" : "";
-    case "stage": return <select className="input lhStageSel" value={x.l.status} onClick={e=>e.stopPropagation()} onChange={e=>moveTo(x.l, e.target.value)} style={{minHeight:34, padding:"4px 8px"}}>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>;
+    case "stage": return <select className="input lhStageSel" value={lhCanon(x.l.status)} onClick={e=>e.stopPropagation()} onChange={e=>moveTo(x.l, e.target.value)} style={{minHeight:34, padding:"4px 8px"}}>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>;
     case "manager": return x.l.manager || "—"; case "source": return T(x.l.source || "");
     case "city": return x.p.city || ""; case "district": return x.p.district || ""; case "type": return [x.p.property_type, x.p.deal_type].filter(Boolean).join(", ");
     case "budget": return x.p.budget ? <b>{x.budgetText}</b> : ""; case "payment": return T(x.payText); case "first": return x.firstText;
@@ -2918,7 +2920,7 @@ function LeadPeek({x, lang="ru", om, onClose, onOpenFull, onCall, onTask, onStag
         <button className="icon" onClick={onClose} aria-label={T("Закрыть")}>×</button>
       </div>
       {x.state && <McPill k={x.state} strong>{T(LH_STATE[x.state][1])}</McPill>}
-      <select className="input" value={x.l.status} onChange={e=>onStage(e.target.value)} aria-label={T("Этап")}>{stagesList.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>
+      <select className="input" value={lhCanon(x.l.status)} onChange={e=>onStage(e.target.value)} aria-label={T("Этап")}>{stagesList.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>
       <div style={{display:"grid", gridTemplateColumns:"repeat(3, minmax(0,1fr))", gap:8}}>
         <McBtn tone="dark" style={{background:"#16a34a", borderColor:"#16a34a", color:"#fff"}} onClick={onCall}>{T("Позвонить")}</McBtn>
         <McBtn tone="purple" onClick={onCall}>{T("Написать")}</McBtn>
