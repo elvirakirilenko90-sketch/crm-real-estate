@@ -2569,8 +2569,8 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     const Col = ({st}) => { const c = colStats(st); const lim = limit[st] || 30;
       return <section className="lhCol" onDragOver={e=>e.preventDefault()} onDrop={e=>{ const id = e.dataTransfer.getData("leadId"); const lead = leads.find(l => String(l.id) === id); if(lead) moveTo(lead, st); }}
         style={{flex:narrow?"1 1 auto":"0 0 320px", minWidth:0, display:"grid", gap:10, alignContent:"start"}}>
-        <div className="lhColHead" style={{padding:"10px 12px", borderRadius:14, background:"var(--soft, #18181b)", border:"1.5px solid #F5C518", boxShadow:"0 0 0 3px rgba(245,197,24,.10)", display:"grid", gap:6}}>
-          <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1}}>{T(st)}</b><span className="lhCount">{c.list.length}</span></div>
+        <div className="lhColHead" style={{padding:"12px 14px", borderRadius:16, background:"#A3E635", color:"#1a2e05", border:"2px solid #65A30D", boxShadow:"0 6px 18px rgba(163,230,53,.25)", display:"grid", gap:6, position:"sticky", top:0, zIndex:2}}>
+          <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1, fontSize:16, fontWeight:900, color:"#1a2e05"}}>{T(st)}</b><span className="lhCount" style={{background:"#1a2e05", color:"#A3E635"}}>{c.list.length}</span></div>
           <div style={{display:"flex", gap:6, flexWrap:"wrap", fontSize:12, fontWeight:800}}>
             {c.overdue>0 && <McPill k="red">⚠ {c.overdue} {T("просрочено")}</McPill>}
             {c.noAct>0 && <McPill k="sun">{c.noAct} {T("без действия")}</McPill>}
@@ -2581,7 +2581,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       </section>; };
     if(narrow){ const cur = mobileStage && cols.includes(mobileStage) ? mobileStage : (cols.find(st => filtered.some(x => x.l.status === st)) || cols[0]);
       return <div style={{display:"grid", gap:10}}>
-        <div className="lhStageTabs lhNoWrap" style={{display:"flex", gap:6, paddingBottom:4}}>{cols.map(st => { const c = colStats(st); return <button key={st} onClick={()=>setMobileStage(st)} className={cn("lhTab lhGold", st===cur && "on")}
+        <div className="lhStageTabs lhNoWrap" style={{display:"flex", gap:6, paddingBottom:4}}>{cols.map(st => { const c = colStats(st); return <button key={st} onClick={()=>setMobileStage(st)} className={cn("lhTab lhLime", st===cur && "on")}
           style={{flex:"0 0 auto", minHeight:40, padding:"0 12px", borderRadius:12, fontWeight:800, boxShadow:c.overdue?`inset 0 -3px 0 ${MC.red.c}`:"none"}}>{T(st)} {c.list.length}</button>; })}</div>
         <Col st={cur}/>
         <small className="muted">{T("Сменить этап на телефоне: откройте клиента → «Этап»")}</small>
@@ -2732,6 +2732,9 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
 .lhScreen .lhGold{border:1.5px solid #F5C518!important;background:rgba(245,197,24,.06)!important;color:inherit!important;box-shadow:0 0 0 3px rgba(245,197,24,.08);transition:background .15s,box-shadow .15s}
 .lhScreen .lhGold:hover{background:rgba(245,197,24,.16)!important;box-shadow:0 0 0 3px rgba(245,197,24,.18)}
 .lhScreen .lhGold.on{background:#F5C518!important;color:#0b0b0c!important;box-shadow:0 4px 14px rgba(245,197,24,.35)}
+.lhScreen .lhLime{border:2px solid #65A30D!important;background:rgba(163,230,53,.14)!important;color:#D9F99D!important;font-weight:900!important}
+.lhScreen .lhLime:hover{background:rgba(163,230,53,.26)!important}
+.lhScreen .lhLime.on{background:#A3E635!important;color:#1a2e05!important;box-shadow:0 4px 14px rgba(163,230,53,.35)!important}
 .lhScreen .lhGoldBox,.lhScreen input.lhGoldBox,.lhScreen select.lhGoldBox,main.lhScreen .input.lhGoldBox{border:1.5px solid #F5C518!important;box-shadow:0 0 0 3px rgba(245,197,24,.08)!important}
 .lhKCard:hover{transform:translateY(-1px)}.lhCount{font-weight:900;padding:2px 9px;border-radius:999px;background:rgba(245,197,24,.2)}.lhGuess{font-style:normal;opacity:.7}.lhSwitch button{white-space:nowrap}`}</style>
     <div className="lhNoWrap" style={{display:"flex", gap:8, alignItems:"center"}}>
