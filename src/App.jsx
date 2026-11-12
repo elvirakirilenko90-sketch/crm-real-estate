@@ -2083,6 +2083,7 @@ const MC = {
   green:  {c:"#16a34a", bg:"#dcfce7", ink:"#14532d", label:"Полное совпадение"},
   blue:   {c:"#2563eb", bg:"#dbeafe", ink:"#1e3a8a", label:"В основном бюджете"},
   yellow: {c:"#ca8a04", bg:"#fef9c3", ink:"#713f12", label:"Допустимое отклонение / требует внимания"},
+  sun:    {c:"#facc15", bg:"#fef9c3", ink:"#713f12", label:"Нет следующего действия"},
   orange: {c:"#ea580c", bg:"#ffedd5", ink:"#7c2d12", label:"Выше бюджета, в пределах +10 000 $"},
   red:    {c:"#dc2626", bg:"#fee2e2", ink:"#7f1d1d", label:"Критичное несовпадение / неактуален / выше допустимого"},
   purple: {c:"#7c3aed", bg:"#ede9fe", ink:"#4c1d95", label:"Добавлено в подборку"},
@@ -2408,7 +2409,7 @@ const LH_DEFAULT = {view:"kanban", preset:"standard", fields:LH_PRESETS.standard
   tableCols:["name","phone","stage","budget","city","type","next","newObjs","manager","actions"], widths:{}, sort:{key:"next", dir:1}};
 const LH_CLOSED = ["Отказ","Відмова","Отложили"];
 const LH_STATE = {
-  lime:[MC.lime.c,"Новый подходящий объект"], red:[MC.red.c,"Просрочена задача"], orange:[MC.orange.c,"Нет следующего действия"], yellow:[MC.yellow.c,"Клиент думает / ждёт ответа"],
+  lime:[MC.lime.c,"Новый подходящий объект"], red:[MC.red.c,"Просрочена задача"], sun:[MC.sun.c,"Нет следующего действия"], yellow:[MC.yellow.c,"Клиент думает / ждёт ответа"],
   blue:[MC.blue.c,"Назначен показ"], purple:[MC.purple.c,"Формируется подборка"], green:[MC.green.c,"Близко к сделке"], gray:[MC.gray.c,"Отложен / закрыт"],
 };
 const LH_PAY = {installment:"Рассрочка", mortgage:"Ипотека", cash:"Наличные / 100%", certificate:"Сертификат"};
@@ -2493,7 +2494,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     const overdue = !!(next && next < new Date() && !closed); const noAction = !next && !closed && l.status !== "Сделка";
     const fresh = newByLead[String(l.id)] || 0;
     const state = closed ? "gray" : fresh ? "lime" : overdue ? "red" : ["Задаток","Сделка"].includes(l.status) ? "green" : ["Назначена встреча","Проведена встреча"].includes(l.status) ? "blue"
-      : (b.matching_status === "selection_created") ? "purple" : l.status === "Думает" ? "yellow" : noAction ? "orange" : null;
+      : (b.matching_status === "selection_created") ? "purple" : l.status === "Думает" ? "yellow" : noAction ? "sun" : null;
     const budgetUsd = p.budget ? (p.currency === "UAH" ? p.budget / 41 : p.currency === "EUR" ? p.budget * 1.08 : Number(p.budget)) : 0;
     return {l, b, p, next, overdue, noAction, fresh, state, closed, budgetUsd,
       budgetText: p.budget ? amMoney(p.budget, p.currency || "USD") : "—",
@@ -2525,7 +2526,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     onOpen({id:"L-"+Date.now().toString().slice(-6), agency_id:currentProfile?.agency_id ? String(currentProfile.agency_id) : "", name:"", phone:"+380", source:sources[0], status:stages[0], notes:"", nextContact:"", manager:managerName, manager_email:me, created_at:new Date().toISOString(), history:[`Новый клиент. Ответственный: ${managerName}`]}); };
 
   // --- маленькие общие элементы ---
-  const Avatar = ({x, size=40}) => s.photos ? <span className="lhAva" style={{width:size, height:size, borderRadius:size/2, background:x.state?LH_STATE[x.state][0]:"#3f3f46", color:x.state==="lime"?"#1a2e05":"#fff", display:"grid", placeItems:"center", fontWeight:900, fontSize:size*.36, flex:"0 0 auto"}}>{lhInitials(x.l.name)}</span> : null;
+  const Avatar = ({x, size=40}) => s.photos ? <span className="lhAva" style={{width:size, height:size, borderRadius:size/2, background:x.state?LH_STATE[x.state][0]:"#3f3f46", color:["lime","sun"].includes(x.state)?"#1a1a05":"#fff", display:"grid", placeItems:"center", fontWeight:900, fontSize:size*.36, flex:"0 0 auto"}}>{lhInitials(x.l.name)}</span> : null;
   const field = (x, k) => {
     switch(k){
       case "place": return x.placeText ? <span key={k}>{x.placeText}{x.p._guess?" ·":""}{x.p._guess && <i className="lhGuess" title={T("Распознано из заметок")}> ~</i>}</span> : null;
@@ -2536,7 +2537,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       case "source": return x.l.source ? <span key={k}>{T(x.l.source)}</span> : null;
       case "created": return x.l.created_at ? <span key={k}>{T("создан")} {lhDate(x.l.created_at, lang)}</span> : null;
       case "lastTouch": return <span key={k}>{T("контакт")}: {x.lastTouch ? lhDate(x.lastTouch, lang) : "—"}</span>;
-      case "next": return <span key={k} style={{color:x.overdue?"#fca5a5":x.noAction?"#fdba74":undefined, fontWeight:800}}>{x.overdue?"⚠ ":"⏰ "}{x.next ? lhDate(x.next, lang) : T("нет действия")}</span>;
+      case "next": return <span key={k} style={{color:x.overdue?"#fca5a5":x.noAction?MC.sun.c:undefined, fontWeight:800}}>{x.overdue?"⚠ ":"⏰ "}{x.next ? lhDate(x.next, lang) : T("нет действия")}</span>;
       case "objects": return x.objects ? <span key={k}>{T("объектов")}: {x.objects}</span> : null;
       case "newObjs": return x.fresh ? <span key={k} className="lhPillLime">+{x.fresh} {T("новых")}</span> : null;
       case "matching": return x.matching ? <span key={k}>{T("автоподбор")}: {T(x.matching)}</span> : null;
@@ -2572,7 +2573,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
           <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1}}>{T(st)}</b><span className="lhCount">{c.list.length}</span></div>
           <div style={{display:"flex", gap:6, flexWrap:"wrap", fontSize:12, fontWeight:800}}>
             {c.overdue>0 && <McPill k="red">⚠ {c.overdue} {T("просрочено")}</McPill>}
-            {c.noAct>0 && <McPill k="orange">{c.noAct} {T("без действия")}</McPill>}
+            {c.noAct>0 && <McPill k="sun">{c.noAct} {T("без действия")}</McPill>}
             {c.sum>0 && <McPill k="blue">{amMoney(c.sum)}</McPill>}
           </div></div>
         {c.list.slice(0, lim).map(x => <KCard key={x.l.id} x={x}/>)}
@@ -2598,7 +2599,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     case "budget": return x.p.budget ? <b>{x.budgetText}</b> : ""; case "payment": return T(x.payText); case "first": return x.firstText;
     case "rooms": return x.p.rooms_min ? `${x.p.rooms_min}${x.p.rooms_max && x.p.rooms_max!==x.p.rooms_min?`–${x.p.rooms_max}`:""}` : "";
     case "created": return x.l.created_at ? lhDate(x.l.created_at, lang) : ""; case "lastTouch": return x.lastTouch ? lhDate(x.lastTouch, lang) : "—";
-    case "next": return <span style={{color:x.overdue?MC.red.c:x.noAction?MC.orange.c:undefined, fontWeight:800}}>{x.next ? lhDate(x.next, lang) : T("нет действия")}</span>;
+    case "next": return <span style={{color:x.overdue?MC.red.c:x.noAction?MC.sun.c:undefined, fontWeight:800}}>{x.next ? lhDate(x.next, lang) : T("нет действия")}</span>;
     case "newObjs": return x.fresh ? <McBadge bg={MC.lime.c} ink="#1a2e05">+{x.fresh}</McBadge> : ""; case "matching": return T(x.matching);
     case "actions": return <span style={{display:"flex", gap:4}} onClick={e=>e.stopPropagation()}>
       <button className="lhIcon" title={T("Позвонить")} onClick={()=>setPhone(x.l.phone)}>☎</button>
@@ -2685,11 +2686,11 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     const act = filtered.filter(x => !x.closed);
     const B = [["overdue","Просрочено","red", act.filter(x=>x.overdue)], ["today","Сегодня","yellow", act.filter(x=>x.next && !x.overdue && x.next < d1)],
       ["tomorrow","Завтра","blue", act.filter(x=>x.next && x.next >= d1 && x.next < d2)], ["week","На этой неделе","purple", act.filter(x=>x.next && x.next >= d2 && x.next < wEnd)],
-      ["later","Позже","gray", act.filter(x=>x.next && x.next >= wEnd)], ["none","Нет запланированных действий","orange", act.filter(x=>!x.next)]];
+      ["later","Позже","gray", act.filter(x=>x.next && x.next >= wEnd)], ["none","Нет запланированных действий","sun", act.filter(x=>!x.next)]];
     return <div style={{display:"grid", gap:14}}>
       <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(110px,1fr))", gap:8}}>{B.map(([k,t,c,l]) => <div key={k} style={{borderRadius:14, padding:10, background:MC[c].bg, color:MC[c].ink}}><b style={{fontSize:22, display:"block"}}>{l.length}</b><span style={{fontSize:12, fontWeight:800}}>{T(t)}</span></div>)}</div>
       {B.map(([k,t,c,l]) => l.length>0 && <section key={k} style={{display:"grid", gap:8}}>
-        <div style={{display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:12, background:MC[c].bg, color:MC[c].ink, borderLeft:`6px solid ${MC[c].c}`}}><b style={{flex:1}}>{T(t)}</b><McBadge bg={MC[c].c} ink="#fff">{l.length}</McBadge></div>
+        <div style={{display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:12, background:MC[c].bg, color:MC[c].ink, borderLeft:`6px solid ${MC[c].c}`}}><b style={{flex:1}}>{T(t)}</b><McBadge bg={MC[c].c} ink={c==="sun"?"#1a1a05":"#fff"}>{l.length}</McBadge></div>
         {[...l].sort((a,b)=>(a.next?.getTime()||0)-(b.next?.getTime()||0)).slice(0, limit["t"+k] || 20).map(x => <div key={x.l.id} className="card" onClick={()=>setPeek(x)} style={{margin:0, padding:12, display:"flex", gap:10, alignItems:"center", cursor:"pointer", ...frame(x)}}>
           <span style={{width:58, fontWeight:900, color:MC[c].c, fontSize:13}}>{x.next ? x.next.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}) : "—"}</span>
           <span style={{flex:1, minWidth:0}}><b>{x.l.name || T("Без имени")}</b><span className="lhSub" style={{display:"block", fontSize:12}}>{T(x.l.status)}{x.next?` · ${lhDate(x.next, lang)}`:""} · {x.l.manager || "—"}</span></span>
@@ -2714,7 +2715,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
           <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key)}>{r.active}</button></td>
           <td className="lhTd">{r.fresh}</td><td className="lhTd" style={{color:MC.yellow.c, fontWeight:900}}>{r.raw}</td>
           <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key,"overdue")}><McBadge bg={MC.red.bg} ink={MC.red.ink}>{r.late}</McBadge></button></td>
-          <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key,"noaction")}><McBadge bg={MC.orange.bg} ink={MC.orange.ink}>{r.noact}</McBadge></button></td>
+          <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key,"noaction")}><McBadge bg={MC.sun.bg} ink={MC.sun.ink}>{r.noact}</McBadge></button></td>
           <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key,"fresh")}><McBadge bg={MC.lime.bg} ink={MC.lime.ink}>{r.objs}</McBadge></button></td>
           <td className="lhTd" style={{color:MC.green.c, fontWeight:900}}>{r.deal}</td></tr>)}</tbody>
       </table></div>; };
@@ -2746,8 +2747,8 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       {isAdmin && <select className="input" style={{width:"auto", maxWidth:240}} value={mgrF} onChange={e=>setMgrF(e.target.value)}><option value="Все">{T("Все менеджеры")}</option>{managers.map(([k,n]) => <option key={k} value={k}>{n}</option>)}</select>}
     </div>}
     <div className="lhNoWrap" style={{display:"flex", gap:6, marginBottom:14}}>
-      {[["fresh","С новыми объектами","lime"],["overdue","Просрочено","red"],["noaction","Без действия","orange"],...(isAdmin?[["mine","Мои","blue"]]:[])].map(([k,t,c]) => { const n = items.filter(x => k==="fresh"?x.fresh:k==="overdue"?x.overdue:k==="noaction"?x.noAction:x.l.manager_email===me).length;
-        return <button key={k} onClick={()=>setQuick(quick===k?"":k)} style={{minHeight:36, padding:"0 12px", borderRadius:999, cursor:"pointer", fontWeight:850, border:`1.5px solid ${MC[c].c}`, background:quick===k?MC[c].c:MC[c].bg, color:quick===k?(c==="lime"?"#1a2e05":"#fff"):MC[c].ink}}>{T(t)} {n}</button>; })}
+      {[["fresh","С новыми объектами","lime"],["overdue","Просрочено","red"],["noaction","Без действия","sun"],...(isAdmin?[["mine","Мои","blue"]]:[])].map(([k,t,c]) => { const n = items.filter(x => k==="fresh"?x.fresh:k==="overdue"?x.overdue:k==="noaction"?x.noAction:x.l.manager_email===me).length;
+        return <button key={k} onClick={()=>setQuick(quick===k?"":k)} style={{minHeight:36, padding:"0 12px", borderRadius:999, cursor:"pointer", fontWeight:850, border:`1.5px solid ${MC[c].c}`, background:quick===k?MC[c].c:MC[c].bg, color:quick===k?(["lime","sun"].includes(c)?"#1a1a05":"#fff"):MC[c].ink}}>{T(t)} {n}</button>; })}
     </div>
     {views[s.view] ? views[s.view]() : kanban()}
     {showSettings && <LeadsViewSettings V={V} isAdmin={isAdmin} lang={lang} onClose={()=>setShowSettings(false)}/>}
@@ -2809,7 +2810,7 @@ function LeadPeek({x, lang="ru", om, onClose, onOpenFull, onCall, onTask, onStag
     <style>{`@media (max-width:759px){.lhPeek{width:100%!important;height:88vh!important;margin-top:auto;border-radius:22px 22px 0 0!important}.lhPeekWrap{align-items:flex-end!important}}`}</style>
     <aside className="lhPeek card" onClick={e=>e.stopPropagation()} style={{width:460, maxWidth:"100%", height:"100%", margin:0, borderRadius:0, overflow:"auto", padding:20, display:"grid", gap:12, alignContent:"start"}}>
       <div style={{display:"flex", gap:12, alignItems:"center"}}>
-        <span style={{width:52, height:52, borderRadius:26, display:"grid", placeItems:"center", fontWeight:900, background:x.state?LH_STATE[x.state][0]:"#3f3f46", color:x.state==="lime"?"#1a2e05":"#fff"}}>{lhInitials(x.l.name)}</span>
+        <span style={{width:52, height:52, borderRadius:26, display:"grid", placeItems:"center", fontWeight:900, background:x.state?LH_STATE[x.state][0]:"#3f3f46", color:["lime","sun"].includes(x.state)?"#1a1a05":"#fff"}}>{lhInitials(x.l.name)}</span>
         <div style={{flex:1, minWidth:0}}><b style={{fontSize:20, display:"block"}}>{x.l.name || T("Без имени")}</b><span className="lhSub" style={{fontSize:13}}>{x.l.manager || "—"}{x.l.source?` · ${T(x.l.source)}`:""}</span></div>
         <button className="icon" onClick={onClose} aria-label={T("Закрыть")}>×</button>
       </div>
@@ -2822,7 +2823,7 @@ function LeadPeek({x, lang="ru", om, onClose, onOpenFull, onCall, onTask, onStag
       </div>
       <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
         <div style={box(MC.blue.bg, MC.blue.ink)}><span style={{fontSize:12, display:"block"}}>{T("Бюджет")}</span><b style={{fontSize:18}}>{x.budgetText}</b></div>
-        <div style={box(x.overdue?MC.red.bg:x.noAction?MC.orange.bg:MC.yellow.bg, x.overdue?MC.red.ink:x.noAction?MC.orange.ink:MC.yellow.ink)}><span style={{fontSize:12, display:"block"}}>{T("Следующее действие")}</span><b>{x.next ? lhDate(x.next, lang) : T("не запланировано")}</b></div>
+        <div style={box(x.overdue?MC.red.bg:x.noAction?MC.sun.bg:MC.yellow.bg, x.overdue?MC.red.ink:x.noAction?MC.sun.ink:MC.yellow.ink)}><span style={{fontSize:12, display:"block"}}>{T("Следующее действие")}</span><b>{x.next ? lhDate(x.next, lang) : T("не запланировано")}</b></div>
       </div>
       <div><b className="lhSub" style={{fontSize:13}}>{T("Запрос")}</b><p style={{margin:"4px 0 0"}}>{[x.p.property_type, x.p.deal_type, x.p.city, x.p.district, x.p.rooms_min && `${x.p.rooms_min} ${T("комн.")}`, x.payText && T(x.payText), x.firstText && `${T("взнос")} ${x.firstText}`].filter(Boolean).join(" · ") || "—"}</p>
         {x.l.notes && <p className="lhSub" style={{margin:"6px 0 0", fontSize:13, whiteSpace:"pre-line", maxHeight:120, overflow:"auto"}}>{String(x.l.notes).replace(/^Ответственный менеджер:.*\n?/,"")}</p>}</div>
