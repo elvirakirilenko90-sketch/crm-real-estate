@@ -3216,6 +3216,7 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
   useEffect(() => { if(lead?._openTab !== "automatch") return; const t = setTimeout(() => document.getElementById(`am-block-${Number(lead.id)}`)?.scrollIntoView({behavior:"smooth", block:"start"}), 600); return () => clearTimeout(t); }, [lead?.id]);
   const [local,setLocal] = useState(lead);
   const [showMatch,setShowMatch] = useState(false);
+  const [showContact,setShowContact] = useState(false); const [ctab,setCtab] = useState("comment");
   // Связи «дубль ↔ исходный клиент» — только для администраторов (менеджеру таблица недоступна)
   const isAdminRole = role === "Администратор директор" || role === "Администратор тех отдел";
   const [dupLinks,setDupLinks] = useState([]);
@@ -3224,7 +3225,7 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
     supabase.from("lead_duplicates").select("id,lead_id,duplicate_of,status,created_at").or(`lead_id.eq.${lead.id},duplicate_of.eq.${lead.id}`).neq("status","rejected")
       .then(({data})=>setDupLinks(data||[]));
   },[lead.id,isAdminRole]);
-  const [event,setEvent] = useState({type:"Звонок", date:"2026-05-24", time:"12:00", title:"", reminder:60, sound:"classic"});
+  const [event,setEvent] = useState(() => ({type:"Звонок", date:calIso(new Date(Date.now()+86400000)), time:"10:00", title:"", reminder:60, sound:"classic"}));
   const [question,setQuestion] = useState("");
   const [workComment,setWorkComment] = useState("");
   const [hist,addHist] = useLeadHistory(lead.id);   // история из базы (не пропадает после обновления)
@@ -3295,64 +3296,133 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
   const dupOf = dupLinks.filter(d=>String(d.lead_id)===String(lead.id));
   const dupCopies = dupLinks.filter(d=>String(d.duplicate_of)===String(lead.id) && d.lead_id);
   const dupPending = dupLinks.filter(d=>String(d.duplicate_of)===String(lead.id) && d.status==="pending");
+  // ===== Карточка клиента: вариант G (как Битрикс24 / amoCRM) — этапы стрелками, слева «О клиенте», справа дела и история =====
+  const T = x => tr(lang, x);
+  const req = lhParse(local, null);
+  const stageList = [...stages, ...(lhCanon(local.status) && !stages.includes(lhCanon(local.status)) ? [lhCanon(local.status)] : [])];
+  const curIdx = stageList.indexOf(lhCanon(local.status));
+  const nextAt = calParseLeadNext(local.nextContact);
+  const overdue = !!(nextAt && nextAt < new Date());
+  // этап меняется сразу (как в Битрикс24) и пишется в историю
+  const setStage = st => { if(st === lhCanon(local.status)) return;
+    addLeadHistory(local, "stage", `${T("Этап")}: ${T(local.status)} → ${T(st)}`, currentProfile).then(addHist);
+    const upd = {...local, status:st, history:[...(local.history||[]), `Перемещен в стадию: ${st}`]};
+    setLocal(upd); if(isDbLeadId(local.id)) setLeads(prev => prev.map(l => String(l.id)===String(local.id) ? {...l, status:st, history:upd.history} : l)); };
+  const tabs = [["comment","Комментарий"],["Звонок","Звонок"],["Встреча","Встреча"],["Показ","Показ"],["Задача","Задача"],["question","Вопрос директору"]];
+  const box = {borderRadius:16, border:"1.5px solid #F5C518", overflow:"hidden", background:"var(--card, #111113)"};
+  const head = {padding:"12px 14px", display:"flex", alignItems:"center", gap:8, background:"var(--soft, #17171a)", fontWeight:900};
+  const kv = (k, v) => <><span className="lcK">{T(k)}</span><span className="lcV">{v}</span></>;
   return <Modal onClose={onClose} wide>
+    <style>{`.lcWrap .lcK{padding:9px 14px;color:#a1a1aa;border-top:1px solid #27272a;font-size:14px}.lcWrap .lcV{padding:6px 10px;border-top:1px solid #27272a;font-size:14px;min-width:0}
+.lcWrap .lcV input,.lcWrap .lcV select,.lcWrap .lcV textarea{width:100%;box-sizing:border-box;min-height:38px}
+.lcGrid{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:16px;align-items:start}@media (max-width:900px){.lcGrid{grid-template-columns:minmax(0,1fr)}}
+.lcStages{display:flex;gap:3px;overflow-x:auto;scrollbar-width:none;padding:2px 0}.lcStages::-webkit-scrollbar{display:none}
+.lcStage{flex:1 0 auto;min-width:118px;min-height:44px;padding:0 16px 0 22px;border:0;cursor:pointer;font-weight:900;font-size:13px;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%)}
+.lcStage:first-child{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%);border-radius:10px 0 0 10px;padding-left:14px}
+.lcTabs{display:flex;overflow-x:auto;border-bottom:1px solid #27272a;scrollbar-width:none}.lcTabs::-webkit-scrollbar{display:none}
+@media (min-width:901px){.sheet:has(.lcWrap){max-width:min(1280px,96vw)!important;width:min(1280px,96vw)!important}}
+.lcTab{flex:0 0 auto;padding:12px 16px;background:none;border:0;border-bottom:3px solid transparent;color:#a1a1aa;font-weight:850;cursor:pointer}.lcTab.on{color:inherit;border-bottom-color:#F5C518}`}</style>
     {isAdminRole && (dupOf.length>0 || dupCopies.length>0 || dupPending.length>0) && <div className="card" style={{margin:"0 0 10px",display:"grid",gap:6}}>
       <b>Дубль (видит только администратор)</b>
       {dupOf.map(d=><div key={d.id} className="row"><span>{`Этот клиент — дубль клиента №${d.duplicate_of}`}</span><Button variant="soft" onClick={()=>onOpenLead?.(d.duplicate_of)}>{`Открыть №${d.duplicate_of}`}</Button></div>)}
       {dupCopies.map(d=><div key={d.id} className="row"><span>{`Повторный лид по этому клиенту: №${d.lead_id}`}</span><Button variant="soft" onClick={()=>onOpenLead?.(d.lead_id)}>{`Открыть №${d.lead_id}`}</Button></div>)}
       {dupPending.length>0 && <span className="muted">{`Повторных заявок на проверке: ${dupPending.length}`}</span>}
     </div>}
-    <div className="row"><section><label>Имя клиента</label><input className="titleInput" value={local.name} onChange={e=>setLocal({...local,name:e.target.value})}/><p className="muted">{local.id}</p></section><button className="icon" onClick={onClose}>×</button></div>
-
-    <div className="formGrid clientDetailsGrid">
-      <Field label="Телефон"><input value={local.phone} onChange={e=>setLocal({...local,phone:e.target.value})}/></Field>
-      <Field label="Источник"><select value={local.source} onChange={e=>setLocal({...local,source:e.target.value})}>{sources.map(s=><option key={s}>{s}</option>)}</select></Field>
-      <Field label="Статус"><select value={local.status} onChange={e=>setLocal({...local,status:e.target.value})}>{stages.map(s=><option key={s}>{s}</option>)}</select></Field>
-      <Field label="Следующий контакт"><input value={local.nextContact} onChange={e=>setLocal({...local,nextContact:e.target.value})}/></Field>
-      <Field label="Ответственный менеджер">
-        {isTech ? <select value={local.manager_email || ""} onChange={e=>changeManager(e.target.value)}>
-          <option value="">Выбери менеджера</option>
-          {managerOptions.map(m=><option key={m.email || m.name} value={m.email}>{m.name} {m.email ? `— ${m.email}` : ""}</option>)}
-        </select> : <input value={local.manager || ""} disabled />}
-      </Field>
-    </div>
-
-    <Field label="Заметки менеджера"><textarea value={local.notes} onChange={e=>setLocal({...local,notes:e.target.value})}/></Field>
-    <Button className="full matchOpenBtn" onClick={()=>setShowMatch(true)}>🔎 Подобрать объекты</Button>
-    {showMatch && <ClientMatch lead={local} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setShowMatch(false)}/>}
-    <AutoMatchBlock lead={lead} role={role} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang} onOpenProperty={onOpenProperty}/>
-    {isDbLeadId(lead.id) && <LeadObjectMatches leadId={Number(lead.id)} om={om} lang={lang} properties={properties} onOpenLead={onOpenLead} onOpenProperty={onOpenProperty}/>}
-
-    <div className="card">
-      <h3>История работы с клиентом</h3>
-      <textarea className="input" placeholder="Написать комментарий себе по клиенту..." value={workComment} onChange={e=>setWorkComment(e.target.value)}/>
-      <Button className="full" onClick={addWorkComment}>Добавить комментарий в историю</Button>
-      <LeadHistoryList rows={hist} legacy={isDbLeadId(local.id) ? [] : local.history} lang={lang}/>
-    </div>
-
-    <div className="card inner clientCalendarCard">
-      <div className="calendarCardHeader"><h3>📅 Календарь клиента</h3><span>Звонок · встреча · показ · задача</span></div>
-      <div className="grid4 eventTypeChooser">{eventTypes.map(t=><Button key={t} variant={event.type===t?"primary":"soft"} onClick={()=>setEvent({...event,type:t})}>{t}</Button>)}</div>
-      <div className="calendarFormPanel"><div className="grid3"><Field label="Дата следующего касания"><input className="input" type="date" value={event.date} onChange={e=>setEvent({...event,date:e.target.value})}/></Field><Field label="Время"><input className="input" type="time" value={event.time} onChange={e=>setEvent({...event,time:e.target.value})}/></Field><Field label="Название"><input className="input" placeholder="Название" value={event.title} onChange={e=>setEvent({...event,title:e.target.value})}/></Field></div>
-      </div><div className="calendarReminderPanel"><div className="grid2"><Field label="Напомнить за"><select className="input" value={event.reminder} onChange={e=>setEvent({...event,reminder:e.target.value})}><option value="5">5 минут</option><option value="15">15 минут</option><option value="30">30 минут</option><option value="60">1 час</option><option value="120">2 часа</option><option value="1440">1 день</option></select></Field><Field label="Звук"><select className="input" value={event.sound} onChange={e=>setEvent({...event,sound:e.target.value})}>{soundOptions.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select></Field></div></div>
-      <Button className="full calendarSaveButton" onClick={addEvent}>Сохранить событие</Button>
-    </div>
-
-    <div className="card amber">
-      <h3>Вопрос директору</h3>
-      <textarea className="input" placeholder="Напиши вопрос директору по этому клиенту..." value={question} onChange={e=>setQuestion(e.target.value)}/>
-      <Button className="full" onClick={ask}>Задать вопрос директору</Button>
-      <div style={{marginTop:12}}>
-        {(help || []).filter(h => String(h.leadId || h.lead_id) === String(local.id)).length === 0 && <p className="muted">По этому клиенту пока нет вопросов директору.</p>}
-        {(help || []).filter(h => String(h.leadId || h.lead_id) === String(local.id)).map(h => <div className="helpInCard" key={h.id}>
-          <div className="helpQ"><b>❓ {tr(lang,"Вопрос")}</b><p>{h.question || h.text}</p></div>
-          {(h.reply || h.director_reply) ? <div className="lhItem lhReply"><div className="lhReplyHead">⭐ {tr(lang,"ОТВЕТ ДИРЕКТОРА")}</div><div className="lhText">{h.reply || h.director_reply}</div>{h.answered_by && <small>{h.answered_by}</small>}</div>
-            : <p className="helpWait">⏳ {tr(lang,"Ждём ответ директора — придёт со звуком")}</p>}
-        </div>)}
+    <div className="lcWrap" style={{display:"grid", gap:14}}>
+      {/* шапка: имя, кратко о запросе, главные действия */}
+      <div style={{display:"flex", gap:12, alignItems:"center", flexWrap:"wrap"}}>
+        <span style={{width:52, height:52, borderRadius:26, background:overdue?MC.red.c:!nextAt?MC.sun.c:"#F5C518", color:overdue?"#fff":"#1a1a05", display:"grid", placeItems:"center", fontWeight:900, fontSize:18, flex:"0 0 auto"}}>{lhInitials(local.name)}</span>
+        <div style={{flex:"1 1 260px", minWidth:0}}>
+          <input className="titleInput" aria-label={T("Имя клиента")} value={local.name} onChange={e=>setLocal({...local,name:e.target.value})} placeholder={T("Имя клиента")} style={{fontSize:24, fontWeight:900, width:"100%", background:"transparent", border:0, padding:0}}/>
+          <span className="muted" style={{fontSize:14}}>{[req.deal_type, req.property_type, req.city, req.budget && amMoney(req.budget, req.currency||"USD"), local.manager].filter(Boolean).join(" · ") || local.id}</span>
+        </div>
+        <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+          <McBtn tone="dark" style={{background:"#16A34A", borderColor:"#16A34A", color:"#fff"}} onClick={()=>{ if(local.phone) window.location.href = `tel:${String(local.phone).replace(/[^\d+]/g,"")}`; }}>📞 {T("Позвонить")}</McBtn>
+          <McBtn tone="purple" onClick={()=>setShowContact(true)}>💬 {T("Написать")}</McBtn>
+          <McBtn tone="dark" style={{background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} onClick={()=>setShowMatch(true)}>📨 {T("Отправить презентацию")}</McBtn>
+          <button className="icon" onClick={onClose} aria-label={T("Закрыть")}>×</button>
+        </div>
       </div>
-    </div>
+      {/* этапы стрелками: пройденные — жёлтые, нажатие сразу переводит клиента */}
+      <div className="lcStages" role="list" aria-label={T("Этап")}>{stageList.map((st,i) => <button key={st} role="listitem" className="lcStage" title={T(st)} onClick={()=>setStage(st)}
+        style={{background:i<=curIdx?"#F5C518":"#27272a", color:i<=curIdx?"#1a1a05":"#a1a1aa", boxShadow:i===curIdx?"inset 0 -4px 0 #1a1a05":"none"}}>{T(st)}</button>)}</div>
 
-    <Button className="full sticky" onClick={save}>Сохранить клиента</Button>
+      <div className="lcGrid">
+        {/* слева: о клиенте */}
+        <aside style={{display:"grid", gap:14}}>
+          <section style={box}>
+            <div style={head}><span style={{flex:1}}>{T("О клиенте")}</span><small className="muted">{local.id}</small></div>
+            <div style={{display:"grid", gridTemplateColumns:"140px minmax(0,1fr)"}}>
+              {kv("Телефон", <input className="input" value={local.phone} onChange={e=>setLocal({...local,phone:e.target.value})}/>)}
+              {kv("Источник", <select className="input" value={local.source} onChange={e=>setLocal({...local,source:e.target.value})}>{[...new Set([local.source, ...sources].filter(Boolean))].map(x=><option key={x} value={x}>{T(x)}</option>)}</select>)}
+              {kv("Этап", <select className="input" value={lhCanon(local.status)} onChange={e=>setStage(e.target.value)}>{stageList.map(x=><option key={x} value={x}>{T(x)}</option>)}</select>)}
+              {kv("Следующий контакт", <input className="input" value={local.nextContact||""} onChange={e=>setLocal({...local,nextContact:e.target.value})} placeholder="2026-11-13 10:00" style={{color:overdue?MC.red.c:undefined}}/>)}
+              {kv("Ответственный", isTech ? <select className="input" value={local.manager_email || ""} onChange={e=>changeManager(e.target.value)}>
+                  <option value="">{T("Выбери менеджера")}</option>{managerOptions.map(m=><option key={m.email || m.name} value={m.email}>{m.name}</option>)}</select> : <input className="input" value={local.manager || ""} disabled/>)}
+              {req.budget ? kv("Бюджет", <b style={{padding:"0 4px"}}>{amMoney(req.budget, req.currency||"USD")}</b>) : null}
+              {req.payment_type ? kv("Оплата", <span style={{padding:"0 4px"}}>{T(LH_PAY[req.payment_type]||"")}</span>) : null}
+            </div>
+            <div style={{padding:"10px 14px", borderTop:"1px solid #27272a"}}>
+              <label className="muted" style={{fontSize:13}}>{T("Заметки менеджера")}</label>
+              <textarea className="input" rows={5} value={local.notes} onChange={e=>setLocal({...local,notes:e.target.value})} style={{width:"100%", boxSizing:"border-box", marginTop:6}}/>
+            </div>
+          </section>
+          <section style={{...box, border:"2px solid #A3E635"}}>
+            <div style={head}><span style={{flex:1}}>{T("Подбор объектов")}</span></div>
+            <div style={{padding:12, display:"grid", gap:8}}>
+              <McBtn tone="lime" style={{minHeight:50}} onClick={()=>setShowMatch(true)}>🔎 {T("Подобрать объекты")}</McBtn>
+              <McBtn tone="plain" onClick={()=>document.getElementById(`am-block-${Number(local.id)}`)?.scrollIntoView({behavior:"smooth", block:"start"})}>✨ {T("Открыть автоподбор")}</McBtn>
+            </div>
+          </section>
+        </aside>
+        {/* справа: дело / комментарий / звонок / показ + запланировано + история */}
+        <main style={{display:"grid", gap:14, minWidth:0}}>
+          <section style={box}>
+            <div className="lcTabs">{tabs.map(([k,t]) => <button key={k} className={cn("lcTab", ctab===k && "on")} onClick={()=>{ setCtab(k); if(eventTypes.includes(k)) setEvent({...event, type:k}); }}>{T(t)}</button>)}</div>
+            <div style={{padding:12, display:"grid", gap:10}}>
+              {ctab === "comment" && <>
+                <textarea className="input" rows={3} placeholder={T("Что сказал клиент, договорённости…")} value={workComment} onChange={e=>setWorkComment(e.target.value)}/>
+                <McBtn tone="dark" style={{background:"#F5C518", borderColor:"#F5C518", color:"#0b0b0c"}} onClick={addWorkComment}>{T("Добавить в историю")}</McBtn></>}
+              {eventTypes.includes(ctab) && <>
+                <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px,1fr))", gap:8}}>
+                  <input className="input" type="date" aria-label={T("Дата")} value={event.date} onChange={e=>setEvent({...event,date:e.target.value})}/>
+                  <input className="input" type="time" aria-label={T("Время")} value={event.time} onChange={e=>setEvent({...event,time:e.target.value})}/>
+                  <select className="input" aria-label={T("Напомнить за")} value={event.reminder} onChange={e=>setEvent({...event,reminder:e.target.value})}><option value="5">{T("за 5 минут")}</option><option value="15">{T("за 15 минут")}</option><option value="30">{T("за 30 минут")}</option><option value="60">{T("за 1 час")}</option><option value="120">{T("за 2 часа")}</option><option value="1440">{T("за 1 день")}</option></select>
+                  <select className="input" aria-label={T("Звук")} value={event.sound} onChange={e=>setEvent({...event,sound:e.target.value})}>{soundOptions.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select>
+                </div>
+                <input className="input" placeholder={T("Что нужно сделать…")} value={event.title} onChange={e=>setEvent({...event,title:e.target.value})}/>
+                <McBtn tone="dark" style={{background:"#F5C518", borderColor:"#F5C518", color:"#0b0b0c"}} onClick={addEvent}>{T("Запланировать")}: {T(ctab)}</McBtn></>}
+              {ctab === "question" && <>
+                <textarea className="input" rows={3} placeholder={T("Напиши вопрос директору по этому клиенту...")} value={question} onChange={e=>setQuestion(e.target.value)}/>
+                <McBtn tone="dark" style={{background:"#F5C518", borderColor:"#F5C518", color:"#0b0b0c"}} onClick={ask}>{T("Задать вопрос директору")}</McBtn>
+                {(help || []).filter(h => String(h.leadId || h.lead_id) === String(local.id)).map(h => <div className="helpInCard" key={h.id}>
+                  <div className="helpQ"><b>❓ {T("Вопрос")}</b><p>{h.question || h.text}</p></div>
+                  {(h.reply || h.director_reply) ? <div className="lhItem lhReply"><div className="lhReplyHead">⭐ {T("ОТВЕТ ДИРЕКТОРА")}</div><div className="lhText">{h.reply || h.director_reply}</div>{h.answered_by && <small>{h.answered_by}</small>}</div>
+                    : <p className="helpWait">⏳ {T("Ждём ответ директора — придёт со звуком")}</p>}
+                </div>)}</>}
+            </div>
+          </section>
+          <section style={{display:"grid", gap:8}}>
+            <div style={{display:"flex", alignItems:"center", gap:8}}><b>{T("Запланировано")}</b></div>
+            {nextAt ? <div style={{padding:"12px 14px", borderRadius:14, background:overdue?MC.red.bg:"#1E3A8A", color:overdue?MC.red.ink:"#fff", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap"}}>
+                <b style={{flex:1}}>{overdue?"⚠ ":"⏰ "}{T("Следующий контакт")}: {lhDate(nextAt, lang)}</b>
+                <McBtn tone="plain" style={{minHeight:38}} onClick={()=>{ setLocal({...local, nextContact:""}); addLeadHistory(local, "event", T("Касание выполнено"), currentProfile).then(addHist); }}>✓ {T("Выполнено")}</McBtn></div>
+              : <div style={{padding:"12px 14px", borderRadius:14, background:MC.sun.bg, color:MC.sun.ink, border:`2px solid ${MC.sun.c}`}}><b>{T("Нет следующего действия")}</b> — {T("запланируйте звонок или показ выше")}</div>}
+          </section>
+          <section style={{display:"grid", gap:8}}>
+            <b>{T("История")}</b>
+            <LeadHistoryList rows={hist} legacy={isDbLeadId(local.id) ? [] : local.history} lang={lang}/>
+          </section>
+        </main>
+      </div>
+
+      {/* автоподбор и новые подходящие объекты — на всю ширину */}
+      <AutoMatchBlock lead={lead} role={role} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang} onOpenProperty={onOpenProperty}/>
+      {isDbLeadId(lead.id) && <LeadObjectMatches leadId={Number(lead.id)} om={om} lang={lang} properties={properties} onOpenLead={onOpenLead} onOpenProperty={onOpenProperty}/>}
+    </div>
+    {showMatch && <ClientMatch lead={local} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setShowMatch(false)}/>}
+    {showContact && <Contact phone={local.phone} onClose={()=>setShowContact(false)}/>}
+    <Button className="full sticky" onClick={save}>{T("Сохранить клиента")}</Button>
   </Modal>;
 }
 
