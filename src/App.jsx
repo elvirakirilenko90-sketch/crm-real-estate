@@ -8606,7 +8606,7 @@ function nbMetaChips(meta, lang){
   const m = meta || {}; const out = [];
   if(m.district) out.push(`📍 ${m.district}`);
   if(m.branch === "done" && m.payment) out.push(`💳 ${tr(lang, NB_PAYMENTS[m.payment] || m.payment)}`);
-  if(m.branch === "building"){ if(m.first_pct != null && m.first_pct !== "") out.push(`${tr(lang,"ПВ от")} ${m.first_pct}%`); if(m.months) out.push(`${tr(lang,"рассрочка")} ${m.months} ${tr(lang,"мес")}`); }
+  if(m.branch === "building"){ if(m.first_pct != null && m.first_pct !== "") out.push(`${tr(lang,"ПВ")} ${m.first_pct}%`); if(m.months) out.push(`${tr(lang,"рассрочка")} ${m.months} ${tr(lang,"мес")}`); }
   return out;
 }
 // Поля параметров ссылки — общие для добавления и редактирования
@@ -8619,7 +8619,7 @@ function NbBranchFields({meta, setMeta, lang, districts}){
     {m.branch === "done" && <Field label={tr(lang,"Условия оплаты")}><select className="input" value={m.payment || ""} onChange={e => set({payment:e.target.value})}>
       <option value="">{tr(lang,"Не указано")}</option>{Object.entries(NB_PAYMENTS).map(([k,v]) => <option key={k} value={k}>{tr(lang,v)}</option>)}</select></Field>}
     {m.branch === "building" && <div className="grid2">
-      <Field label={tr(lang,"Первый взнос от, %")}><input className="input" inputMode="numeric" value={m.first_pct ?? ""} onChange={e => set({first_pct:e.target.value.replace(/[^\d.]/g,"")})} placeholder="30"/></Field>
+      <Field label={tr(lang,"Первый взнос, %")}><input className="input" inputMode="numeric" value={m.first_pct ?? ""} onChange={e => set({first_pct:e.target.value.replace(/[^\d.]/g,"")})} placeholder="30"/></Field>
       <Field label={tr(lang,"Рассрочка, месяцев")}><input className="input" inputMode="numeric" value={m.months ?? ""} onChange={e => set({months:e.target.value.replace(/\D/g,"")})} placeholder="24"/></Field>
     </div>}
   </div>;
@@ -8994,8 +8994,8 @@ function NewBuildsHub({currentProfile, role, lang}){
       <div className="grid2" style={{gap:8}}>
         <Field label={tr(lang,"Район")}><select className="input" value={fDistrict} onChange={e => setFDistrict(e.target.value)}><option value="Все">{tr(lang,"Все")}</option>{districtOpts.map(d => <option key={d} value={d}>{d}</option>)}</select></Field>
         {branch === "done" && <Field label={tr(lang,"Оплата")}><select className="input" value={fPay} onChange={e => setFPay(e.target.value)}><option value="Все">{tr(lang,"Все")}</option><option value="installment">{tr(lang,"Рассрочка")}</option><option value="full">{tr(lang,"100% оплата")}</option></select></Field>}
-        {branch === "building" && <Field label={tr(lang,"Первый взнос")}><select className="input" value={fFirst} onChange={e => setFFirst(e.target.value)}><option value="">{tr(lang,"Любой")}</option>{NB_FIRST_STEPS.map(n => <option key={n} value={n}>{tr(lang,"до")} {n}%</option>)}</select></Field>}
-        {branch === "building" && <Field label={tr(lang,"Длительность рассрочки")}><select className="input" value={fMonths} onChange={e => setFMonths(e.target.value)}><option value="">{tr(lang,"Любая")}</option>{NB_MONTH_STEPS.map(n => <option key={n} value={n}>{tr(lang,"от")} {n} {tr(lang,"мес")}</option>)}</select></Field>}
+        {branch === "building" && <Field label={tr(lang,"Первый взнос")}><select className="input" value={fFirst} onChange={e => setFFirst(e.target.value)}><option value="">{tr(lang,"Любой")}</option>{NB_FIRST_STEPS.map(n => <option key={n} value={n}>{n}%</option>)}</select></Field>}
+        {branch === "building" && <Field label={tr(lang,"Длительность рассрочки")}><select className="input" value={fMonths} onChange={e => setFMonths(e.target.value)}><option value="">{tr(lang,"Любая")}</option>{NB_MONTH_STEPS.map(n => <option key={n} value={n}>{n} {tr(lang,"мес")}</option>)}</select></Field>}
       </div>
       {filtersOn && <div className="row" style={{gap:8}}><span className="muted">{tr(lang,"Найдено")}: {list.length} {tr(lang,"из")} {branchList.length}</span><button type="button" className="linkBtn" onClick={() => { setFDistrict("Все"); setFPay("Все"); setFFirst(""); setFMonths(""); }}>{tr(lang,"Сбросить фильтры")}</button></div>}
       {isAdmin && !adding && <Button onClick={() => setAdding(true)}>＋ {branch === "done" ? tr(lang,"Добавить ссылку на актуальный объект") : tr(lang,"Добавить ссылку на строящийся ЖК")}</Button>}
