@@ -2770,8 +2770,17 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
   </div>;
 
   const [openRow,setOpenRow] = useState(null);
-  const compact = () => <div className="card lhGoldBox" style={{padding:0, overflow:"hidden"}}>
-    {filtered.slice(0,cLimit*2).map(x => <div key={x.l.id} className="lhRow" style={{borderBottom:"1px solid var(--line, #27272a)"}}>
+  // «Список» — строго по дате добавления (по умолчанию новые сверху), выбор сохраняется в настройках вида
+  const byDate = useMemo(() => { const dir = s.listOrder === "old" ? 1 : -1;
+    return [...filtered].sort((a,b) => ((new Date(a.l.created_at||0) - new Date(b.l.created_at||0)) || ((Number(a.l.id)||0) - (Number(b.l.id)||0))) * dir); }, [filtered, s.listOrder]);
+  const compact = () => <div style={{display:"grid", gap:10}}>
+    <div className="lhNoWrap" style={{display:"flex", gap:8, alignItems:"center"}}>
+      <span className="lhSub" style={{fontSize:13, fontWeight:800}}>{T("Порядок")}:</span>
+      <button className={cn("lhGold", s.listOrder !== "old" && "on")} style={{minHeight:36, padding:"0 12px", borderRadius:10, cursor:"pointer", fontWeight:850}} onClick={()=>V.update({listOrder:"new"})}>{T("Сначала новые")}</button>
+      <button className={cn("lhGold", s.listOrder === "old" && "on")} style={{minHeight:36, padding:"0 12px", borderRadius:10, cursor:"pointer", fontWeight:850}} onClick={()=>V.update({listOrder:"old"})}>{T("Сначала старые")}</button>
+    </div>
+    <div className="card lhGoldBox" style={{padding:0, overflow:"hidden", margin:0}}>
+    {byDate.slice(0,cLimit*2).map(x => <div key={x.l.id} className="lhRow" style={{borderBottom:"1px solid var(--line, #27272a)"}}>
       <button className="lhRowBtn" onClick={()=>setOpenRow(openRow===x.l.id?null:x.l.id)} style={{width:"100%", textAlign:"left", display:"flex", gap:10, alignItems:"center", padding:s.density==="dense"?"8px 12px":"10px 14px", background:"transparent", border:0, color:"inherit", cursor:"pointer"}}>
         <span style={{width:10, height:10, borderRadius:5, flex:"0 0 auto", background:x.state&&s.colors?LH_STATE[x.state][0]:"#52525b"}}/>
         {x.ord && <span title={`${T("Порядковый номер у менеджера")} ${x.l.manager||""}`} style={{flex:"0 0 auto", minWidth:42, textAlign:"center", padding:"3px 6px", borderRadius:8, border:"1.5px solid #F5C518", color:"#F5C518", fontWeight:900, fontSize:13}}>№{x.ord}</span>}
@@ -2782,8 +2791,8 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       </button>
       {openRow===x.l.id && <div style={{padding:"0 14px 12px"}}><QuickBtns x={x} wide/></div>}
     </div>)}
-    {filtered.length > cLimit*2 && <div style={{padding:10}}><McBtn tone="plain" style={{width:"100%"}} onClick={()=>setCLimit(cLimit+40)}>{T("Показать ещё")}</McBtn></div>}
-  </div>;
+    {byDate.length > cLimit*2 && <div style={{padding:10}}><McBtn tone="plain" style={{width:"100%"}} onClick={()=>setCLimit(cLimit+40)}>{T("Показать ещё")}</McBtn></div>}
+  </div></div>;
 
   const tasks = () => { const now = new Date(), d0 = new Date(now); d0.setHours(0,0,0,0); const d1 = new Date(d0.getTime()+86400000), d2 = new Date(d0.getTime()+2*86400000);
     const wEnd = new Date(d0); wEnd.setDate(d0.getDate() + (7 - ((d0.getDay()+6)%7)));
