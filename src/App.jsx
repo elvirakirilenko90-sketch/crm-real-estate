@@ -2499,7 +2499,7 @@ const LH_PRESETS = {
   tasks:{label:"Контроль задач", view:"tasks", fields:["next","lastTouch","manager"], density:"normal"},
   automatch:{label:"Автоподбор", view:"cards", fields:["place","budget","payment","objects","newObjs","matching"], density:"normal"},
 };
-const LH_TABLE_COLS = {name:"Клиент", phone:"Телефон", messenger:"Мессенджер", stage:"Этап", manager:"Менеджер", source:"Источник", city:"Город", district:"Район", type:"Тип", budget:"Бюджет",
+const LH_TABLE_COLS = {ord:"№ у менеджера", name:"Клиент", phone:"Телефон", messenger:"Мессенджер", stage:"Этап", manager:"Менеджер", source:"Источник", city:"Город", district:"Район", type:"Тип", budget:"Бюджет",
   payment:"Оплата", first:"Первый взнос", rooms:"Комнаты", created:"Создан", lastTouch:"Последнее касание", next:"След. действие", newObjs:"Новые объекты", matching:"Автоподбор"};
 const LH_DEFAULT = {view:"kanban", preset:"standard", fields:LH_PRESETS.standard.fields, density:"normal", photos:true, colors:true,
   tableCols:["name","phone","stage","budget","city","type","next","newObjs","manager","actions"], widths:{}, sort:{key:"next", dir:1}};
@@ -2585,6 +2585,9 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
 
   // новые подходящие объекты по клиенту (из мониторинга)
   const newByLead = useMemo(() => { const m = {}; (om?.rows||[]).forEach(r => { if(OM_OPEN.includes(r.status)) m[String(r.lead_id)] = (m[String(r.lead_id)]||0) + 1; }); return m; }, [om?.rows]);
+  // порядковый номер клиента у его менеджера — по дате добавления
+  const ordByLead = useMemo(() => { const by = {}; leads.forEach(l => { const k = l.manager_email || l.manager || "—"; (by[k] = by[k] || []).push(l); });
+    const m = {}; Object.values(by).forEach(list => list.sort((a,b) => (new Date(a.created_at||0) - new Date(b.created_at||0)) || (Number(a.id)||0) - (Number(b.id)||0)).forEach((l,i) => { m[String(l.id)] = i + 1; })); return m; }, [leads]);
   // краткая модель клиента для всех видов (считается один раз на набор данных)
   const items = useMemo(() => leads.map(l => {
     const b = brief[String(l.id)] || {}; const p = lhParse(l, b.profile);
@@ -2594,12 +2597,12 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     const state = closed ? "gray" : fresh ? "lime" : overdue ? "red" : ["Задаток","Сделка"].includes(l.status) ? "green" : ["Назначена встреча","Проведена встреча"].includes(l.status) ? "blue"
       : (b.matching_status === "selection_created") ? "purple" : l.status === "Думает" ? "yellow" : noAction ? "sun" : null;
     const budgetUsd = p.budget ? (p.currency === "UAH" ? p.budget / 41 : p.currency === "EUR" ? p.budget * 1.08 : Number(p.budget)) : 0;
-    return {l, b, p, next, overdue, noAction, fresh, state, closed, budgetUsd,
+    return {l, b, p, next, overdue, noAction, fresh, state, closed, budgetUsd, ord: ordByLead[String(l.id)] || null,
       budgetText: p.budget ? amMoney(p.budget, p.currency || "USD") : "—",
       placeText: [p.city, p.property_type, p.deal_type].filter(Boolean).join(" · "),
       payText: LH_PAY[p.payment_type] || "", firstText: p.first_payment ? amMoney(p.first_payment, p.currency||"USD") : p.first_payment_pct ? `${p.first_payment_pct}%` : "",
       lastTouch: b.last_touch_at || null, objects: b.results_count || 0, matching: lhMatchStatus[b.matching_status] || (b.matching_status ? b.matching_status : "")};
-  }), [leads, brief, newByLead]);
+  }), [leads, brief, newByLead, ordByLead]);
 
   const filtered = useMemo(() => { const q = search.trim().toLowerCase().replace(/\s+/g,"");
     return items.filter(x => (stageF === "Все" || lhCanon(x.l.status) === stageF) && (!isAdmin || mgrF === "Все" || x.l.manager_email === mgrF || x.l.manager === mgrF)
@@ -2689,6 +2692,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
 
   const cell = (x, k) => { switch(k){
     case "name": return <span style={{display:"flex", gap:8, alignItems:"center"}}>{s.colors && <span style={{width:6, height:26, borderRadius:3, background:x.state?LH_STATE[x.state][0]:"transparent"}}/>}<b>{x.l.name || T("Без имени")}</b></span>;
+    case "ord": return x.ord ? <b style={{color:"#F5C518"}}>№{x.ord}</b> : "";
     case "phone": return x.l.phone || "";
     case "messenger": return x.l.phone ? "Viber · WhatsApp · Telegram" : "";
     case "stage": return <select className="input lhStageSel" value={lhCanon(x.l.status)} onClick={e=>e.stopPropagation()} onChange={e=>moveTo(x.l, e.target.value)} style={{minHeight:34, padding:"4px 8px"}}>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>;
@@ -2706,7 +2710,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       <button className="lhIcon" title={T("Открыть автоподбор")} onClick={()=>openFull(x.l,"automatch")}>✨</button>
       <button className="lhIcon" title={T("Открыть карточку")} onClick={()=>openFull(x.l)}>›</button></span>;
     default: return ""; } };
-  const sortVal = (x, k) => ({name:x.l.name, stage:allStages.indexOf(x.l.status), manager:x.l.manager, source:x.l.source, city:x.p.city, budget:x.budgetUsd, created:x.l.created_at, lastTouch:x.lastTouch, next:x.next ? x.next.getTime() : 9e15, newObjs:-x.fresh})[k] ?? "";
+  const sortVal = (x, k) => ({ord:x.ord||0, name:x.l.name, stage:allStages.indexOf(x.l.status), manager:x.l.manager, source:x.l.source, city:x.p.city, budget:x.budgetUsd, created:x.l.created_at, lastTouch:x.lastTouch, next:x.next ? x.next.getTime() : 9e15, newObjs:-x.fresh})[k] ?? "";
   const [tPage,setTPage] = useState(0); const [groupBy,setGroupBy] = useState("");
   const table = () => { const cols = s.tableCols.filter(k => k === "actions" || LH_TABLE_COLS[k]);
     const sorted = [...filtered].sort((a,b) => { const va = sortVal(a, s.sort.key), vb = sortVal(b, s.sort.key); return (va > vb ? 1 : va < vb ? -1 : 0) * s.sort.dir; });
@@ -2770,7 +2774,9 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     {filtered.slice(0,cLimit*2).map(x => <div key={x.l.id} className="lhRow" style={{borderBottom:"1px solid var(--line, #27272a)"}}>
       <button className="lhRowBtn" onClick={()=>setOpenRow(openRow===x.l.id?null:x.l.id)} style={{width:"100%", textAlign:"left", display:"flex", gap:10, alignItems:"center", padding:s.density==="dense"?"8px 12px":"10px 14px", background:"transparent", border:0, color:"inherit", cursor:"pointer"}}>
         <span style={{width:10, height:10, borderRadius:5, flex:"0 0 auto", background:x.state&&s.colors?LH_STATE[x.state][0]:"#52525b"}}/>
+        {x.ord && <span title={`${T("Порядковый номер у менеджера")} ${x.l.manager||""}`} style={{flex:"0 0 auto", minWidth:42, textAlign:"center", padding:"3px 6px", borderRadius:8, border:"1.5px solid #F5C518", color:"#F5C518", fontWeight:900, fontSize:13}}>№{x.ord}</span>}
         <span style={{flex:1, minWidth:0}}><b>{x.l.name || T("Без имени")}</b> <span className="lhSub" style={{fontSize:12}}>· {T(x.l.status)}</span>
+          <span className="lhSub" style={{display:"block", fontSize:12, fontWeight:700, whiteSpace:"nowrap"}}>📅 {T("Добавлен")} {x.l.created_at ? new Date(x.l.created_at).toLocaleDateString(lang==="uk"?"uk-UA":"ru-RU",{day:"2-digit",month:"2-digit",year:"numeric"}) : "—"}</span>
           <span className="lhSub" style={{display:"block", fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{[x.p.budget?x.budgetText:null, x.p.city, x.p.property_type, x.lastTouch?`${T("контакт")} ${lhDate(x.lastTouch, lang)}`:null, x.next?`⏰ ${lhDate(x.next, lang)}`:T("нет действия"), x.l.manager].filter(Boolean).join(" · ")}</span></span>
         {x.fresh>0 && <McBadge bg={MC.lime.c} ink="#1a2e05">+{x.fresh}</McBadge>}
       </button>

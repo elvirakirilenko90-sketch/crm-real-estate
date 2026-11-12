@@ -1585,6 +1585,10 @@ export const uiExtra = {
   "не назначен": "не призначено",
   "Позвонить": "Зателефонувати",
   "Удалить": "Видалити",
+  "Порядковый номер у менеджера": "Порядковий номер у менеджера",
+  "Добавлен": "Додано",
+  "у": "у",
+  "№ у менеджера": "№ у менеджера",
  },
  "en": {
   "Список из заметок, Excel или скриншот переписки — CRM найдёт имя, телефон и запрос клиента. Все клиенты попадают менеджерам этапом «Новый Лид», перед сохранением всё можно проверить и исправить.": "A list from notes, an Excel file or a chat screenshot — the CRM will find the client's name, phone and request. All clients go to managers at the “New lead” stage; you can check and fix everything before saving.",
