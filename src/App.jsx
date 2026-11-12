@@ -1832,6 +1832,92 @@ function NbMatchBlock({lead, lang, rooms, budget, district, picked, togglePick})
   </div>;
 }
 
+// Окно «Отправить презентацию»: предпросмотр выбранных объектов → порядок, удаление, комментарии → веб-ссылка и PDF.
+// Презентация сохраняется в карточке клиента (client_selections); контакты — назначенного менеджера, ссылок площадок нет.
+function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName, lang="ru", onClose, onDone}){
+  const T = x => tr(lang, x);
+  const [list,setList] = useState(() => items.map((it,i) => ({...it, _k:i, comment:""})));
+  const [title,setTitle] = useState(`${T("Подборка для")} ${String(lead.name||"").split(" ")[0] || T("клиента")}`);
+  const [general,setGeneral] = useState(""); const [hideAddr,setHideAddr] = useState(false); const [showName,setShowName] = useState(true);
+  const [busy,setBusy] = useState(""); const [done,setDone] = useState(null); const idem = useRef(null);
+  const move = (i,d) => setList(l => { const a = [...l], j = i + d; if(j < 0 || j >= a.length) return l; [a[i],a[j]] = [a[j],a[i]]; return a; });
+  const toItem = it => it.own && it.property_id ? {source:"crm", property_id:it.property_id, manager_comment:it.comment}
+    : {source:"analytics", dedupe_key: it.source_url ? `url:${String(it.source_url).toLowerCase().replace(/[?#].*$/,"")}` : `nb:${it.title}:${it.rooms}:${it.area}:${it.floor}:${it.price}`, manager_comment:it.comment, check_status:"ok", checked_at:new Date().toISOString(),
+       data:{title:it.title, price:it.price, currency:it.currency||"USD", city:it.city, district:it.nb?null:it.district, complex_name:it.nb?it.title:it.complex_name, area:it.area, rooms:it.rooms, floor:it.floor, total_floors:it.total_floors,
+         description:[it.description, it.extra].filter(Boolean).join("\n"), photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url}};
+  const create = async () => {
+    if(busy || !list.length) return; setBusy("create");
+    if(!idem.current) idem.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    const {data, error} = await supabase.rpc("client_selection_create",{p_lead:leadDbId, p_title:title, p_items:list.map(toItem), p_opts:{show_client_name:showName, hide_address:hideAddr, general_comment:general, publish:true}, p_idem:idem.current});
+    setBusy(""); if(error) return alert(error.message);
+    const {data:sel} = await supabase.from("client_selections").select("*").eq("id", data.id).maybeSingle();
+    setDone({...data, sel}); onDone?.();
+  };
+  const link = done?.token ? amSelectionLink(done.token) : "";
+  const send = async via => {
+    const text = `${title}: ${link}`;
+    const digits = String(lead.phone||"").replace(/[^\d]/g,"");
+    const urls = {viber:`viber://forward?text=${encodeURIComponent(text)}`, telegram:`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(title)}`, whatsapp:`https://wa.me/${digits}?text=${encodeURIComponent(text)}`};
+    if(via === "copy"){ try{ await navigator.clipboard.writeText(link); alert(T("Ссылка скопирована")); }catch{} } else window.open(urls[via], "_blank");
+    supabase.rpc("client_selection_mark_sent",{p_selection:done.id, p_via:via}).then(()=>{});
+  };
+  const pdf = async () => {
+    if(busy) return; setBusy("pdf");
+    try{ const {data:its} = await supabase.from("client_selection_items").select("*").eq("selection_id", done.id).order("position");
+      const blob = await amBuildSelectionPdf({selection:done.sel || {title}, items:its||[], currentProfile, agencyName, lang:lang==="ru"?"ru":"uk"});
+      const up = await uploadToFirstAvailableBucket(["presentations"], `selections/${leadDbId}-${done.id}.pdf`, blob, {upsert:true, contentType:"application/pdf", cacheControl:"60"});
+      const url = up?.publicUrl || URL.createObjectURL(blob);
+      if(up?.publicUrl) await supabase.from("client_selections").update({pdf_url:up.publicUrl, updated_at:new Date().toISOString()}).eq("id", done.id);
+      const a = document.createElement("a"); a.href = url; a.download = `${title.replace(/[^\wа-яіїєґ-]+/gi,"_")}.pdf`; a.target = "_blank"; a.click();
+    }catch(e){ alert(T("Не удалось создать PDF")+": "+(e?.message||e)); } finally { setBusy(""); }
+  };
+  return <Modal onClose={onClose} wide>
+    <div className="row"><h2 style={{margin:0}}>📨 {done ? T("Презентация готова") : T("Отправить презентацию")}</h2><button className="icon" onClick={onClose} aria-label={T("Закрыть")}>×</button></div>
+    {!done && <>
+      <div style={{display:"flex", gap:6, margin:"10px 0", flexWrap:"wrap"}}>
+        <McBadge bg="#F5C518" ink="#0b0b0c">1 · {T("Объекты")}</McBadge><McBadge bg="#27272a" ink="#a1a1aa">2 · {T("Ссылка и PDF")}</McBadge></div>
+      <label className="muted" style={{display:"grid", gap:4}}>{T("Название")}<input className="input" value={title} onChange={e=>setTitle(e.target.value)}/></label>
+      <label className="muted" style={{display:"grid", gap:4, marginTop:8}}>{T("Общий комментарий для клиента")}<textarea className="input" rows={2} value={general} onChange={e=>setGeneral(e.target.value)} placeholder={T("Например: подобрала варианты у моря в вашем бюджете")}/></label>
+      <div style={{display:"grid", gap:8, margin:"12px 0"}}>{list.map((it,i) => <div key={it._k} style={{display:"grid", gap:8, padding:10, borderRadius:16, background:"#18181b", border:"1px solid #3f3f46"}}>
+        <div style={{display:"flex", gap:10, alignItems:"center"}}>
+          {(it.main_photo_url || (it.photo_urls||[])[0]) ? <img src={it.main_photo_url || it.photo_urls[0]} alt="" style={{width:64, height:52, borderRadius:10, objectFit:"cover", flex:"0 0 auto"}}/> : <span style={{width:64, height:52, borderRadius:10, background:"#3f3f46", display:"grid", placeItems:"center", flex:"0 0 auto"}}>🏠</span>}
+          <span style={{flex:1, minWidth:0, color:"#f4f4f5"}}><b style={{display:"block", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{i+1}. {it.title || T("Объект")}</b>
+            <span style={{fontSize:13, color:"#d4d4d8"}}>{[matchMoney(it.price), it.rooms && `${it.rooms} ${T("комн.")}`, it.area && `${Math.round(it.area)} м²`, it.district].filter(Boolean).join(" · ")}</span></span>
+        </div>
+        <div style={{display:"flex", gap:6, alignItems:"center"}}>
+          <span style={{flex:1, fontSize:12, color:"#a1a1aa"}}>{T("Порядок в презентации")}</span>
+          <button type="button" className="lhIcon" style={{color:"#f4f4f5", width:40, height:40}} aria-label="↑" onClick={()=>move(i,-1)}>↑</button>
+          <button type="button" className="lhIcon" style={{color:"#f4f4f5", width:40, height:40}} aria-label="↓" onClick={()=>move(i,1)}>↓</button>
+          <button type="button" className="lhIcon" style={{color:"#fca5a5", width:40, height:40}} aria-label={T("Убрать")} onClick={()=>setList(l=>l.filter(x=>x._k!==it._k))}>×</button>
+        </div>
+        <input className="input" value={it.comment} onChange={e=>setList(l=>l.map(x=>x._k===it._k?{...x, comment:e.target.value}:x))} placeholder={T("Комментарий к объекту для клиента (необязательно)")}/>
+      </div>)}</div>
+      <div style={{display:"flex", gap:12, flexWrap:"wrap", marginBottom:12}}>
+        <label style={{display:"flex", gap:8, alignItems:"center"}}><input type="checkbox" checked={showName} onChange={e=>setShowName(e.target.checked)} style={{width:20, height:20}}/>{T("Показать имя клиента")}</label>
+        <label style={{display:"flex", gap:8, alignItems:"center"}}><input type="checkbox" checked={hideAddr} onChange={e=>setHideAddr(e.target.checked)} style={{width:20, height:20}}/>{T("Скрыть точные адреса")}</label>
+      </div>
+      <small className="muted" style={{display:"block", marginBottom:10}}>{T("Клиент увидит презентацию в стиле «Аналитики»: фото, цену, характеристики и ваши комментарии. Ссылок и названий площадок там нет, в конце — контакты менеджера, назначенного клиенту.")}</small>
+      <McBtn tone="dark" style={{width:"100%", minHeight:56, fontSize:16, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!!busy || !list.length} onClick={create}>{busy==="create" ? "⏳ "+T("Создаю…") : `✓ ${T("Создать презентацию")} (${list.length})`}</McBtn>
+    </>}
+    {done && <div style={{display:"grid", gap:12, marginTop:10}}>
+      <div style={{padding:14, borderRadius:16, background:MC.green.bg, color:MC.green.ink}}><b>✓ {T("Сохранено в карточке клиента")}</b><div style={{fontSize:13, marginTop:4, wordBreak:"break-all"}}>{link}</div>
+        {done.manager?.name && <div style={{fontSize:13, marginTop:4}}>{T("Контакты в презентации")}: {done.manager.name}</div>}</div>
+      <b>{T("Отправить клиенту")}</b>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
+        <McBtn tone="purple" style={{minHeight:52}} onClick={()=>send("viber")}>Viber</McBtn>
+        <McBtn tone="dark" style={{minHeight:52, background:"#15803D", borderColor:"#15803D", color:"#fff"}} onClick={()=>send("whatsapp")}>WhatsApp</McBtn>
+        <McBtn tone="dark" style={{minHeight:52, background:"#0284C7", borderColor:"#0284C7", color:"#fff"}} onClick={()=>send("telegram")}>Telegram</McBtn>
+        <McBtn tone="plain" style={{minHeight:52}} onClick={()=>send("copy")}>🔗 {T("Копировать ссылку")}</McBtn>
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
+        <McBtn tone="indigo" style={{minHeight:52}} disabled={!!busy} onClick={pdf}>{busy==="pdf" ? "⏳ PDF…" : "⬇ "+T("Скачать PDF")}</McBtn>
+        <McBtn tone="plain" style={{minHeight:52}} onClick={()=>window.open(link, "_blank")}>👁 {T("Как увидит клиент")}</McBtn>
+      </div>
+      <McBtn tone="lime" style={{minHeight:48}} onClick={onClose}>{T("Готово")}</McBtn>
+    </div>}
+  </Modal>;
+}
+
 function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onClose}){
   const parsed = nbParseRequest(`${lead.notes || ""}`);
   const [rooms,setRooms] = useState(parsed.rooms || "");
@@ -1843,6 +1929,7 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
   const [market,setMarket] = useState(null); // {bySource:[{source,total,items}], loading, error}
   const [checks,setChecks] = useState({}); // source_url -> status
   const [showAllOwn,setShowAllOwn] = useState(false);
+  const [composer,setComposer] = useState(false);
   const leadDbId = /^\d+$/.test(String(lead.id)) ? Number(lead.id) : null;
   const myName = currentProfile?.full_name || currentProfile?.name || "";
 
@@ -1916,7 +2003,7 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
       <div className="matchBlockHead"><h3>{tr(lang,"Наша вторичка")}</h3><span className="badge gold">{own.length}</span></div>
       {own.length === 0 && <p className="muted">{tr(lang,"В нашей базе подходящих объектов нет — посмотрите площадки ниже.")}</p>}
       {ownShown.map(({p}) => { const key = "o:" + p.id; return <label key={key} className={cn("matchItem", picked[key] && "on")}>
-        <input type="checkbox" checked={!!picked[key]} onChange={() => togglePick(key, {title:p.title, rooms:matchRooms(p), area:p.area, district:p.district, floor:p.floor, price:p.price, own:true})}/>
+        <input type="checkbox" checked={!!picked[key]} onChange={() => togglePick(key, {title:p.title, rooms:matchRooms(p), area:p.area, district:p.district, floor:p.floor, price:p.price, own:true, property_id:p.id, currency:p.currency, city:p.city, complex_name:p.complex_name, total_floors:p.total_floors, property_type:p.property_type, deal_type:p.deal_type})}/>
         <span><b>{p.title}</b><small>{[p.type, p.area ? `${p.area} м²` : "", p.district, p.floor ? `${p.floor} эт.` : ""].filter(Boolean).join(" · ")}</small></span>
         <em>{matchMoney(p.price)}</em>
       </label>; })}
@@ -1961,9 +2048,18 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
         <a className={cn("btn sendWhatsApp", !pickedList.length && "disabled")} href={pickedList.length ? `https://wa.me/${digits}?text=${encodeURIComponent(messageText())}` : undefined} target="_blank" rel="noopener noreferrer">WhatsApp</a>
         <Button variant="soft" onClick={copyText} disabled={!pickedList.length}>{tr(lang,"Скопировать")}</Button>
       </div>
-      <p className="muted" style={{fontSize:12}}>{tr(lang,"Для Viber и Telegram текст копируется — вставьте его в чат. Контакты и ссылки площадок клиенту не отправляются.")}</p>
+      <p id="cm-send-anchor" className="muted" style={{fontSize:12}}>{tr(lang,"Для Viber и Telegram текст копируется — вставьте его в чат. Контакты и ссылки площадок клиенту не отправляются.")}</p>
     </div>
-  </Modal>;
+    {pickedList.length > 0 && <div className="cmBar" style={{position:"sticky", bottom:0, zIndex:5, margin:"12px -4px -4px", padding:12, borderRadius:20, background:"#18181b", border:"2px solid #F5C518", boxShadow:"0 -10px 30px rgba(0,0,0,.45)", display:"grid", gap:10}}>
+      <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1, color:"#F4F4F5", fontSize:16}}>✓ {tr(lang,"Выбрано объектов")}: {pickedList.length}</b>
+        <button type="button" onClick={()=>setPicked({})} style={{background:"none", border:0, color:"#a1a1aa", fontWeight:800, cursor:"pointer"}}>{tr(lang,"Снять выбор")}</button></div>
+      <div style={{display:"grid", gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)", gap:8}}>
+        <McBtn tone="dark" style={{minHeight:54, fontSize:16, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!leadDbId} title={!leadDbId ? tr(lang,"Сначала сохраните клиента") : ""} onClick={()=>setComposer(true)}>📨 {tr(lang,"Отправить презентацию")}</McBtn>
+        <McBtn tone="plain" style={{minHeight:54}} onClick={()=>document.getElementById("cm-send-anchor")?.scrollIntoView({behavior:"smooth", block:"center"})}>💬 {tr(lang,"Текстом")}</McBtn>
+      </div>
+    </div>}
+    {composer && <PresentationComposer lead={lead} leadDbId={leadDbId} items={pickedList} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setComposer(false)} onDone={()=>setPicked({})}/>}
+    </Modal>;
 }
 
 // ===== Автоподбор при первом назначении клиента менеджеру =====
