@@ -2569,7 +2569,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
     const Col = ({st}) => { const c = colStats(st); const lim = limit[st] || 30;
       return <section className="lhCol" onDragOver={e=>e.preventDefault()} onDrop={e=>{ const id = e.dataTransfer.getData("leadId"); const lead = leads.find(l => String(l.id) === id); if(lead) moveTo(lead, st); }}
         style={{flex:narrow?"1 1 auto":"0 0 320px", minWidth:0, display:"grid", gap:10, alignContent:"start"}}>
-        <div className="lhColHead" style={{padding:"10px 12px", borderRadius:14, background:"var(--soft, #18181b)", display:"grid", gap:6}}>
+        <div className="lhColHead" style={{padding:"10px 12px", borderRadius:14, background:"var(--soft, #18181b)", border:"1.5px solid #F5C518", boxShadow:"0 0 0 3px rgba(245,197,24,.10)", display:"grid", gap:6}}>
           <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1}}>{T(st)}</b><span className="lhCount">{c.list.length}</span></div>
           <div style={{display:"flex", gap:6, flexWrap:"wrap", fontSize:12, fontWeight:800}}>
             {c.overdue>0 && <McPill k="red">⚠ {c.overdue} {T("просрочено")}</McPill>}
@@ -2581,8 +2581,8 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       </section>; };
     if(narrow){ const cur = mobileStage && cols.includes(mobileStage) ? mobileStage : (cols.find(st => filtered.some(x => x.l.status === st)) || cols[0]);
       return <div style={{display:"grid", gap:10}}>
-        <div className="lhStageTabs lhNoWrap" style={{display:"flex", gap:6, paddingBottom:4}}>{cols.map(st => { const c = colStats(st); return <button key={st} onClick={()=>setMobileStage(st)} className={cn("lhTab", st===cur && "on")}
-          style={{flex:"0 0 auto", minHeight:40, padding:"0 12px", borderRadius:12, border:0, fontWeight:800, background:st===cur?"#F5C518":"var(--soft, #18181b)", color:st===cur?"#0b0b0c":"inherit", boxShadow:c.overdue?`inset 0 -3px 0 ${MC.red.c}`:"none"}}>{T(st)} {c.list.length}</button>; })}</div>
+        <div className="lhStageTabs lhNoWrap" style={{display:"flex", gap:6, paddingBottom:4}}>{cols.map(st => { const c = colStats(st); return <button key={st} onClick={()=>setMobileStage(st)} className={cn("lhTab lhGold", st===cur && "on")}
+          style={{flex:"0 0 auto", minHeight:40, padding:"0 12px", borderRadius:12, fontWeight:800, boxShadow:c.overdue?`inset 0 -3px 0 ${MC.red.c}`:"none"}}>{T(st)} {c.list.length}</button>; })}</div>
         <Col st={cur}/>
         <small className="muted">{T("Сменить этап на телефоне: откройте клиента → «Этап»")}</small>
       </div>; }
@@ -2626,7 +2626,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
           <McBtn tone="indigo" style={{minHeight:38}} onClick={()=>{ const v = window.prompt(T("Следующее действие для выбранных (ГГГГ-ММ-ДД ЧЧ:ММ)"), new Date(Date.now()+86400000).toISOString().slice(0,10)+" 10:00"); if(v) bulk(l => ({...l, nextContact:v.trim()})); }}>⏰ {T("Поставить задачу")}</McBtn>
           <McBtn tone="plain" style={{minHeight:38}} onClick={()=>setSel(new Set())}>{T("Снять выбор")}</McBtn></>}
       </div>
-      <div className="lhTableBox" style={{overflow:"auto", maxHeight:"70vh", borderRadius:16, border:"1px solid var(--line, #27272a)"}}>
+      <div className="lhTableBox lhGoldBox" style={{overflow:"auto", maxHeight:"70vh", borderRadius:16}}>
         <table className="lhTable" style={{borderCollapse:"separate", borderSpacing:0, minWidth:"100%", fontSize:14}}>
           <thead><tr>
             <th className="lhTh lhSticky0" style={{width:40}}><input type="checkbox" aria-label={T("Выбрать все")} checked={page.length>0 && page.every(x=>sel.has(String(x.l.id)))} onChange={e=>setSel(e.target.checked ? new Set([...sel, ...page.map(x=>String(x.l.id))]) : new Set())}/></th>
@@ -2668,7 +2668,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
   </div>;
 
   const [openRow,setOpenRow] = useState(null);
-  const compact = () => <div className="card" style={{padding:0, overflow:"hidden"}}>
+  const compact = () => <div className="card lhGoldBox" style={{padding:0, overflow:"hidden"}}>
     {filtered.slice(0,cLimit*2).map(x => <div key={x.l.id} className="lhRow" style={{borderBottom:"1px solid var(--line, #27272a)"}}>
       <button className="lhRowBtn" onClick={()=>setOpenRow(openRow===x.l.id?null:x.l.id)} style={{width:"100%", textAlign:"left", display:"flex", gap:10, alignItems:"center", padding:s.density==="dense"?"8px 12px":"10px 14px", background:"transparent", border:0, color:"inherit", cursor:"pointer"}}>
         <span style={{width:10, height:10, borderRadius:5, flex:"0 0 auto", background:x.state&&s.colors?LH_STATE[x.state][0]:"#52525b"}}/>
@@ -2688,7 +2688,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       ["tomorrow","Завтра","blue", act.filter(x=>x.next && x.next >= d1 && x.next < d2)], ["week","На этой неделе","purple", act.filter(x=>x.next && x.next >= d2 && x.next < wEnd)],
       ["later","Позже","gray", act.filter(x=>x.next && x.next >= wEnd)], ["none","Нет запланированных действий","sun", act.filter(x=>!x.next)]];
     return <div style={{display:"grid", gap:14}}>
-      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(110px,1fr))", gap:8}}>{B.map(([k,t,c,l]) => <div key={k} style={{borderRadius:14, padding:10, background:MC[c].bg, color:MC[c].ink}}><b style={{fontSize:22, display:"block"}}>{l.length}</b><span style={{fontSize:12, fontWeight:800}}>{T(t)}</span></div>)}</div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(110px,1fr))", gap:8}}>{B.map(([k,t,c,l]) => <div key={k} className="lhGoldBox" style={{borderRadius:14, padding:10, background:MC[c].bg, color:MC[c].ink}}><b style={{fontSize:22, display:"block"}}>{l.length}</b><span style={{fontSize:12, fontWeight:800}}>{T(t)}</span></div>)}</div>
       {B.map(([k,t,c,l]) => l.length>0 && <section key={k} style={{display:"grid", gap:8}}>
         <div style={{display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:12, background:MC[c].bg, color:MC[c].ink, borderLeft:`6px solid ${MC[c].c}`}}><b style={{flex:1}}>{T(t)}</b><McBadge bg={MC[c].c} ink={c==="sun"?"#1a1a05":"#fff"}>{l.length}</McBadge></div>
         {[...l].sort((a,b)=>(a.next?.getTime()||0)-(b.next?.getTime()||0)).slice(0, limit["t"+k] || 20).map(x => <div key={x.l.id} className="card" onClick={()=>setPeek(x)} style={{margin:0, padding:12, display:"flex", gap:10, alignItems:"center", cursor:"pointer", ...frame(x)}}>
@@ -2707,7 +2707,7 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
       if(x.overdue) r.late++; if(x.noAction) r.noact++; if(x.fresh) r.objs++; if(["Задаток","Сделка"].includes(x.l.status)) r.deal++; return a; }, {})).sort((a,b)=>b.active-a.active);
     const go = (k, q) => { setMgrF(k); setQuick(q||""); V.update({view:"table"}); };
     const H = ["Активные","Новые за 7 дней","Не обработаны","Просрочено","Без действия","С новыми объектами","Задаток / сделка"];
-    return <div style={{overflow:"auto", borderRadius:16, border:"1px solid var(--line, #27272a)"}}>
+    return <div className="lhGoldBox" style={{overflow:"auto", borderRadius:16}}>
       <table className="lhTable" style={{borderCollapse:"collapse", width:"100%", minWidth:820, fontSize:14}}>
         <thead><tr><th className="lhTh" style={{textAlign:"left"}}>{T("Менеджер")}</th>{H.map(h => <th key={h} className="lhTh">{T(h)}</th>)}</tr></thead>
         <tbody>{rows.map(r => <tr key={r.key} className="lhTr">
@@ -2729,22 +2729,26 @@ function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="r
 .lhGroupRow{padding:8px 12px;font-weight:900;background:rgba(245,197,24,.14)}.lhIcon{width:34px;height:34px;border-radius:10px;border:1px solid var(--line,#3f3f46);background:transparent;color:inherit;cursor:pointer;font-size:15px}
 .lhIcon:hover{background:rgba(245,197,24,.18)}.lhNum{background:none;border:0;color:inherit;font:inherit;font-weight:900;cursor:pointer;text-decoration:underline dotted}.lhPillLime{background:${MC.lime.c};color:#1a2e05;border-radius:999px;padding:1px 8px;font-weight:900}
 .lhScreen .lhNoWrap{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none}.lhScreen .lhNoWrap::-webkit-scrollbar{display:none}.lhScreen .lhNoWrap>*{flex:0 0 auto!important}
+.lhScreen .lhGold{border:1.5px solid #F5C518!important;background:rgba(245,197,24,.06)!important;color:inherit!important;box-shadow:0 0 0 3px rgba(245,197,24,.08);transition:background .15s,box-shadow .15s}
+.lhScreen .lhGold:hover{background:rgba(245,197,24,.16)!important;box-shadow:0 0 0 3px rgba(245,197,24,.18)}
+.lhScreen .lhGold.on{background:#F5C518!important;color:#0b0b0c!important;box-shadow:0 4px 14px rgba(245,197,24,.35)}
+.lhScreen .lhGoldBox,.lhScreen input.lhGoldBox,.lhScreen select.lhGoldBox,main.lhScreen .input.lhGoldBox{border:1.5px solid #F5C518!important;box-shadow:0 0 0 3px rgba(245,197,24,.08)!important}
 .lhKCard:hover{transform:translateY(-1px)}.lhCount{font-weight:900;padding:2px 9px;border-radius:999px;background:rgba(245,197,24,.2)}.lhGuess{font-style:normal;opacity:.7}.lhSwitch button{white-space:nowrap}`}</style>
     <div className="lhNoWrap" style={{display:"flex", gap:8, alignItems:"center"}}>
       <h2 style={{margin:0, flex:"1 1 auto"}}>{T("Лиды")} <span className="lhSub" style={{fontSize:15}}>{filtered.length}{filtered.length!==leads.length?` / ${leads.length}`:""}</span></h2>
-      <McBtn tone="plain" title={T("Настроить отображение")} aria-label={T("Настроить отображение")} onClick={()=>setShowSettings(true)}>⚙{narrow?"":" "+T("Настроить отображение")}</McBtn>
+      <McBtn tone="plain" className="lhGold" title={T("Настроить отображение")} aria-label={T("Настроить отображение")} onClick={()=>setShowSettings(true)}>⚙{narrow?"":" "+T("Настроить отображение")}</McBtn>
       <McBtn tone="lime" onClick={create}>+ {T("Клиент")}</McBtn>
     </div>
-    <div className="lhSwitch lhNoWrap" role="tablist" aria-label={T("Формат отображения")} style={{display:"flex", gap:6, padding:4, borderRadius:16, background:"var(--soft, #18181b)", margin:"12px 0"}}>
-      {visibleViews.map(([k,t]) => <button key={k} role="tab" aria-selected={s.view===k} onClick={()=>V.update({view:k})} style={{flex:"0 0 auto", minHeight:40, padding:"0 14px", borderRadius:12, border:0, cursor:"pointer", fontWeight:850, background:s.view===k?"#F5C518":"transparent", color:s.view===k?"#0b0b0c":"inherit"}}>{T(t)}</button>)}
+    <div className="lhSwitch lhNoWrap" role="tablist" aria-label={T("Формат отображения")} style={{display:"flex", gap:8, padding:"4px 2px", margin:"12px 0"}}>
+      {visibleViews.map(([k,t]) => <button key={k} role="tab" aria-selected={s.view===k} onClick={()=>V.update({view:k})} className={cn("lhGold", s.view===k && "on")} style={{flex:"0 0 auto", minHeight:40, padding:"0 14px", borderRadius:12, cursor:"pointer", fontWeight:850}}>{T(t)}</button>)}
     </div>
     <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:narrow&&!showF?10:12}} className="lhNoWrap">
-      <input className="input" style={{flex:"1 1 220px", minWidth:0, width:narrow?"auto":undefined}} value={search} onChange={e=>setSearch(e.target.value)} placeholder={T("Имя, телефон, город, район…")}/>
-      {narrow && <McBtn tone={showF||stageF!=="Все"||mgrF!=="Все"?"dark":"plain"} onClick={()=>setShowF(!showF)}>{T("Фильтры")}{stageF!=="Все"||mgrF!=="Все"?" •":""}</McBtn>}
+      <input className="input lhGoldBox" style={{flex:"1 1 220px", minWidth:0, width:narrow?"auto":undefined}} value={search} onChange={e=>setSearch(e.target.value)} placeholder={T("Имя, телефон, город, район…")}/>
+      {narrow && <McBtn tone={showF||stageF!=="Все"||mgrF!=="Все"?"dark":"plain"} className={cn("lhGold", showF && "on")} onClick={()=>setShowF(!showF)}>{T("Фильтры")}{stageF!=="Все"||mgrF!=="Все"?" •":""}</McBtn>}
     </div>
     {(!narrow || showF) && <div style={{display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:12}}>
-      <select className="input" style={{width:"auto"}} value={stageF} onChange={e=>setStageF(e.target.value)}><option value="Все">{T("Все этапы")}</option>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>
-      {isAdmin && <select className="input" style={{width:"auto", maxWidth:240}} value={mgrF} onChange={e=>setMgrF(e.target.value)}><option value="Все">{T("Все менеджеры")}</option>{managers.map(([k,n]) => <option key={k} value={k}>{n}</option>)}</select>}
+      <select className="input lhGoldBox" style={{width:"auto"}} value={stageF} onChange={e=>setStageF(e.target.value)}><option value="Все">{T("Все этапы")}</option>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>
+      {isAdmin && <select className="input lhGoldBox" style={{width:"auto", maxWidth:240}} value={mgrF} onChange={e=>setMgrF(e.target.value)}><option value="Все">{T("Все менеджеры")}</option>{managers.map(([k,n]) => <option key={k} value={k}>{n}</option>)}</select>}
     </div>}
     <div className="lhNoWrap" style={{display:"flex", gap:6, marginBottom:14}}>
       {[["fresh","С новыми объектами","lime"],["overdue","Просрочено","red"],["noaction","Без действия","sun"],...(isAdmin?[["mine","Мои","blue"]]:[])].map(([k,t,c]) => { const n = items.filter(x => k==="fresh"?x.fresh:k==="overdue"?x.overdue:k==="noaction"?x.noAction:x.l.manager_email===me).length;
