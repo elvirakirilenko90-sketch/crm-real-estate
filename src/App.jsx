@@ -1834,17 +1834,23 @@ function NbMatchBlock({lead, lang, rooms, budget, district, picked, togglePick})
 
 // Окно «Отправить презентацию»: предпросмотр выбранных объектов → порядок, удаление, комментарии → веб-ссылка и PDF.
 // Презентация сохраняется в карточке клиента (client_selections); контакты — назначенного менеджера, ссылок площадок нет.
-function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName, lang="ru", onClose, onDone}){
+function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName, properties=[], lang="ru", onClose, onDone}){
   const T = x => tr(lang, x);
-  const [list,setList] = useState(() => items.map((it,i) => ({...it, _k:i, comment:it.comment || ""})));
+  // текст объявления можно поправить только для этой подборки (карточка объекта и объявление не меняются)
+  const [list,setList] = useState(() => items.map((it,i) => { const pp = it.own && it.property_id ? properties.find(p => String(p.id) === String(it.property_id)) : null;
+    const desc = pubClean(it.description || it.extra || (pp ? (lang === "uk" && pp.description_uk ? pp.description_uk : pp.description) : "") || "");
+    return {...it, _k:i, comment:it.comment || "", editTitle:pubClean(it.title || pp?.title || ""), editDesc:desc, _origTitle:pubClean(it.title || pp?.title || ""), _origDesc:desc, _edit:false}; }));
+  const [preview,setPreview] = useState(false);
+  const upd = (k, patch) => setList(l => l.map(x => x._k === k ? {...x, ...patch} : x));
   const [title,setTitle] = useState(`${T("Подборка для")} ${String(lead.name||"").split(" ")[0] || T("клиента")}`);
   const [general,setGeneral] = useState(""); const [hideAddr,setHideAddr] = useState(false); const [showName,setShowName] = useState(true);
   const [busy,setBusy] = useState(""); const [done,setDone] = useState(null); const idem = useRef(null);
   const move = (i,d) => setList(l => { const a = [...l], j = i + d; if(j < 0 || j >= a.length) return l; [a[i],a[j]] = [a[j],a[i]]; return a; });
-  const toItem = it => it.own && it.property_id ? {source:"crm", property_id:it.property_id, manager_comment:it.comment}
+  const edits = it => ({...(it.editTitle.trim() && it.editTitle !== it._origTitle ? {title:it.editTitle.trim()} : {}), ...(it.editDesc !== it._origDesc ? {description:it.editDesc} : {})});
+  const toItem = it => it.own && it.property_id ? {source:"crm", property_id:it.property_id, manager_comment:it.comment, data:edits(it)}
     : {source:"analytics", dedupe_key: it.source_url ? `url:${String(it.source_url).toLowerCase().replace(/[?#].*$/,"")}` : `nb:${it.title}:${it.rooms}:${it.area}:${it.floor}:${it.price}`, manager_comment:it.comment, check_status:"ok", checked_at:new Date().toISOString(),
-       data:{title:it.title, price:it.price, currency:it.currency||"USD", city:it.city, district:it.nb?null:it.district, complex_name:it.nb?it.title:it.complex_name, area:it.area, rooms:it.rooms, floor:it.floor, total_floors:it.total_floors,
-         description:[it.description, it.extra].filter(Boolean).join("\n"), photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url}};
+       data:{title:it.editTitle.trim() || it.title, price:it.price, currency:it.currency||"USD", city:it.city, district:it.nb?null:it.district, complex_name:it.nb?it.title:it.complex_name, area:it.area, rooms:it.rooms, floor:it.floor, total_floors:it.total_floors,
+         description:it.editDesc, photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url}};
   const create = async () => {
     if(busy || !list.length) return; setBusy("create");
     if(!idem.current) idem.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -1890,6 +1896,14 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
           <button type="button" className="lhIcon" style={{color:"#f4f4f5", width:40, height:40}} aria-label="↓" onClick={()=>move(i,1)}>↓</button>
           <button type="button" className="lhIcon" style={{color:"#fca5a5", width:40, height:40}} aria-label={T("Убрать")} onClick={()=>setList(l=>l.filter(x=>x._k!==it._k))}>×</button>
         </div>
+        <McBtn tone={it._edit ? "dark" : "plain"} style={{minHeight:40}} onClick={()=>upd(it._k, {_edit:!it._edit})}>✎ {it._edit ? T("Скрыть редактирование") : T("Редактировать текст объявления")}{(it.editTitle !== it._origTitle || it.editDesc !== it._origDesc) ? " •" : ""}</McBtn>
+        {it._edit && <div style={{display:"grid", gap:6, padding:10, borderRadius:12, border:"1.5px solid #F5C518"}}>
+          <label style={{display:"grid", gap:4, fontSize:13, color:"#d4d4d8"}}>{T("Заголовок для клиента")}<input className="input" value={it.editTitle} onChange={e=>upd(it._k, {editTitle:e.target.value})}/></label>
+          <label style={{display:"grid", gap:4, fontSize:13, color:"#d4d4d8"}}>{T("Описание для клиента")}<textarea className="input" rows={6} value={it.editDesc} onChange={e=>upd(it._k, {editDesc:e.target.value})} placeholder={T("Опишите объект для клиента")}/></label>
+          <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+            <small style={{flex:"1 1 220px", color:"#a1a1aa"}}>{T("Меняется только текст в этой презентации. Ссылки, телефоны и названия площадок убираются автоматически.")}</small>
+            <button type="button" style={{background:"none", border:0, color:"#F5C518", fontWeight:800, cursor:"pointer"}} onClick={()=>upd(it._k, {editTitle:it._origTitle, editDesc:it._origDesc})}>↺ {T("Вернуть исходный текст")}</button>
+          </div></div>}
         <input className="input" value={it.comment} onChange={e=>setList(l=>l.map(x=>x._k===it._k?{...x, comment:e.target.value}:x))} placeholder={T("Комментарий к объекту для клиента (необязательно)")}/>
       </div>)}</div>
       <div style={{display:"flex", gap:12, flexWrap:"wrap", marginBottom:12}}>
@@ -1911,9 +1925,16 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
       </div>
       <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
         <McBtn tone="indigo" style={{minHeight:52}} disabled={!!busy} onClick={pdf}>{busy==="pdf" ? "⏳ PDF…" : "⬇ "+T("Скачать PDF")}</McBtn>
-        <McBtn tone="plain" style={{minHeight:52}} onClick={()=>window.open(link, "_blank")}>👁 {T("Как увидит клиент")}</McBtn>
+        <McBtn tone="plain" style={{minHeight:52}} onClick={()=>setPreview(true)}>👁 {T("Как увидит клиент")}</McBtn>
       </div>
       <McBtn tone="lime" style={{minHeight:48}} onClick={onClose}>{T("Готово")}</McBtn>
+    </div>}
+    {preview && link && <div role="dialog" aria-label={T("Как увидит клиент")} style={{position:"fixed", inset:0, zIndex:3000, background:"#0b0b0c", display:"flex", flexDirection:"column"}}>
+      <div style={{display:"flex", gap:10, alignItems:"center", padding:"10px 12px", paddingTop:"max(10px, env(safe-area-inset-top))", background:"#17171a", borderBottom:"2px solid #F5C518"}}>
+        <McBtn tone="dark" style={{minHeight:46, background:"#F5C518", borderColor:"#F5C518", color:"#0b0b0c"}} onClick={()=>setPreview(false)}>← {T("Вернуться в предыдущее меню")}</McBtn>
+        <span style={{flex:1, color:"#a1a1aa", fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{T("Так клиент увидит презентацию")}</span>
+      </div>
+      <iframe title={T("Как увидит клиент")} src={link} style={{flex:1, width:"100%", border:0, background:"#fff"}}/>
     </div>}
   </Modal>;
 }
@@ -2065,7 +2086,7 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
         <McBtn tone="plain" style={{minHeight:54}} onClick={()=>document.getElementById("cm-send-anchor")?.scrollIntoView({behavior:"smooth", block:"center"})}>💬 {tr(lang,"Текстом")}</McBtn>
       </div>
     </div>}
-    {composer && <PresentationComposer lead={lead} leadDbId={leadDbId} items={composer} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setComposer(null)} onDone={()=>setPicked(prev => { const n = {...prev}; (composer||[]).forEach(it => { Object.keys(n).forEach(k => { if(n[k] === it) delete n[k]; }); }); return n; })}/>}
+    {composer && <PresentationComposer lead={lead} leadDbId={leadDbId} items={composer} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setComposer(null)} onDone={()=>setPicked(prev => { const n = {...prev}; (composer||[]).forEach(it => { Object.keys(n).forEach(k => { if(n[k] === it) delete n[k]; }); }); return n; })}/>}
     </Modal>;
 }
 
@@ -3197,7 +3218,7 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
     {m && results.length>0 && <div>
       <div className="row"><b>{tr(lang,"Найденные варианты")}: {results.filter(r=>r.state!=="rejected").length}</b><label className="chip"><input type="checkbox" checked={showRejected} onChange={e=>setShowRejected(e.target.checked)}/> {tr(lang,"показать исключённые")}</label></div>
       <McBtn tone="dark" style={{width:"100%", minHeight:54, fontSize:15, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!selectedCount} title={!selectedCount ? tr(lang,"Отметьте объекты галочкой «В подборку»") : ""} onClick={sendSelected}>📨 {tr(lang,"Отправить подборку")}{selectedCount ? ` (${selectedCount})` : ` — ${tr(lang,"отметьте «В подборку»")}`}</McBtn>
-      {amComposer && <PresentationComposer lead={lead} leadDbId={leadId} items={amComposer} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>{ setAmComposer(null); load(); }}/>}
+      {amComposer && <PresentationComposer lead={lead} leadDbId={leadId} items={amComposer} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>{ setAmComposer(null); load(); }}/>}
       <McLegend lang={lang}/>
       {MC_GROUPS.map(([gk, ck, gt]) => { const list = visible.filter(r => mcGroup(viewOf(r)) === gk); if(!list.length) return null;
         return <section key={gk} style={{display:"grid", gap:10, marginTop:12}}>
