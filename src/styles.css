@@ -558,7 +558,7 @@ input,select,textarea{max-width:100%;box-sizing:border-box;font-size:16px}
 .nbCardMain small{font-size:13px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nbCardMain i{font-style:normal;font-size:22px;opacity:.7}
 .nbCardIcon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--accent,#F5C518);color:#111;font-size:20px;flex:0 0 auto}
-.nbCardActions{padding:0 14px 12px;justify-content:flex-end}
+.nbCardActions{padding:0 14px 12px;justify-content:flex-end}.nbCardActions{flex-wrap:wrap}.feedSrcActions .nbCfgBtn{width:auto;white-space:nowrap;font-size:13px}
 .nbAdd h3{margin:0 0 6px}
 .nbBrowser{display:flex;flex-direction:column;gap:12px}
 .nbBrowserHead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}

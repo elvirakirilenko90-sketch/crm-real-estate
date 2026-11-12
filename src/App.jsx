@@ -8595,6 +8595,37 @@ const NB_KINDS = {
   link:{label:"Сайт / другая ссылка", icon:"🔗", ph:"https://…", hint:"Сайт застройщика, прайс в Google Таблице и т.п. — откроется по кнопке."},
 };
 const NB_FILE_ICON = {image:"🖼", video:"🎬", pdf:"📕", doc:"📄", sheet:"📊", slides:"📑", file:"📎"};
+// «Квартиры» делятся на две ветки. Параметры ссылки хранятся в nb_sources.meta: branch, district, payment, first_pct, months
+const NB_BRANCHES = [{id:"done", label:"Сданные", icon:"🔑"}, {id:"building", label:"Строящиеся", icon:"🏗"}];
+const NB_DISTRICTS = ["Приморский","Киевский","Хаджибейский","Пересыпский"];
+const NB_PAYMENTS = {installment:"Рассрочка", full:"100% оплата", both:"Рассрочка и 100%"};
+const NB_FIRST_STEPS = [10,20,30,40,50];   // фильтр «Первый взнос до, %»
+const NB_MONTH_STEPS = [6,12,24,36,48,60]; // фильтр «Рассрочка от, мес»
+// Подпись параметров ссылки (район, оплата, ПВ, срок)
+function nbMetaChips(meta, lang){
+  const m = meta || {}; const out = [];
+  if(m.district) out.push(`📍 ${m.district}`);
+  if(m.branch === "done" && m.payment) out.push(`💳 ${tr(lang, NB_PAYMENTS[m.payment] || m.payment)}`);
+  if(m.branch === "building"){ if(m.first_pct != null && m.first_pct !== "") out.push(`${tr(lang,"ПВ от")} ${m.first_pct}%`); if(m.months) out.push(`${tr(lang,"рассрочка")} ${m.months} ${tr(lang,"мес")}`); }
+  return out;
+}
+// Поля параметров ссылки — общие для добавления и редактирования
+function NbBranchFields({meta, setMeta, lang, districts}){
+  const m = meta || {}; const set = patch => setMeta({...m, ...patch});
+  return <div style={{display:"grid", gap:8}}>
+    <div className="feedSrcKinds">{NB_BRANCHES.map(b => <button key={b.id} type="button" className={cn(m.branch === b.id && "on")} onClick={() => set({branch:b.id})}>{b.icon} {tr(lang,b.label)}</button>)}</div>
+    <Field label={tr(lang,"Район")}><input className="input" list="nbDistrictList" value={m.district || ""} onChange={e => set({district:e.target.value})} placeholder={tr(lang,"Приморский, Киевский…")}/>
+      <datalist id="nbDistrictList">{districts.map(d => <option key={d} value={d}/>)}</datalist></Field>
+    {m.branch === "done" && <Field label={tr(lang,"Условия оплаты")}><select className="input" value={m.payment || ""} onChange={e => set({payment:e.target.value})}>
+      <option value="">{tr(lang,"Не указано")}</option>{Object.entries(NB_PAYMENTS).map(([k,v]) => <option key={k} value={k}>{tr(lang,v)}</option>)}</select></Field>}
+    {m.branch === "building" && <div className="grid2">
+      <Field label={tr(lang,"Первый взнос от, %")}><input className="input" inputMode="numeric" value={m.first_pct ?? ""} onChange={e => set({first_pct:e.target.value.replace(/[^\d.]/g,"")})} placeholder="30"/></Field>
+      <Field label={tr(lang,"Рассрочка, месяцев")}><input className="input" inputMode="numeric" value={m.months ?? ""} onChange={e => set({months:e.target.value.replace(/\D/g,"")})} placeholder="24"/></Field>
+    </div>}
+  </div>;
+}
+const nbCleanMeta = m => { const o = {...(m || {})}; if(o.first_pct === "" || o.first_pct == null) delete o.first_pct; else o.first_pct = Number(o.first_pct);
+  if(!o.months) delete o.months; else o.months = Number(o.months); if(!o.district) delete o.district; else o.district = String(o.district).trim(); if(!o.payment) delete o.payment; return o; };
 
 // ===== Конструктор источника Новобудов (для любого агентства) =====
 // Администратор описывает, как устроен его Google Диск / сайт: инструкция для менеджеров, названия уровней папок,
@@ -8921,7 +8952,23 @@ function NewBuildsHub({currentProfile, role, lang}){
     setErr(""); setSources(r.sources || []);
   };
   useEffect(() => { load(); }, []);
-  const list = sources.filter(s => s.category === cat);
+  const [branch,setBranch] = useStorage("nb_apt_branch","done");
+  const [fDistrict,setFDistrict] = useStorage("nb_f_district","Все");
+  const [fPay,setFPay] = useStorage("nb_f_pay","Все");
+  const [fFirst,setFFirst] = useStorage("nb_f_first","");
+  const [fMonths,setFMonths] = useStorage("nb_f_months","");
+  const [params,setParams] = useState(null); // окно «Параметры ссылки»
+  const isApt = cat === "apartments";
+  const catList = sources.filter(s => s.category === cat);
+  const branchList = isApt ? catList.filter(s => !s.meta?.branch || s.meta.branch === branch) : catList;
+  const districtOpts = Array.from(new Set([...NB_DISTRICTS, ...catList.map(s => String(s.meta?.district || "").trim()).filter(Boolean)]));
+  const list = !isApt ? catList : branchList.filter(s => { const m = s.meta || {};
+    if(fDistrict !== "Все" && String(m.district || "").trim() !== fDistrict) return false;
+    if(branch === "done" && fPay !== "Все" && !(m.payment === fPay || m.payment === "both")) return false;
+    if(branch === "building" && fFirst && !(m.first_pct != null && Number(m.first_pct) <= Number(fFirst))) return false;
+    if(branch === "building" && fMonths && !(Number(m.months) >= Number(fMonths))) return false;
+    return true; });
+  const filtersOn = isApt && (fDistrict !== "Все" || (branch === "done" ? fPay !== "Все" : (fFirst || fMonths)));
   const counts = NB_CATS.reduce((m,c) => ({...m, [c.id]: sources.filter(s => s.category === c.id && s.active).length}), {});
 
   const catLabel = tr(lang, NB_CATS.find(c => c.id === cat)?.label);
@@ -8940,6 +8987,19 @@ function NewBuildsHub({currentProfile, role, lang}){
       <span className="nbTabIcon">{c.icon}</span><b>{tr(lang,c.label)}</b><small>{counts[c.id] || 0}</small>
     </button>)}</div>
 
+    {isApt && <div className="card nbBranchBox" style={{display:"grid", gap:10, border:"1.5px solid #F5C518"}}>
+      <div className="nbBranchTabs" style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>{NB_BRANCHES.map(b => { const n = catList.filter(s => !s.meta?.branch || s.meta.branch === b.id).length;
+        return <button key={b.id} type="button" onClick={() => { setBranch(b.id); setAdding(false); }} style={{minHeight:52, borderRadius:14, border:"1.5px solid #F5C518", background: branch === b.id ? "#F5C518" : "transparent", color: branch === b.id ? "#0B0B0C" : "inherit", font:"900 16px Inter,system-ui,sans-serif", cursor:"pointer"}}>
+          {b.icon} {tr(lang,b.label)} <span style={{opacity:.7, fontWeight:800}}>· {n}</span></button>; })}</div>
+      <div className="grid2" style={{gap:8}}>
+        <Field label={tr(lang,"Район")}><select className="input" value={fDistrict} onChange={e => setFDistrict(e.target.value)}><option value="Все">{tr(lang,"Все")}</option>{districtOpts.map(d => <option key={d} value={d}>{d}</option>)}</select></Field>
+        {branch === "done" && <Field label={tr(lang,"Оплата")}><select className="input" value={fPay} onChange={e => setFPay(e.target.value)}><option value="Все">{tr(lang,"Все")}</option><option value="installment">{tr(lang,"Рассрочка")}</option><option value="full">{tr(lang,"100% оплата")}</option></select></Field>}
+        {branch === "building" && <Field label={tr(lang,"Первый взнос")}><select className="input" value={fFirst} onChange={e => setFFirst(e.target.value)}><option value="">{tr(lang,"Любой")}</option>{NB_FIRST_STEPS.map(n => <option key={n} value={n}>{tr(lang,"до")} {n}%</option>)}</select></Field>}
+        {branch === "building" && <Field label={tr(lang,"Длительность рассрочки")}><select className="input" value={fMonths} onChange={e => setFMonths(e.target.value)}><option value="">{tr(lang,"Любая")}</option>{NB_MONTH_STEPS.map(n => <option key={n} value={n}>{tr(lang,"от")} {n} {tr(lang,"мес")}</option>)}</select></Field>}
+      </div>
+      {filtersOn && <div className="row" style={{gap:8}}><span className="muted">{tr(lang,"Найдено")}: {list.length} {tr(lang,"из")} {branchList.length}</span><button type="button" className="linkBtn" onClick={() => { setFDistrict("Все"); setFPay("Все"); setFFirst(""); setFMonths(""); }}>{tr(lang,"Сбросить фильтры")}</button></div>}
+      {isAdmin && !adding && <Button onClick={() => setAdding(true)}>＋ {branch === "done" ? tr(lang,"Добавить ссылку на актуальный объект") : tr(lang,"Добавить ссылку на строящийся ЖК")}</Button>}
+    </div>}
     {err && <div className="feedSrcCheck bad">⚠ {err}</div>}
     {isAdmin && (() => { const c = catCfg[cat]; const eff = nbConfigOf(null, c);
       return <div className={cn("card nbBuilder", c && "done")}>
@@ -8952,21 +9012,30 @@ function NewBuildsHub({currentProfile, role, lang}){
       </div>; })()}
     {loading && <p className="muted">{tr(lang,"Загрузка…")}</p>}
 
-    {!loading && list.length === 0 && !adding && <div className="card nbEmpty">
+    {isApt && !loading && catList.length > 0 && list.length === 0 && !adding && <div className="card nbEmpty"><p className="muted">{filtersOn ? tr(lang,"По этим фильтрам ссылок нет.") : tr(lang,"В этой ветке пока нет ссылок.")}</p></div>}
+    {!loading && catList.length === 0 && !adding && <div className="card nbEmpty">
       <div style={{fontSize:40}}>{NB_CATS.find(c => c.id === cat)?.icon}</div>
       <h3>{tr(lang,NB_CATS.find(c => c.id === cat)?.label)}</h3>
       <p className="muted">{isAdmin ? tr(lang,"Подключите ссылки: папки Google Drive с прайсами и планировками, Telegram-каналы застройщиков, сайты. Менеджеры увидят материалы, но не сами ссылки.") : tr(lang,"Администратор ещё не подключил материалы в этот раздел.")}</p>
       {isAdmin && <Button onClick={() => setAdding(true)}>＋ {tr(lang,"Подключить ссылку")}</Button>}
     </div>}
 
-    {list.length > 0 && <div className="nbGrid">{list.map(s => <NbSourceCard key={s.id} s={s} lang={lang} isAdmin={isAdmin} onOpen={() => s.kind === "link" && !isAdmin ? window.open(s.url, "_blank", "noopener") : setOpen(s)} onChanged={load} onConfigure={() => setEditing(s)}/>)}</div>}
+    {list.length > 0 && <div className="nbGrid">{list.map(s => <NbSourceCard key={s.id} s={s} lang={lang} isAdmin={isAdmin} showMeta={isApt} onParams={() => setParams({s, meta:{branch, ...(s.meta || {})}})} onOpen={() => s.kind === "link" && !isAdmin ? window.open(s.url, "_blank", "noopener") : setOpen(s)} onChanged={load} onConfigure={() => setEditing(s)}/>)}</div>}
 
-    {isAdmin && list.length > 0 && !adding && <Button variant="soft" onClick={() => setAdding(true)}>＋ {tr(lang,"Подключить ещё ссылку")}</Button>}
-    {isAdmin && adding && <NbAddSource cat={cat} lang={lang} call={call} currentProfile={currentProfile} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)}/>}
+    {isAdmin && !isApt && list.length > 0 && !adding && <Button variant="soft" onClick={() => setAdding(true)}>＋ {tr(lang,"Подключить ещё ссылку")}</Button>}
+    {isAdmin && adding && <NbAddSource cat={cat} branch={isApt ? branch : null} districts={districtOpts} lang={lang} call={call} currentProfile={currentProfile} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)}/>}
+    {params && <Modal onClose={() => setParams(null)}>
+      <div className="row"><h2>{tr(lang,"Параметры ссылки")}</h2><button className="icon" onClick={() => setParams(null)}>×</button></div>
+      <p className="muted" style={{marginTop:0}}>{params.s.title}</p>
+      <NbBranchFields meta={params.meta} setMeta={m => setParams({...params, meta:m})} lang={lang} districts={districtOpts}/>
+      <Button className="full" onClick={async () => { const meta = {...(params.s.meta || {}), ...nbCleanMeta(params.meta)};
+        ["district","payment","first_pct","months"].forEach(k => { if(!(k in nbCleanMeta(params.meta))) delete meta[k]; });
+        const {error} = await supabase.from("nb_sources").update({meta}).eq("id", params.s.id); if(error) return alert(error.message); setParams(null); load(); }}>✓ {tr(lang,"Сохранить")}</Button>
+    </Modal>}
   </div>;
 }
 
-function NbSourceCard({s, lang, isAdmin, onOpen, onChanged, onConfigure}){
+function NbSourceCard({s, lang, isAdmin, onOpen, onChanged, onConfigure, showMeta=false, onParams}){
   const k = NB_KINDS[s.kind] || NB_KINDS.link;
   const update = async (patch) => { const {error} = await supabase.from("nb_sources").update(patch).eq("id", s.id); if(error) alert(error.message); else onChanged(); };
   const rename = () => { const t = window.prompt(tr(lang,"Название, которое видят менеджеры"), s.title); if(t && t.trim() && t.trim() !== s.title) update({title:t.trim()}); };
@@ -8975,10 +9044,13 @@ function NbSourceCard({s, lang, isAdmin, onOpen, onChanged, onConfigure}){
     <button className="nbCardMain" onClick={onOpen}>
       <span className="nbCardIcon">{k.icon}</span>
       <section><b>{s.title}</b><small>{tr(lang,k.label)}{isAdmin && s.url ? <> · <span className="feedSrcUrl">{s.url}</span></> : null}</small>
-        {isAdmin && s.last_error && <small className="feedSrcErr">⚠ {s.last_error}</small>}</section>
+        {isAdmin && s.last_error && <small className="feedSrcErr">⚠ {s.last_error}</small>}
+        {showMeta && (() => { const chips = nbMetaChips(s.meta, lang); return chips.length ? <span style={{display:"flex", flexWrap:"wrap", gap:4, marginTop:4}}>{chips.map(c => <span key={c} style={{padding:"2px 8px", borderRadius:999, background:"#FEF9C3", color:"#713F12", fontSize:12, fontWeight:800}}>{c}</span>)}</span>
+          : isAdmin ? <span style={{fontSize:12, color:"#f59e0b", fontWeight:800, marginTop:4, display:"block"}}>⚙ {tr(lang,"Укажите район и условия — кнопка «Параметры»")}</span> : null; })()}</section>
       <i>›</i>
     </button>
     {isAdmin && <div className="feedSrcActions nbCardActions">
+      {showMeta && onParams && <button className="nbCfgBtn" onClick={onParams}>🏷 {tr(lang,"Параметры")}</button>}
       {s.kind !== "link" && <button className="nbCfgBtn" onClick={onConfigure}>⚙ {s.meta?.config ? tr(lang,"Своя настройка") : tr(lang,"Настройка ссылки")}</button>}
       <label className="feedSrcToggle"><input type="checkbox" checked={!!s.active} onChange={e => update({active:e.target.checked})}/> {tr(lang,"Вкл.")}</label>
       <button onClick={rename} aria-label={tr(lang,"Переименовать")}>✎</button>
@@ -8987,8 +9059,9 @@ function NbSourceCard({s, lang, isAdmin, onOpen, onChanged, onConfigure}){
   </div>;
 }
 
-function NbAddSource({cat, lang, call, currentProfile, onDone, onCancel}){
-  const [kind,setKind] = useState("gdrive");
+function NbAddSource({cat, branch=null, districts=NB_DISTRICTS, lang, call, currentProfile, onDone, onCancel}){
+  const [kind,setKind] = useState(branch === "done" ? "link" : "gdrive");
+  const [meta,setMeta] = useState(branch ? {branch} : {});
   const [title,setTitle] = useState("");
   const [url,setUrl] = useState("");
   const [check,setCheck] = useState(null);
@@ -9003,7 +9076,7 @@ function NbAddSource({cat, lang, call, currentProfile, onDone, onCancel}){
   };
   const add = async () => {
     setBusy("add");
-    const {error} = await supabase.from("nb_sources").insert({agency_id:currentProfile?.agency_id, category:cat, kind, title:title.trim(), url:url.trim(), handle:check?.handle || null, created_by_email:currentProfile?.email || null});
+    const {error} = await supabase.from("nb_sources").insert({agency_id:currentProfile?.agency_id, category:cat, kind, title:title.trim(), url:url.trim(), handle:check?.handle || null, created_by_email:currentProfile?.email || null, ...(branch ? {meta:nbCleanMeta(meta)} : {})});
     setBusy("");
     if(error){ setCheck({ok:false, error:error.message}); return; }
     onDone();
@@ -9011,9 +9084,10 @@ function NbAddSource({cat, lang, call, currentProfile, onDone, onCancel}){
   return <div className="card feedSrcAdd nbAdd">
     <h3>＋ {tr(lang,"Подключить ссылку")} — {tr(lang,NB_CATS.find(c => c.id === cat)?.label)}</h3>
     <div className="feedSrcKinds">{Object.entries(NB_KINDS).map(([k,v]) => <button key={k} className={cn(kind === k && "on")} onClick={() => { setKind(k); setCheck(null); }}>{v.icon} {tr(lang,v.label)}</button>)}</div>
-    <Field label={tr(lang,"Название для менеджеров")}><input className="input" value={title} onChange={e => setTitle(e.target.value)} placeholder={tr(lang,"Например: Прайсы ЖК Одессы")}/></Field>
+    <Field label={tr(lang,"Название для менеджеров")}><input className="input" value={title} onChange={e => setTitle(e.target.value)} placeholder={branch === "done" ? tr(lang,"Например: 2к ЖК Жемчужина 44, 62 м²") : tr(lang,"Например: Прайсы ЖК Одессы")}/></Field>
     <Field label={tr(lang,"Ссылка (видит только администратор)")}><input className="input" value={url} onChange={e => { setUrl(e.target.value); setCheck(null); }} placeholder={NB_KINDS[kind].ph}/></Field>
     <p className="muted feedSrcHint">{tr(lang,NB_KINDS[kind].hint)}</p>
+    {branch && <NbBranchFields meta={meta} setMeta={setMeta} lang={lang} districts={districts}/>}
     <div className="feedSrcBtns">
       <Button variant="soft" onClick={verify} disabled={!url.trim() || busy === "check"}>{busy === "check" ? tr(lang,"Проверяем…") : tr(lang,"Проверить ссылку")}</Button>
       <Button onClick={add} disabled={!title.trim() || !check?.ok || busy === "add"}>{busy === "add" ? "…" : tr(lang,"Подключить")}</Button>
