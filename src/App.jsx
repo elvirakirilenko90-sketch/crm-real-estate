@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { uiExtra, uiTemplates } from "./i18n-extra.js";
 import ListingCard from "./ListingCard.jsx";
+import { createPortal } from "react-dom";
 import { supabase, SUPABASE_URL, SUPABASE_KEY } from "./supabaseClient";
 const stages = ["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
 // Этапы, сохранённые раньше на украинском/английском, показываем в общих колонках воронки
@@ -1884,7 +1885,7 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
         <McBadge bg="#F5C518" ink="#0b0b0c">1 · {T("Объекты")}</McBadge><McBadge bg="#27272a" ink="#a1a1aa">2 · {T("Ссылка и PDF")}</McBadge></div>
       <label className="muted" style={{display:"grid", gap:4}}>{T("Название")}<input className="input" value={title} onChange={e=>setTitle(e.target.value)}/></label>
       <label className="muted" style={{display:"grid", gap:4, marginTop:8}}>{T("Общий комментарий для клиента")}<textarea className="input" rows={2} value={general} onChange={e=>setGeneral(e.target.value)} placeholder={T("Например: подобрала варианты у моря в вашем бюджете")}/></label>
-      <div style={{display:"grid", gap:8, margin:"12px 0"}}>{list.map((it,i) => <div key={it._k} style={{display:"grid", gap:8, padding:10, borderRadius:16, background:"#18181b", border:"1px solid #3f3f46"}}>
+      <div style={{display:"grid", gridTemplateColumns:"minmax(0,1fr)", gap:8, margin:"12px 0"}}>{list.map((it,i) => <div key={it._k} style={{display:"grid", gridTemplateColumns:"minmax(0,1fr)", gap:8, padding:10, borderRadius:16, background:"#18181b", border:"1px solid #3f3f46", minWidth:0}}>
         <div style={{display:"flex", gap:10, alignItems:"center"}}>
           {(it.main_photo_url || (it.photo_urls||[])[0]) ? <img src={it.main_photo_url || it.photo_urls[0]} alt="" style={{width:64, height:52, borderRadius:10, objectFit:"cover", flex:"0 0 auto"}}/> : <span style={{width:64, height:52, borderRadius:10, background:"#3f3f46", display:"grid", placeItems:"center", flex:"0 0 auto"}}>🏠</span>}
           <span style={{flex:1, minWidth:0, color:"#f4f4f5"}}><b style={{display:"block", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{i+1}. {it.title || T("Объект")}</b>
@@ -1939,6 +1940,56 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
   </Modal>;
 }
 
+// ── «Аналитика» внутри карточки клиента ──
+// Фильтры берутся из запроса клиента и переводятся в значения фильтров раздела «Аналитика».
+// Микрорайоны Одессы → официальный район (как в фильтре «Аналитики»), сам микрорайон уходит в быстрый поиск.
+const AM_ODESSA_MICRO = {
+  "аркади":"Приморский","центр":"Приморский","французск":"Приморский","ланжерон":"Приморский","отрад":"Приморский","молдаван":"Приморский","приморск":"Приморский",
+  "таиров":"Киевский","большой фонтан":"Киевский","великий фонтан":"Киевский","среднефонтан":"Киевский","киевск":"Киевский","київськ":"Киевский",
+  "черемушк":"Хаджибейский","слободк":"Хаджибейский","поскот":"Хаджибейский","бугаевк":"Хаджибейский","хаджибей":"Хаджибейский","малиновск":"Хаджибейский",
+  "пересып":"Пересыпский","котовск":"Пересыпский","лузановк":"Пересыпский","суворовск":"Пересыпский"};
+function amAnalyticsPreset({lead, prof, rooms, budget, district, city, deal, area_from, area_to, floor_from, floor_to}={}){
+  const p = {...lhParse(lead||{}, null), ...(prof||{})};
+  const out = {country:"Украина"};
+  const cityName = String(city || p.city || "").trim();
+  if(cityName){ const regions = analyticsGeoCatalog["Украина"]?.regions || {};
+    const low = cityName.toLowerCase().replace(/^(г\.|м\.)\s*/,"");
+    const all = Object.entries(regions).flatMap(([reg, list]) => list.map(c => [reg, String(c)]));
+    const hit = all.find(([,c]) => c.toLowerCase() === low) || (low.length >= 4 && all.find(([,c]) => c.toLowerCase().startsWith(low.slice(0,4))));
+    if(hit){ out.region = hit[0]; out.city = hit[1]; }
+    if(!out.city) out.city = cityName; }
+  const dRaw = String(district ?? p.district ?? "").trim();
+  if(dRaw){ const off = officialCityDistricts[`Украина|${out.city||""}`] || [];
+    const exact = off.find(x => x.toLowerCase() === dRaw.toLowerCase() || dRaw.toLowerCase().startsWith(x.toLowerCase().slice(0,6)));
+    if(exact) out.district = exact;
+    else { const low = dRaw.toLowerCase(); const k = Object.keys(AM_ODESSA_MICRO).find(k => low.includes(k));
+      if(k && /одес/i.test(out.city||"")) out.district = AM_ODESSA_MICRO[k];
+      if(!off.length) out.district = dRaw; // нет официального справочника — район как есть
+      if(out.district !== dRaw) out.search = dRaw; } } // микрорайон — в быстрый поиск, чтобы выдача была точной
+  const rm = Number(rooms || p.rooms_min || 0);
+  if(rm) out.rooms = rm >= 4 ? "4+" : String(rm);
+  const bud = Number(String(budget ?? p.budget ?? "").replace(/[^\d]/g,"")) || 0;
+  if(bud) out.priceTo = String(bud);
+  const kind = String(p.property_type || "");
+  if(/квартир/i.test(kind)) out.kind = "Квартира"; else if(/дом|будин/i.test(kind)) out.kind = "Дом"; else if(/участ|ділян/i.test(kind)) out.kind = "Участок"; else if(/коммерц|комерц|офис|офіс/i.test(kind)) out.kind = "Коммерция";
+  const dl = String(deal || p.deal_type || "");
+  out.deal = /аренд|оренд/i.test(dl) ? "Аренда" : "Продажа";
+  const a1 = area_from ?? p.area_from, a2 = area_to ?? p.area_to, f1 = floor_from ?? p.floor_from, f2 = floor_to ?? p.floor_to;
+  if(a1) out.areaFrom = String(a1); if(a2) out.areaTo = String(a2); if(f1) out.floorFrom = String(f1); if(f2) out.floorTo = String(f2);
+  return out;
+}
+function AnalyticsForClient({lead, preset, properties, currentProfile, agencyName, lang, onClose, onSend}){
+  useEffect(() => { const prev = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = prev; }; }, []);
+  return createPortal(<div className="maEmbed" style={{position:"fixed", inset:0, zIndex:3000, background:"var(--bg, #0B0B0C)", overflowY:"auto", WebkitOverflowScrolling:"touch"}}>
+    <div style={{position:"sticky", top:0, zIndex:5, display:"flex", alignItems:"center", gap:10, padding:"10px max(12px,env(safe-area-inset-left))", background:"#17171A", borderBottom:"2px solid #F5C518"}}>
+      <McBtn tone="dark" style={{minHeight:44, whiteSpace:"nowrap"}} onClick={onClose}>← {tr(lang,"Вернуться к клиенту")}</McBtn>
+      <b style={{flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:"#f4f4f5"}}>📊 {tr(lang,"Аналитика")} · {lead?.name || ""}</b>
+    </div>
+    <MarketAnalyticsV2 leads={lead ? [lead] : []} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang}
+      preset={preset} clientName={lead?.name || ""} onSendToClient={onSend}/>
+  </div>, document.body);
+}
+
 function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onClose}){
   const parsed = nbParseRequest(`${lead.notes || ""}`);
   const [rooms,setRooms] = useState(parsed.rooms || "");
@@ -1951,6 +2002,7 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
   const [checks,setChecks] = useState({}); // source_url -> status
   const [showAllOwn,setShowAllOwn] = useState(false);
   const [composer,setComposer] = useState(null); // список объектов для презентации
+  const [anaOpen,setAnaOpen] = useState(false); // раздел «Аналитика» с фильтрами клиента
   const leadDbId = /^\d+$/.test(String(lead.id)) ? Number(lead.id) : null;
   const myName = currentProfile?.full_name || currentProfile?.name || "";
 
@@ -2035,7 +2087,8 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
     <div className="matchBlock">
       <div className="matchBlockHead"><h3>{tr(lang,"На площадках")}</h3><span className="muted">OLX · DIM.RIA · RIELTOR</span></div>
       <div className="matchNotice">☎ {tr(lang,"Объявления с площадок сначала прозвоните: отметьте «Актуально» — только тогда объект можно добавить в подборку.")}</div>
-      {!market && <Button className="full" onClick={searchMarket}>{tr(lang,"Найти на площадках")}</Button>}
+      <McBtn tone="dark" style={{width:"100%", minHeight:54, fontSize:15, background:"#4338CA", borderColor:"#4338CA", color:"#fff"}} onClick={() => setAnaOpen(true)}>📊 {tr(lang,"Открыть «Аналитику» с фильтрами клиента")}</McBtn>
+      <span style={{fontSize:13, opacity:.8}}>{tr(lang,"Город, район, комнаты, бюджет и тип сделки подставятся автоматически — как в разделе «Аналитика».")}</span>
       {market?.loading && <p className="muted">{tr(lang,"Ищем на площадках…")}</p>}
       {market?.error && <p className="muted">{tr(lang,"Площадки не ответили")}: {market.error} · <button className="linkBtn" onClick={searchMarket}>{tr(lang,"Повторить")}</button></p>}
       {market && !market.loading && !market.error && <>
@@ -2086,6 +2139,9 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
         <McBtn tone="plain" style={{minHeight:54}} onClick={()=>document.getElementById("cm-send-anchor")?.scrollIntoView({behavior:"smooth", block:"center"})}>💬 {tr(lang,"Текстом")}</McBtn>
       </div>
     </div>}
+    {anaOpen && <AnalyticsForClient lead={lead} lang={lang} properties={properties} currentProfile={currentProfile} agencyName={agencyName}
+      preset={amAnalyticsPreset({lead, rooms, budget, district, city, deal})} onClose={() => setAnaOpen(false)}
+      onSend={items => { setAnaOpen(false); if(!leadDbId) return alert(tr(lang,"Сначала сохраните клиента")); setComposer(items); }}/>}
     {composer && <PresentationComposer lead={lead} leadDbId={leadDbId} items={composer} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setComposer(null)} onDone={()=>setPicked(prev => { const n = {...prev}; (composer||[]).forEach(it => { Object.keys(n).forEach(k => { if(n[k] === it) delete n[k]; }); }); return n; })}/>}
     </Modal>;
 }
@@ -2994,6 +3050,7 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
   const [selItems,setSelItems] = useState([]); const [curMgr,setCurMgr] = useState(null); const [keepContacts,setKeepContacts] = useState({});
   const [amComposer,setAmComposer] = useState(null); // окно «Отправить подборку» для выбранных вариантов
   const [an,setAn] = useState(null); // поиск в «Аналитике»: {loading, items, picked}
+  const [anaOpen,setAnaOpen] = useState(false); // раздел «Аналитика» с параметрами подбора клиента
   const [selForm,setSelForm] = useState({title:`Подборка для ${lead.name||"клиента"}`, comment:"", showName:false, hideAddress:false, days:"30"});
   const idemRef = useRef(null); const remindedRef = useRef(false);
   const load = useCallback(async () => {
@@ -3200,8 +3257,13 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
     <div className="chips" style={{flexWrap:"wrap"}}>
       {m && <button className="chip" disabled={!!busy} onClick={()=>run(false)}>↻ {tr(lang,"Обновить подбор")}</button>}
       {isAdmin && <button className="chip" disabled={!!busy} onClick={()=>{ if(window.confirm(tr(lang,"Запустить автоподбор повторно?"))) run(true); }}>⚙ {tr(lang,m?"Повторно запустить (админ)":"Запустить автоподбор (админ)")}</button>}
-      {m && <button className="chip" disabled={!!busy || an?.loading} onClick={searchAnalytics}>📊 {tr(lang,"Найти в «Аналитике»")}{m.payment_type==="installment"||m.payment_type==="mortgage"?` (${tr(lang,"вручную")})`:""}</button>}
+      {m && <button className="chip" disabled={!!busy || an?.loading} onClick={searchAnalytics}>⚡ {tr(lang,"Быстрый поиск на площадках")}</button>}
     </div>
+    <McBtn tone="dark" style={{width:"100%", minHeight:52, fontSize:15, background:"#4338CA", borderColor:"#4338CA", color:"#fff"}} onClick={()=>setAnaOpen(true)}>📊 {tr(lang,"Открыть «Аналитику» с фильтрами клиента")}</McBtn>
+    {anaOpen && <AnalyticsForClient lead={lead} lang={lang} properties={properties} currentProfile={currentProfile} agencyName={agencyName}
+      preset={amAnalyticsPreset({lead, prof, deal:prof?.deal_type, budget:m?.matching_parameters?.budget_usd || prof?.budget || undefined})} onClose={()=>setAnaOpen(false)}
+      onSend={items=>{ setAnaOpen(false); setAmComposer(items); }}/>}
+    {amComposer && <PresentationComposer lead={lead} leadDbId={leadId} items={amComposer} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>{ setAmComposer(null); load(); }}/>}
     {busy==="run" && <p className="muted">⏳ {tr(lang,"Подбор выполняется…")}</p>}
 
     {an && <div className="card" style={{padding:10}}>
@@ -3218,7 +3280,6 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
     {m && results.length>0 && <div>
       <div className="row"><b>{tr(lang,"Найденные варианты")}: {results.filter(r=>r.state!=="rejected").length}</b><label className="chip"><input type="checkbox" checked={showRejected} onChange={e=>setShowRejected(e.target.checked)}/> {tr(lang,"показать исключённые")}</label></div>
       <McBtn tone="dark" style={{width:"100%", minHeight:54, fontSize:15, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!selectedCount} title={!selectedCount ? tr(lang,"Отметьте объекты галочкой «В подборку»") : ""} onClick={sendSelected}>📨 {tr(lang,"Отправить подборку")}{selectedCount ? ` (${selectedCount})` : ` — ${tr(lang,"отметьте «В подборку»")}`}</McBtn>
-      {amComposer && <PresentationComposer lead={lead} leadDbId={leadId} items={amComposer} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>{ setAmComposer(null); load(); }}/>}
       <McLegend lang={lang}/>
       {MC_GROUPS.map(([gk, ck, gt]) => { const list = visible.filter(r => mcGroup(viewOf(r)) === gk); if(!list.length) return null;
         return <section key={gk} style={{display:"grid", gap:10, marginTop:12}}>
@@ -5949,7 +6010,8 @@ function StatisticsReporting({leads,properties,events,role,users,activities,curr
 }
 
 
-function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agencyName,theme,lang="ru"}) {
+// preset — фильтры из запроса клиента (когда «Аналитика» открыта из карточки клиента); onSendToClient — отправка отмеченных объектов в презентацию клиенту
+function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agencyName,theme,lang="ru",preset=null,onSendToClient=null,clientName=""}) {
   const [marketListings,setMarketListings]=useState([]);
   const [marketSources,setMarketSources]=useState([]);
   const [loadingMarket,setLoadingMarket]=useState(false);
@@ -5959,20 +6021,20 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const [period,setPeriod]=useState("all");
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
-  const [country,setCountry]=useState("Все");
-  const [region,setRegion]=useState("Все");
-  const [city,setCity]=useState("Все");
+  const [country,setCountry]=useState(preset?.country??"Все");
+  const [region,setRegion]=useState(preset?.region??"Все");
+  const [city,setCity]=useState(preset?.city??"Все");
   // Любой населённый пункт Украины (подсказки площадок): cityMeta = {name,state_uk,region_ru,dim_state_id,dim_city_id}
   const [cityMeta,setCityMeta]=useState(null);
   const [placeQuery,setPlaceQuery]=useState("");
   const [placeSuggest,setPlaceSuggest]=useState([]);
-  const [districtFilter,setDistrictFilter]=useState("Все");
+  const [districtFilter,setDistrictFilter]=useState(preset?.district??"Все");
   const [complexFilter,setComplexFilter]=useState("Все");
-  const [propertyKindFilter,setPropertyKindFilter]=useState("Все");
+  const [propertyKindFilter,setPropertyKindFilter]=useState(preset?.kind??"Все");
   const [sellerFilter,setSellerFilter]=useState("Все");
   const [conditionFilter,setConditionFilter]=useState("Все");
-  const [floorFrom,setFloorFrom]=useState("");
-  const [floorTo,setFloorTo]=useState("");
+  const [floorFrom,setFloorFrom]=useState(preset?.floorFrom??"");
+  const [floorTo,setFloorTo]=useState(preset?.floorTo??"");
   const [landAreaFrom,setLandAreaFrom]=useState("");
   const [landAreaTo,setLandAreaTo]=useState("");
   const [verifiedOnly,setVerifiedOnly]=useState(false);
@@ -5985,18 +6047,18 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const [constructionYearFrom,setConstructionYearFrom]=useState("");
   const [constructionYearTo,setConstructionYearTo]=useState("");
   const [governmentPrograms,setGovernmentPrograms]=useState([]);
-  const [dealFilter,setDealFilter]=useState("Продажа");
+  const [dealFilter,setDealFilter]=useState(preset?.deal??"Продажа");
   const [selectedSources,setSelectedSources]=useState([]);
   const [sourceCountry,setSourceCountry]=useState("Все");
   // Главный переключатель Аналитики: каждый крупный источник загружается отдельно.
   // Это уменьшает нагрузку и не позволяет одному источнику вытеснять другой.
   const [activeSourceTab,setActiveSourceTab]=useState("ALL");
-  const [searchQuery,setSearchQuery]=useState("");
-  const [roomsFilter,setRoomsFilter]=useState("Все");
-  const [priceFrom,setPriceFrom]=useState("");
-  const [priceTo,setPriceTo]=useState("");
-  const [areaFrom,setAreaFrom]=useState("");
-  const [areaTo,setAreaTo]=useState("");
+  const [searchQuery,setSearchQuery]=useState(preset?.search??"");
+  const [roomsFilter,setRoomsFilter]=useState(preset?.rooms??"Все");
+  const [priceFrom,setPriceFrom]=useState(preset?.priceFrom??"");
+  const [priceTo,setPriceTo]=useState(preset?.priceTo??"");
+  const [areaFrom,setAreaFrom]=useState(preset?.areaFrom??"");
+  const [areaTo,setAreaTo]=useState(preset?.areaTo??"");
   const [marketView,setMarketView]=useState("cards");
   const [complexDirectory,setComplexDirectory]=useState([]);
   const [priceSort,setPriceSort]=useState("none");
@@ -7212,7 +7274,22 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
   const [listingsBelow,setListingsBelow]=useState(true);
   useEffect(()=>{const check=()=>{const el=document.getElementById("market-listings");setListingsBelow(!!el&&el.getBoundingClientRect().top>window.innerHeight*0.6);};check();window.addEventListener("scroll",check,{passive:true});return()=>window.removeEventListener("scroll",check);},[]);
 
+  const sendToClient=()=>{ if(!onSendToClient) return;
+    const items=combinedListings.filter(x=>selected.includes(String(x._key))).map(x=>{ const c=crmMatch(x);
+      if(c) return {own:true, property_id:c.id, title:c.title, price:c.price, currency:c.currency, city:c.city, district:c.district, complex_name:c.complex_name, area:c.area, rooms:c.rooms, floor:c.floor, total_floors:c.total_floors, description:c.description};
+      const photos=Array.isArray(x.photo_urls)?x.photo_urls.filter(Boolean):[];
+      return {title:x.title||x.complex_name, price:x.price, currency:x.currency||"USD", city:x.city, district:x.district, complex_name:x.complex_name, area:x.area, rooms:x.rooms, floor:x.floor, total_floors:x.total_floors||x.raw_data?.total_floors,
+        condition:x.condition, description:x.description, photo_urls:photos, main_photo_url:x.main_photo_url||photos[0]||"", source_url:x.source_url}; });
+    onSendToClient(items); };
   return <main className="screen">
+    {onSendToClient&&selected.length>0&&<div style={{position:"fixed",left:"max(12px,env(safe-area-inset-left))",right:"max(12px,env(safe-area-inset-right))",bottom:"calc(16px + env(safe-area-inset-bottom))",zIndex:3100,display:"flex",justifyContent:"center",pointerEvents:"none"}}>
+      <div style={{pointerEvents:"auto",width:"min(620px,100%)",padding:12,borderRadius:20,background:"#18181b",border:"2px solid #F5C518",boxShadow:"0 12px 30px rgba(0,0,0,.5)",display:"grid",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}><b style={{flex:1,color:"#f4f4f5"}}>✓ {tr(lang,"Выбрано объектов")}: {selected.length}</b><button type="button" onClick={()=>setSelected([])} style={{background:"none",border:0,color:"#a1a1aa",fontWeight:800,cursor:"pointer"}}>{tr(lang,"Снять выбор")}</button></div>
+        <McBtn tone="dark" style={{minHeight:54,fontSize:16,background:"#0D9488",borderColor:"#0D9488",color:"#fff"}} onClick={sendToClient}>📨 {tr(lang,"Отправить презентацию")}{clientName?` — ${clientName}`:""} ({selected.length})</McBtn>
+      </div></div>}
+    {preset&&<div className="card" style={{border:"2px solid #F5C518",padding:"12px 14px",borderRadius:18,display:"grid",gap:4}}>
+      <b>🎯 {tr(lang,"Фильтры взяты из запроса клиента")}{clientName?`: ${clientName}`:""}</b>
+      <span className="muted" style={{fontSize:13}}>{tr(lang,"Их можно поменять ниже. Отметьте объекты «Добавить в подборку» и нажмите «Отправить презентацию».")}</span></div>}
     <div className="card dark" style={{padding:26,borderRadius:24}}>
       <div className="row" style={{alignItems:"center",gap:18}}>
         <section><div style={{fontSize:13,fontWeight:900,letterSpacing:1.8,opacity:.7}}>MARKET INTELLIGENCE</div><h2 style={{fontSize:32,margin:"7px 0"}}>📊 Аналитика рынка</h2><p style={{margin:0}}>DIM.RIA • OLX • RIELTOR.UA • ЛУН • REM • MyHome.ge • SS.ge • Korter.ge • международные порталы • CRM</p></section>
