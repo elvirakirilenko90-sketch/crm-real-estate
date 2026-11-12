@@ -1836,7 +1836,7 @@ function NbMatchBlock({lead, lang, rooms, budget, district, picked, togglePick})
 // Презентация сохраняется в карточке клиента (client_selections); контакты — назначенного менеджера, ссылок площадок нет.
 function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName, lang="ru", onClose, onDone}){
   const T = x => tr(lang, x);
-  const [list,setList] = useState(() => items.map((it,i) => ({...it, _k:i, comment:""})));
+  const [list,setList] = useState(() => items.map((it,i) => ({...it, _k:i, comment:it.comment || ""})));
   const [title,setTitle] = useState(`${T("Подборка для")} ${String(lead.name||"").split(" ")[0] || T("клиента")}`);
   const [general,setGeneral] = useState(""); const [hideAddr,setHideAddr] = useState(false); const [showName,setShowName] = useState(true);
   const [busy,setBusy] = useState(""); const [done,setDone] = useState(null); const idem = useRef(null);
@@ -1929,7 +1929,7 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
   const [market,setMarket] = useState(null); // {bySource:[{source,total,items}], loading, error}
   const [checks,setChecks] = useState({}); // source_url -> status
   const [showAllOwn,setShowAllOwn] = useState(false);
-  const [composer,setComposer] = useState(false);
+  const [composer,setComposer] = useState(null); // список объектов для презентации
   const leadDbId = /^\d+$/.test(String(lead.id)) ? Number(lead.id) : null;
   const myName = currentProfile?.full_name || currentProfile?.name || "";
 
@@ -1967,6 +1967,7 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
   const setCheck = async (item, status) => {
     setChecks(prev => ({...prev, [item.source_url]:status}));
     if(status !== "actual") setPicked(prev => { const n = {...prev}; delete n["m:" + item.source_url]; return n; });
+    else setPicked(prev => ({...prev, ["m:" + item.source_url]: item}));
     if(!leadDbId) return;
     const {error} = await supabase.from("listing_checks").insert({lead_id:leadDbId, source_name:item.source_name, source_url:item.source_url, title:item.title || null,
       price:Number(item.price) || null, status, checked_by_email:currentProfile?.email || null, checked_by_name:myName || null});
@@ -2033,6 +2034,12 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
             </span>
           </div>; })}
         </div>)}
+        {(() => { const mk = Object.entries(picked).filter(([k]) => k.startsWith("m:")).map(([,v]) => v);
+          return <div style={{margin:"12px 0", padding:12, borderRadius:16, border:"2px solid #0D9488", background:"rgba(13,148,136,.10)", display:"grid", gap:8}}>
+            <b style={{color:"inherit"}}>📨 {tr(lang,"Подборка из объявлений с площадок")}: {mk.length}</b>
+            {mk.length === 0 && <span style={{fontSize:13}}>{tr(lang,"Нажмите «Актуально» у объявлений после прозвона — они сразу попадут в подборку.")}</span>}
+            <McBtn tone="dark" style={{minHeight:52, fontSize:15, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!mk.length || !leadDbId} title={!leadDbId ? tr(lang,"Сначала сохраните клиента") : ""} onClick={()=>setComposer(mk)}>📨 {tr(lang,"Отправить подборку с площадок")}{mk.length ? ` (${mk.length})` : ""}</McBtn>
+          </div>; })()}
         <Button variant="soft" onClick={searchMarket}>↻ {tr(lang,"Обновить")}</Button>
       </>}
     </div>
@@ -2054,11 +2061,11 @@ function ClientMatch({lead, properties=[], currentProfile, agencyName, lang, onC
       <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1, color:"#F4F4F5", fontSize:16}}>✓ {tr(lang,"Выбрано объектов")}: {pickedList.length}</b>
         <button type="button" onClick={()=>setPicked({})} style={{background:"none", border:0, color:"#a1a1aa", fontWeight:800, cursor:"pointer"}}>{tr(lang,"Снять выбор")}</button></div>
       <div style={{display:"grid", gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)", gap:8}}>
-        <McBtn tone="dark" style={{minHeight:54, fontSize:16, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!leadDbId} title={!leadDbId ? tr(lang,"Сначала сохраните клиента") : ""} onClick={()=>setComposer(true)}>📨 {tr(lang,"Отправить презентацию")}</McBtn>
+        <McBtn tone="dark" style={{minHeight:54, fontSize:16, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!leadDbId} title={!leadDbId ? tr(lang,"Сначала сохраните клиента") : ""} onClick={()=>setComposer(pickedList)}>📨 {tr(lang,"Отправить презентацию")}</McBtn>
         <McBtn tone="plain" style={{minHeight:54}} onClick={()=>document.getElementById("cm-send-anchor")?.scrollIntoView({behavior:"smooth", block:"center"})}>💬 {tr(lang,"Текстом")}</McBtn>
       </div>
     </div>}
-    {composer && <PresentationComposer lead={lead} leadDbId={leadDbId} items={pickedList} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setComposer(false)} onDone={()=>setPicked({})}/>}
+    {composer && <PresentationComposer lead={lead} leadDbId={leadDbId} items={composer} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setComposer(null)} onDone={()=>setPicked(prev => { const n = {...prev}; (composer||[]).forEach(it => { Object.keys(n).forEach(k => { if(n[k] === it) delete n[k]; }); }); return n; })}/>}
     </Modal>;
 }
 
@@ -2964,6 +2971,7 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
   const [loaded,setLoaded] = useState(false); const [busy,setBusy] = useState(""); const [editProf,setEditProf] = useState(false); const [draft,setDraft] = useState({});
   const [showRejected,setShowRejected] = useState(false); const [manualId,setManualId] = useState("");
   const [selItems,setSelItems] = useState([]); const [curMgr,setCurMgr] = useState(null); const [keepContacts,setKeepContacts] = useState({});
+  const [amComposer,setAmComposer] = useState(null); // окно «Отправить подборку» для выбранных вариантов
   const [an,setAn] = useState(null); // поиск в «Аналитике»: {loading, items, picked}
   const [selForm,setSelForm] = useState({title:`Подборка для ${lead.name||"клиента"}`, comment:"", showName:false, hideAddress:false, days:"30"});
   const idemRef = useRef(null); const remindedRef = useRef(false);
@@ -3093,6 +3101,10 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
   const toggleReq = k => setDraft({...draft, required: req.includes(k) ? req.filter(x=>x!==k) : [...req,k]});
   const visible = [...results].sort((a,b)=>(a.position||0)-(b.position||0)).filter(r => showRejected || r.state !== "rejected");
   const selectedCount = results.filter(r => r.state === "selected").length;
+  // выбранные варианты (база CRM и «Аналитика») → окно «Отправить презентацию»
+  const sendSelected = () => setAmComposer(results.filter(r => r.state === "selected").map(r => { const sn = r.snapshot || {};
+    return {...sn, title:r.title || sn.title, price:r.price ?? sn.price, currency:r.currency || sn.currency, source_url:r.source_url, photo_urls:sn.photos, main_photo_url:(sn.photos||[])[0] || sn.photo,
+      own:r.source === "crm" && !!r.property_id, property_id:r.property_id, comment:r.manager_comment || ""}; }));
   const evOf = (sid, kind) => events.filter(e => e.selection_id === sid && e.kind === kind);
   // вариант → цветовая группа (полное совпадение / в бюджете / отклонение / +10 000 / проверить / в подборке / предложено / отклонено)
   const extOn = m?.budget_extension_status === "yes", extAmt = Number(m?.budget_extension_amount || 10000);
@@ -3184,6 +3196,8 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
 
     {m && results.length>0 && <div>
       <div className="row"><b>{tr(lang,"Найденные варианты")}: {results.filter(r=>r.state!=="rejected").length}</b><label className="chip"><input type="checkbox" checked={showRejected} onChange={e=>setShowRejected(e.target.checked)}/> {tr(lang,"показать исключённые")}</label></div>
+      <McBtn tone="dark" style={{width:"100%", minHeight:54, fontSize:15, background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} disabled={!selectedCount} title={!selectedCount ? tr(lang,"Отметьте объекты галочкой «В подборку»") : ""} onClick={sendSelected}>📨 {tr(lang,"Отправить подборку")}{selectedCount ? ` (${selectedCount})` : ` — ${tr(lang,"отметьте «В подборку»")}`}</McBtn>
+      {amComposer && <PresentationComposer lead={lead} leadDbId={leadId} items={amComposer} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>{ setAmComposer(null); load(); }}/>}
       <McLegend lang={lang}/>
       {MC_GROUPS.map(([gk, ck, gt]) => { const list = visible.filter(r => mcGroup(viewOf(r)) === gk); if(!list.length) return null;
         return <section key={gk} style={{display:"grid", gap:10, marginTop:12}}>
