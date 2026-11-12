@@ -2387,6 +2387,454 @@ function LeadObjectMatches({leadId, om, lang="ru", properties=[], onOpenLead, on
   </div>;
 }
 
+// ===== Раздел «Лиды»: 6 видов (канбан, таблица, карточки, список, по задачам, по менеджерам), персональные настройки в базе, быстрый просмотр =====
+// Данные клиента не меняются при просмотре: бюджет/город/тип берутся из профиля автоподбора или распознаются из заметок «на лету».
+const LH_VIEWS = [["kanban","Канбан"],["table","Таблица"],["cards","Карточки"],["compact","Список"],["tasks","По задачам"],["managers","По менеджерам"]];
+const LH_FIELDS = {
+  place:"Город и тип", budget:"Бюджет", payment:"Способ оплаты", first:"Первый взнос", manager:"Ответственный", source:"Источник",
+  created:"Дата создания", lastTouch:"Последний контакт", next:"Следующее действие", objects:"Подходящие объекты", newObjs:"Новые варианты", matching:"Статус автоподбора",
+};
+const LH_PRESETS = {
+  standard:{label:"Стандартный", view:"kanban", fields:["place","budget","next","newObjs","manager"], density:"normal"},
+  compact:{label:"Компактный", view:"compact", fields:["budget","next"], density:"dense"},
+  max:{label:"Максимум информации", view:"cards", fields:["place","budget","payment","first","manager","source","lastTouch","next"], density:"normal"},
+  important:{label:"Только важное", view:"kanban", fields:["budget","next","newObjs"], density:"normal"},
+  tasks:{label:"Контроль задач", view:"tasks", fields:["next","lastTouch","manager"], density:"normal"},
+  automatch:{label:"Автоподбор", view:"cards", fields:["place","budget","payment","objects","newObjs","matching"], density:"normal"},
+};
+const LH_TABLE_COLS = {name:"Клиент", phone:"Телефон", messenger:"Мессенджер", stage:"Этап", manager:"Менеджер", source:"Источник", city:"Город", district:"Район", type:"Тип", budget:"Бюджет",
+  payment:"Оплата", first:"Первый взнос", rooms:"Комнаты", created:"Создан", lastTouch:"Последнее касание", next:"След. действие", newObjs:"Новые объекты", matching:"Автоподбор"};
+const LH_DEFAULT = {view:"kanban", preset:"standard", fields:LH_PRESETS.standard.fields, density:"normal", photos:true, colors:true,
+  tableCols:["name","phone","stage","budget","city","type","next","newObjs","manager","actions"], widths:{}, sort:{key:"next", dir:1}};
+const LH_CLOSED = ["Отказ","Відмова","Отложили"];
+const LH_STATE = {
+  lime:[MC.lime.c,"Новый подходящий объект"], red:[MC.red.c,"Просрочена задача"], orange:[MC.orange.c,"Нет следующего действия"], yellow:[MC.yellow.c,"Клиент думает / ждёт ответа"],
+  blue:[MC.blue.c,"Назначен показ"], purple:[MC.purple.c,"Формируется подборка"], green:[MC.green.c,"Близко к сделке"], gray:[MC.gray.c,"Отложен / закрыт"],
+};
+const LH_PAY = {installment:"Рассрочка", mortgage:"Ипотека", cash:"Наличные / 100%", certificate:"Сертификат"};
+const lhMatchStatus = {ready:"готов к запуску", running:"идёт подбор", done:"подобрано", selection_created:"подборка создана", no_results:"нет вариантов", error:"ошибка"};
+
+// бюджет/город/тип: из профиля автоподбора, иначе — разбор заметок (только чтение)
+function lhParse(lead, prof){
+  if(prof && Object.keys(prof).length) return prof;
+  const t = String(lead.notes || "").toLowerCase(); if(!t) return {};
+  let p = {}; try{ p = nbParseRequest(t) || {}; }catch{}
+  return {
+    deal_type:/аренд|оренд|снять|зняти/.test(t)?"Аренда":/купит|купів|продаж|покуп/.test(t)||p.budget?"Покупка":null,
+    property_type:/(^|\s)(дом|будинок|таунхаус|дуплекс)/.test(t)?"Дом":/участ|ділян/.test(t)?"Участок":/офис|офіс|коммерц|комерц/.test(t)?"Коммерция":(p.rooms||/кварт|студи|смарт/.test(t))?"Квартира":null,
+    city:/одес/.test(t)?"Одесса":/киев|київ/.test(t)?"Киев":/льв[оі]в/.test(t)?"Львов":/днепр|дніпр/.test(t)?"Днепр":/харк|харьк/.test(t)?"Харьков":null,
+    district:p.district||null, rooms_min:p.rooms||null, budget:p.budget||null,
+    currency:/грн|₴|uah|гривн/.test(t)?"UAH":/€|eur|евро|євро/.test(t)?"EUR":"USD",
+    payment_type:/рассроч|розстроч/.test(t)?"installment":/ипотек|іпотек/.test(t)?"mortgage":/налич|готівк|100\s*%|кеш|cash/.test(t)?"cash":null, _guess:true};
+}
+const lhDate = (d, lang) => d ? new Date(d).toLocaleString(lang==="uk"?"uk-UA":"ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "—";
+const lhInitials = n => String(n||"?").trim().split(/\s+/).slice(0,2).map(x=>x[0]||"").join("").toUpperCase() || "?";
+const lhDigits = p => String(p||"").replace(/[^\d]/g,"");
+
+// Краткие данные всех видимых клиентов — один запрос; повторно не грузится при переключении видов
+let lhBriefCache = {at:0, map:null, p:null};
+function useLeadsBrief(){
+  const [map,setMap] = useState(lhBriefCache.map || {});
+  const load = useCallback(async (force=false) => {
+    if(!force && lhBriefCache.map && Date.now() - lhBriefCache.at < 120000){ setMap(lhBriefCache.map); return; }
+    if(lhBriefCache.p) return lhBriefCache.p.then(setMap); // защита от дублирующих запросов
+    lhBriefCache.p = supabase.rpc("crm_leads_brief").then(({data}) => { const m = {}; (data||[]).forEach(r => { m[String(r.lead_id)] = r; }); lhBriefCache = {at:Date.now(), map:m, p:null}; return m; }).catch(()=>{ lhBriefCache.p = null; return {}; });
+    setMap(await lhBriefCache.p);
+  }, []);
+  useEffect(() => { load(); const iv = setInterval(()=>load(true), 300000); return () => clearInterval(iv); }, [load]);
+  return [map, load];
+}
+
+// Настройки вида: база (crm_user_views) → вид по умолчанию от администратора → стандартный
+function useLeadsViewSettings(me){
+  const [s,setS] = useState(() => { try{ return {...LH_DEFAULT, ...(JSON.parse(localStorage.getItem("lh_view_cache")||"{}"))}; }catch{ return LH_DEFAULT; } });
+  const [saved,setSaved] = useState([]); const [adminDefault,setAdminDefault] = useState(null); const tRef = useRef(null);
+  useEffect(() => { if(!me) return; (async () => {
+    const [{data:rows},{data:def}] = await Promise.all([supabase.from("crm_user_views").select("*").eq("scope","leads").order("updated_at",{ascending:false}),
+      supabase.from("crm_settings").select("value").eq("key","leads_default_view").maybeSingle()]);
+    setSaved((rows||[]).filter(r => r.name !== "__current__")); setAdminDefault(def?.value || null);
+    const cur = (rows||[]).find(r => r.name === "__current__");
+    const base = def?.value ? {...LH_DEFAULT, ...(LH_PRESETS[def.value.preset]||{}), ...def.value} : LH_DEFAULT;
+    const next = cur ? {...LH_DEFAULT, ...cur.settings} : base;
+    setS(next); try{ localStorage.setItem("lh_view_cache", JSON.stringify(next)); }catch{}
+  })(); }, [me]);
+  const update = useCallback((patch) => { setS(prev => { const next = {...prev, ...patch};
+    try{ localStorage.setItem("lh_view_cache", JSON.stringify(next)); }catch{}
+    clearTimeout(tRef.current); tRef.current = setTimeout(() => { if(me) supabase.from("crm_user_views").upsert({user_email:me, scope:"leads", name:"__current__", settings:next, is_current:true, updated_at:new Date().toISOString()}, {onConflict:"user_email,scope,name"}).then(()=>{}); }, 500);
+    return next; }); }, [me]);
+  const saveNamed = async (name) => { const {data,error} = await supabase.from("crm_user_views").upsert({user_email:me, scope:"leads", name, settings:s, updated_at:new Date().toISOString()}, {onConflict:"user_email,scope,name"}).select().maybeSingle();
+    if(error) return alert(error.message); setSaved(x => [data, ...x.filter(r => r.name !== name)]); };
+  const removeNamed = async (row) => { await supabase.from("crm_user_views").delete().eq("id", row.id); setSaved(x => x.filter(r => r.id !== row.id)); };
+  const setAsDefaultForAll = async () => { const v = {view:s.view, preset:s.preset, fields:s.fields, density:s.density, photos:s.photos, colors:s.colors, tableCols:s.tableCols};
+    const {error} = await supabase.from("crm_settings").update({value:v, updated_at:new Date().toISOString()}).eq("key","leads_default_view"); if(error) return alert(error.message); setAdminDefault(v); alert("Вид по умолчанию для всех сохранён"); };
+  const reset = () => update(adminDefault ? {...LH_DEFAULT, ...(LH_PRESETS[adminDefault.preset]||{}), ...adminDefault} : LH_DEFAULT);
+  return {s, update, saved, saveNamed, removeNamed, setAsDefaultForAll, reset};
+}
+
+function LeadsHub({leads, setLeads, onOpen, currentProfile, role, users, lang="ru", om}){
+  const me = String(currentProfile?.email || "").toLowerCase();
+  const isAdmin = ["Администратор директор","Администратор тех отдел"].includes(role);
+  const V = useLeadsViewSettings(me); const s = V.s;
+  const [brief, reloadBrief] = useLeadsBrief();
+  const [search,setSearch] = useState(""); const [stageF,setStageF] = useState("Все"); const [mgrF,setMgrF] = useState("Все"); const [quick,setQuick] = useState("");
+  const [showSettings,setShowSettings] = useState(false); const [peek,setPeek] = useState(null); const [phone,setPhone] = useState(null);
+  const [sel,setSel] = useState(new Set()); const [mobileStage,setMobileStage] = useState(null); const [limit,setLimit] = useState({});
+  const [showF,setShowF] = useState(false);
+  const [narrow,setNarrow] = useState(typeof window!=="undefined" && window.innerWidth < 760);
+  useEffect(() => { const f = () => setNarrow(window.innerWidth < 760); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
+  const T = x => tr(lang, x);
+
+  // новые подходящие объекты по клиенту (из мониторинга)
+  const newByLead = useMemo(() => { const m = {}; (om?.rows||[]).forEach(r => { if(OM_OPEN.includes(r.status)) m[String(r.lead_id)] = (m[String(r.lead_id)]||0) + 1; }); return m; }, [om?.rows]);
+  // краткая модель клиента для всех видов (считается один раз на набор данных)
+  const items = useMemo(() => leads.map(l => {
+    const b = brief[String(l.id)] || {}; const p = lhParse(l, b.profile);
+    const next = calParseLeadNext(l.nextContact); const closed = LH_CLOSED.includes(l.status);
+    const overdue = !!(next && next < new Date() && !closed); const noAction = !next && !closed && l.status !== "Сделка";
+    const fresh = newByLead[String(l.id)] || 0;
+    const state = closed ? "gray" : fresh ? "lime" : overdue ? "red" : ["Задаток","Сделка"].includes(l.status) ? "green" : ["Назначена встреча","Проведена встреча"].includes(l.status) ? "blue"
+      : (b.matching_status === "selection_created") ? "purple" : l.status === "Думает" ? "yellow" : noAction ? "orange" : null;
+    const budgetUsd = p.budget ? (p.currency === "UAH" ? p.budget / 41 : p.currency === "EUR" ? p.budget * 1.08 : Number(p.budget)) : 0;
+    return {l, b, p, next, overdue, noAction, fresh, state, closed, budgetUsd,
+      budgetText: p.budget ? amMoney(p.budget, p.currency || "USD") : "—",
+      placeText: [p.city, p.property_type, p.deal_type].filter(Boolean).join(" · "),
+      payText: LH_PAY[p.payment_type] || "", firstText: p.first_payment ? amMoney(p.first_payment, p.currency||"USD") : p.first_payment_pct ? `${p.first_payment_pct}%` : "",
+      lastTouch: b.last_touch_at || null, objects: b.results_count || 0, matching: lhMatchStatus[b.matching_status] || (b.matching_status ? b.matching_status : "")};
+  }), [leads, brief, newByLead]);
+
+  const filtered = useMemo(() => { const q = search.trim().toLowerCase().replace(/\s+/g,"");
+    return items.filter(x => (stageF === "Все" || x.l.status === stageF) && (!isAdmin || mgrF === "Все" || x.l.manager_email === mgrF || x.l.manager === mgrF)
+      && (!q || `${x.l.name||""}${x.l.phone||""}${x.p.city||""}${x.p.district||""}`.toLowerCase().replace(/\s+/g,"").includes(q))
+      && (!quick || (quick==="fresh" && x.fresh) || (quick==="overdue" && x.overdue) || (quick==="noaction" && x.noAction) || (quick==="mine" && x.l.manager_email === me)));
+  }, [items, search, stageF, mgrF, quick, isAdmin, me]);
+
+  const allStages = useMemo(() => [...stages, ...[...new Set(leads.map(l => l.status).filter(st => st && !stages.includes(st)))]], [leads]);
+  const managers = useMemo(() => [...new Map(leads.filter(l => l.manager_email || l.manager).map(l => [l.manager_email || l.manager, l.manager || l.manager_email])).entries()], [leads]);
+
+  // смена этапа — оптимистично, сохраняется в базе существующим механизмом CRM
+  const moveTo = (lead, st) => { if(!st || st === lead.status) return;
+    setLeads(prev => prev.map(l => l.id === lead.id ? {...l, status:st, history:[...(l.history||[]), `Перемещен в стадию: ${st}`]} : l));
+    addLeadHistory(lead, "stage", `${T("Этап")}: ${T(lead.status)} → ${T(st)}`, currentProfile); };
+  const setNext = (lead) => { const v = window.prompt(T("Следующее действие: дата и время (ГГГГ-ММ-ДД ЧЧ:ММ)"), lead.nextContact || new Date(Date.now()+86400000).toISOString().slice(0,10)+" 10:00"); if(v == null) return;
+    setLeads(prev => prev.map(l => l.id === lead.id ? {...l, nextContact:v.trim()} : l)); };
+  const bulk = (fn) => { const ids = new Set(sel); setLeads(prev => prev.map(l => ids.has(String(l.id)) ? fn(l) : l)); setSel(new Set()); };
+  const toggleSel = id => setSel(x => { const n = new Set(x); n.has(String(id)) ? n.delete(String(id)) : n.add(String(id)); return n; });
+  const openFull = (lead, tab) => { setPeek(null); onOpen(tab ? {...lead, _openTab:tab} : lead); };
+
+  const create = () => { const managerName = currentProfile?.full_name || "Ответственный менеджер";
+    onOpen({id:"L-"+Date.now().toString().slice(-6), agency_id:currentProfile?.agency_id ? String(currentProfile.agency_id) : "", name:"", phone:"+380", source:sources[0], status:stages[0], notes:"", nextContact:"", manager:managerName, manager_email:me, created_at:new Date().toISOString(), history:[`Новый клиент. Ответственный: ${managerName}`]}); };
+
+  // --- маленькие общие элементы ---
+  const Avatar = ({x, size=40}) => s.photos ? <span className="lhAva" style={{width:size, height:size, borderRadius:size/2, background:x.state?LH_STATE[x.state][0]:"#3f3f46", color:x.state==="lime"?"#1a2e05":"#fff", display:"grid", placeItems:"center", fontWeight:900, fontSize:size*.36, flex:"0 0 auto"}}>{lhInitials(x.l.name)}</span> : null;
+  const field = (x, k) => {
+    switch(k){
+      case "place": return x.placeText ? <span key={k}>{x.placeText}{x.p._guess?" ·":""}{x.p._guess && <i className="lhGuess" title={T("Распознано из заметок")}> ~</i>}</span> : null;
+      case "budget": return x.p.budget ? <b key={k}>{x.budgetText}</b> : null;
+      case "payment": return x.payText ? <span key={k}>{T(x.payText)}</span> : null;
+      case "first": return x.firstText ? <span key={k}>{T("взнос")} {x.firstText}</span> : null;
+      case "manager": return <span key={k}>👤 {x.l.manager || T("не назначен")}</span>;
+      case "source": return x.l.source ? <span key={k}>{T(x.l.source)}</span> : null;
+      case "created": return x.l.created_at ? <span key={k}>{T("создан")} {lhDate(x.l.created_at, lang)}</span> : null;
+      case "lastTouch": return <span key={k}>{T("контакт")}: {x.lastTouch ? lhDate(x.lastTouch, lang) : "—"}</span>;
+      case "next": return <span key={k} style={{color:x.overdue?"#fca5a5":x.noAction?"#fdba74":undefined, fontWeight:800}}>{x.overdue?"⚠ ":"⏰ "}{x.next ? lhDate(x.next, lang) : T("нет действия")}</span>;
+      case "objects": return x.objects ? <span key={k}>{T("объектов")}: {x.objects}</span> : null;
+      case "newObjs": return x.fresh ? <span key={k} className="lhPillLime">+{x.fresh} {T("новых")}</span> : null;
+      case "matching": return x.matching ? <span key={k}>{T("автоподбор")}: {T(x.matching)}</span> : null;
+      default: return null;
+    }
+  };
+  const QuickBtns = ({x, wide}) => <div className="lhQuick" style={{display:"grid", gridTemplateColumns:`repeat(${wide?4:3}, minmax(0,1fr))`, gap:6}}>
+    <McBtn tone="dark" style={{minHeight:40, background:"#16a34a", borderColor:"#16a34a", color:"#fff"}} onClick={e=>{e.stopPropagation(); setPhone(x.l.phone);}}>{T("Звонок")}</McBtn>
+    <McBtn tone="purple" style={{minHeight:40}} onClick={e=>{e.stopPropagation(); setPhone(x.l.phone);}}>{T("Написать")}</McBtn>
+    <McBtn tone="plain" style={{minHeight:40}} onClick={e=>{e.stopPropagation(); setPeek(x);}}>{T("Открыть")}</McBtn>
+    {wide && <McBtn tone="indigo" style={{minHeight:40}} onClick={e=>{e.stopPropagation(); setNext(x.l);}}>{T("Задача")}</McBtn>}
+  </div>;
+  const frame = x => s.colors && x.state ? {border:`2px solid ${LH_STATE[x.state][0]}`} : {border:"1px solid var(--line, #27272a)"};
+
+  // --- карточка канбана ---
+  const KCard = ({x}) => <div className="lhKCard" draggable={!narrow} onDragStart={e=>e.dataTransfer.setData("leadId", String(x.l.id))} onClick={()=>setPeek(x)}
+    style={{borderRadius:16, padding:s.density==="dense"?8:12, background:"var(--card, #17171a)", cursor:"pointer", display:"grid", gap:s.density==="dense"?4:8, ...frame(x)}}>
+    <div style={{display:"flex", gap:10, alignItems:"center"}}><Avatar x={x} size={s.density==="dense"?30:40}/>
+      <div style={{flex:1, minWidth:0}}><b style={{display:"block", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{x.l.name || T("Без имени")}</b>
+        {x.state && s.colors && <span className="lhStateTxt" style={{fontSize:12, fontWeight:800, color:LH_STATE[x.state][0]}}>{T(LH_STATE[x.state][1])}</span>}</div>
+    </div>
+    <div className="lhFields" style={{display:"flex", flexWrap:"wrap", gap:"4px 10px", fontSize:13}}>{s.fields.slice(0,8).map(k => field(x,k))}</div>
+    {s.density !== "dense" && <QuickBtns x={x}/>}
+  </div>;
+
+  // ===== виды =====
+  const kanban = () => { const cols = stageF === "Все" ? allStages : [stageF];
+    const colStats = st => { const list = filtered.filter(x => x.l.status === st); return {list, overdue:list.filter(x=>x.overdue).length, noAct:list.filter(x=>x.noAction).length, sum:list.reduce((a,x)=>a+(x.budgetUsd||0),0)}; };
+    const Col = ({st}) => { const c = colStats(st); const lim = limit[st] || 30;
+      return <section className="lhCol" onDragOver={e=>e.preventDefault()} onDrop={e=>{ const id = e.dataTransfer.getData("leadId"); const lead = leads.find(l => String(l.id) === id); if(lead) moveTo(lead, st); }}
+        style={{flex:narrow?"1 1 auto":"0 0 320px", minWidth:0, display:"grid", gap:10, alignContent:"start"}}>
+        <div className="lhColHead" style={{padding:"10px 12px", borderRadius:14, background:"var(--soft, #18181b)", display:"grid", gap:6}}>
+          <div style={{display:"flex", alignItems:"center", gap:8}}><b style={{flex:1}}>{T(st)}</b><span className="lhCount">{c.list.length}</span></div>
+          <div style={{display:"flex", gap:6, flexWrap:"wrap", fontSize:12, fontWeight:800}}>
+            {c.overdue>0 && <McPill k="red">⚠ {c.overdue} {T("просрочено")}</McPill>}
+            {c.noAct>0 && <McPill k="orange">{c.noAct} {T("без действия")}</McPill>}
+            {c.sum>0 && <McPill k="blue">{amMoney(c.sum)}</McPill>}
+          </div></div>
+        {c.list.slice(0, lim).map(x => <KCard key={x.l.id} x={x}/>)}
+        {c.list.length > lim && <McBtn tone="plain" onClick={()=>setLimit({...limit, [st]:lim+30})}>{T("Показать ещё")} {Math.min(30, c.list.length-lim)}</McBtn>}
+      </section>; };
+    if(narrow){ const cur = mobileStage && cols.includes(mobileStage) ? mobileStage : (cols.find(st => filtered.some(x => x.l.status === st)) || cols[0]);
+      return <div style={{display:"grid", gap:10}}>
+        <div className="lhStageTabs lhNoWrap" style={{display:"flex", gap:6, paddingBottom:4}}>{cols.map(st => { const c = colStats(st); return <button key={st} onClick={()=>setMobileStage(st)} className={cn("lhTab", st===cur && "on")}
+          style={{flex:"0 0 auto", minHeight:40, padding:"0 12px", borderRadius:12, border:0, fontWeight:800, background:st===cur?"#F5C518":"var(--soft, #18181b)", color:st===cur?"#0b0b0c":"inherit", boxShadow:c.overdue?`inset 0 -3px 0 ${MC.red.c}`:"none"}}>{T(st)} {c.list.length}</button>; })}</div>
+        <Col st={cur}/>
+        <small className="muted">{T("Сменить этап на телефоне: откройте клиента → «Этап»")}</small>
+      </div>; }
+    return <div className="lhKanban" style={{display:"flex", gap:14, overflowX:"auto", alignItems:"flex-start", paddingBottom:12}}>{cols.map(st => <Col key={st} st={st}/>)}</div>;
+  };
+
+  const cell = (x, k) => { switch(k){
+    case "name": return <span style={{display:"flex", gap:8, alignItems:"center"}}>{s.colors && <span style={{width:6, height:26, borderRadius:3, background:x.state?LH_STATE[x.state][0]:"transparent"}}/>}<b>{x.l.name || T("Без имени")}</b></span>;
+    case "phone": return x.l.phone || "";
+    case "messenger": return x.l.phone ? "Viber · WhatsApp · Telegram" : "";
+    case "stage": return <select className="input lhStageSel" value={x.l.status} onClick={e=>e.stopPropagation()} onChange={e=>moveTo(x.l, e.target.value)} style={{minHeight:34, padding:"4px 8px"}}>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>;
+    case "manager": return x.l.manager || "—"; case "source": return T(x.l.source || "");
+    case "city": return x.p.city || ""; case "district": return x.p.district || ""; case "type": return [x.p.property_type, x.p.deal_type].filter(Boolean).join(", ");
+    case "budget": return x.p.budget ? <b>{x.budgetText}</b> : ""; case "payment": return T(x.payText); case "first": return x.firstText;
+    case "rooms": return x.p.rooms_min ? `${x.p.rooms_min}${x.p.rooms_max && x.p.rooms_max!==x.p.rooms_min?`–${x.p.rooms_max}`:""}` : "";
+    case "created": return x.l.created_at ? lhDate(x.l.created_at, lang) : ""; case "lastTouch": return x.lastTouch ? lhDate(x.lastTouch, lang) : "—";
+    case "next": return <span style={{color:x.overdue?MC.red.c:x.noAction?MC.orange.c:undefined, fontWeight:800}}>{x.next ? lhDate(x.next, lang) : T("нет действия")}</span>;
+    case "newObjs": return x.fresh ? <McBadge bg={MC.lime.c} ink="#1a2e05">+{x.fresh}</McBadge> : ""; case "matching": return T(x.matching);
+    case "actions": return <span style={{display:"flex", gap:4}} onClick={e=>e.stopPropagation()}>
+      <button className="lhIcon" title={T("Позвонить")} onClick={()=>setPhone(x.l.phone)}>☎</button>
+      <button className="lhIcon" title={T("Написать")} onClick={()=>setPhone(x.l.phone)}>✉</button>
+      <button className="lhIcon" title={T("Поставить задачу")} onClick={()=>setNext(x.l)}>⏰</button>
+      <button className="lhIcon" title={T("Открыть автоподбор")} onClick={()=>openFull(x.l,"automatch")}>✨</button>
+      <button className="lhIcon" title={T("Открыть карточку")} onClick={()=>openFull(x.l)}>›</button></span>;
+    default: return ""; } };
+  const sortVal = (x, k) => ({name:x.l.name, stage:allStages.indexOf(x.l.status), manager:x.l.manager, source:x.l.source, city:x.p.city, budget:x.budgetUsd, created:x.l.created_at, lastTouch:x.lastTouch, next:x.next ? x.next.getTime() : 9e15, newObjs:-x.fresh})[k] ?? "";
+  const [tPage,setTPage] = useState(0); const [groupBy,setGroupBy] = useState("");
+  const table = () => { const cols = s.tableCols.filter(k => k === "actions" || LH_TABLE_COLS[k]);
+    const sorted = [...filtered].sort((a,b) => { const va = sortVal(a, s.sort.key), vb = sortVal(b, s.sort.key); return (va > vb ? 1 : va < vb ? -1 : 0) * s.sort.dir; });
+    const page = sorted.slice(tPage*50, tPage*50+50); const pages = Math.ceil(sorted.length/50);
+    const groups = groupBy ? Object.entries(page.reduce((a,x) => { const k = groupBy==="stage" ? T(x.l.status) : (x.l.manager || "—"); (a[k]=a[k]||[]).push(x); return a; }, {})) : [["", page]];
+    const W = k => s.widths[k] || (k==="name"?220:k==="actions"?190:k==="stage"?170:130);
+    const startResize = (k, e) => { e.preventDefault(); const x0 = e.clientX, w0 = W(k); const mv = ev => V.update({widths:{...s.widths, [k]:Math.max(70, w0 + ev.clientX - x0)}}); const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }; window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); };
+    return <div style={{display:"grid", gap:10}}>
+      <div style={{display:"flex", gap:8, flexWrap:"wrap", alignItems:"center"}}>
+        <select className="input" style={{width:"auto"}} value={groupBy} onChange={e=>setGroupBy(e.target.value)}><option value="">{T("Без группировки")}</option><option value="stage">{T("Группировать по этапу")}</option><option value="manager">{T("Группировать по менеджеру")}</option></select>
+        {sel.size>0 && <>
+          <McBadge bg="#F5C518" ink="#0b0b0c">{T("Выбрано")}: {sel.size}</McBadge>
+          <select className="input" style={{width:"auto"}} value="" onChange={e=>{ const st = e.target.value; if(st) { leads.filter(l=>sel.has(String(l.id))).forEach(l=>moveTo(l, st)); setSel(new Set()); } }}><option value="">{T("Сменить этап…")}</option>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>
+          {isAdmin && <select className="input" style={{width:"auto"}} value="" onChange={e=>{ const u = (users||[]).find(u => u.email === e.target.value); if(u && window.confirm(`${T("Передать выбранных клиентов менеджеру")} ${managerDisplayName(u)}?`)) bulk(l => ({...l, manager:managerDisplayName(u), manager_email:u.email})); }}><option value="">{T("Передать менеджеру…")}</option>{(users||[]).filter(u=>String(u.role||"").includes("Менеджер")).map(u => <option key={u.email} value={u.email}>{managerDisplayName(u)}</option>)}</select>}
+          <McBtn tone="indigo" style={{minHeight:38}} onClick={()=>{ const v = window.prompt(T("Следующее действие для выбранных (ГГГГ-ММ-ДД ЧЧ:ММ)"), new Date(Date.now()+86400000).toISOString().slice(0,10)+" 10:00"); if(v) bulk(l => ({...l, nextContact:v.trim()})); }}>⏰ {T("Поставить задачу")}</McBtn>
+          <McBtn tone="plain" style={{minHeight:38}} onClick={()=>setSel(new Set())}>{T("Снять выбор")}</McBtn></>}
+      </div>
+      <div className="lhTableBox" style={{overflow:"auto", maxHeight:"70vh", borderRadius:16, border:"1px solid var(--line, #27272a)"}}>
+        <table className="lhTable" style={{borderCollapse:"separate", borderSpacing:0, minWidth:"100%", fontSize:14}}>
+          <thead><tr>
+            <th className="lhTh lhSticky0" style={{width:40}}><input type="checkbox" aria-label={T("Выбрать все")} checked={page.length>0 && page.every(x=>sel.has(String(x.l.id)))} onChange={e=>setSel(e.target.checked ? new Set([...sel, ...page.map(x=>String(x.l.id))]) : new Set())}/></th>
+            {cols.map((k,i) => <th key={k} className={cn("lhTh", i===0 && "lhSticky1")} style={{width:W(k), minWidth:W(k), cursor:k!=="actions"?"pointer":"default", position:i===0?"sticky":"relative"}}
+              onClick={()=>k!=="actions" && V.update({sort:{key:k, dir:s.sort.key===k ? -s.sort.dir : 1}})}>{k==="actions"?T("Действия"):T(LH_TABLE_COLS[k])}{s.sort.key===k?(s.sort.dir>0?" ▲":" ▼"):""}
+              <span className="lhResize" onMouseDown={e=>startResize(k,e)} onClick={e=>e.stopPropagation()}/></th>)}
+          </tr></thead>
+          <tbody>{groups.map(([g, rows]) => <React.Fragment key={g||"all"}>
+            {g && <tr><td colSpan={cols.length+1} className="lhGroupRow">{g} · {rows.length}</td></tr>}
+            {rows.map(x => <tr key={x.l.id} className={cn("lhTr", sel.has(String(x.l.id)) && "sel")} onClick={()=>setPeek(x)}>
+              <td className="lhTd lhSticky0" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(String(x.l.id))} onChange={()=>toggleSel(x.l.id)} aria-label={T("Выбрать")}/></td>
+              {cols.map((k,i) => <td key={k} className={cn("lhTd", i===0 && "lhSticky1")} style={{width:W(k), maxWidth:W(k)}}>{cell(x,k)}</td>)}
+            </tr>)}</React.Fragment>)}</tbody>
+        </table>
+      </div>
+      {pages>1 && <div style={{display:"flex", gap:8, alignItems:"center", justifyContent:"center"}}>
+        <McBtn tone="plain" disabled={tPage===0} onClick={()=>setTPage(tPage-1)}>‹</McBtn><span>{tPage+1} / {pages} · {sorted.length}</span><McBtn tone="plain" disabled={tPage>=pages-1} onClick={()=>setTPage(tPage+1)}>›</McBtn></div>}
+    </div>; };
+
+  const [cLimit,setCLimit] = useState(40);
+  const cardsView = () => <div style={{display:"grid", gap:14}}>
+    <div className="lhCardsGrid" style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(min(100%, 340px), 1fr))", gap:14}}>
+      {filtered.slice(0,cLimit).map(x => <article key={x.l.id} className="card lhCard" onClick={()=>setPeek(x)} style={{padding:0, overflow:"hidden", cursor:"pointer", borderRadius:22, margin:0}}>
+        <div style={{height:6, background:x.state&&s.colors?LH_STATE[x.state][0]:"var(--line, #27272a)"}}/>
+        <div style={{padding:14, display:"grid", gap:10}}>
+          <div style={{display:"flex", gap:12, alignItems:"center"}}><Avatar x={x} size={48}/>
+            <div style={{flex:1, minWidth:0}}><b style={{fontSize:17, display:"block"}}>{x.l.name || T("Без имени")}</b><span className="lhSub" style={{fontSize:13}}>{T(x.l.status)} · {x.l.manager || "—"}</span></div>
+            {x.fresh>0 && <McBadge bg={MC.lime.c} ink="#1a2e05">+{x.fresh} {T("новых")}</McBadge>}</div>
+          <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
+            <div style={{background:MC.blue.bg, color:MC.blue.ink, borderRadius:12, padding:"8px 10px"}}><span style={{fontSize:12, display:"block"}}>{T("Бюджет")}</span><b style={{fontSize:17}}>{x.budgetText}</b></div>
+            <div style={{background:MC.gray.bg, color:MC.gray.ink, borderRadius:12, padding:"8px 10px"}}><span style={{fontSize:12, display:"block"}}>{T("Оплата")}</span><b>{T(x.payText) || "—"}{x.firstText?` · ${x.firstText}`:""}</b></div>
+          </div>
+          {x.placeText && <span style={{fontSize:14}}>{x.placeText}{x.p.district?` · ${x.p.district}`:""}</span>}
+          <div style={{display:"flex", flexWrap:"wrap", gap:"4px 12px", fontSize:13}}>{["source","lastTouch","next","objects","matching"].filter(k => s.fields.includes(k) || ["next","lastTouch"].includes(k)).map(k => field(x,k))}</div>
+          <QuickBtns x={x} wide/>
+        </div></article>)}
+    </div>
+    {filtered.length > cLimit && <McBtn tone="plain" onClick={()=>setCLimit(cLimit+40)}>{T("Показать ещё")}</McBtn>}
+  </div>;
+
+  const [openRow,setOpenRow] = useState(null);
+  const compact = () => <div className="card" style={{padding:0, overflow:"hidden"}}>
+    {filtered.slice(0,cLimit*2).map(x => <div key={x.l.id} className="lhRow" style={{borderBottom:"1px solid var(--line, #27272a)"}}>
+      <button className="lhRowBtn" onClick={()=>setOpenRow(openRow===x.l.id?null:x.l.id)} style={{width:"100%", textAlign:"left", display:"flex", gap:10, alignItems:"center", padding:s.density==="dense"?"8px 12px":"10px 14px", background:"transparent", border:0, color:"inherit", cursor:"pointer"}}>
+        <span style={{width:10, height:10, borderRadius:5, flex:"0 0 auto", background:x.state&&s.colors?LH_STATE[x.state][0]:"#52525b"}}/>
+        <span style={{flex:1, minWidth:0}}><b>{x.l.name || T("Без имени")}</b> <span className="lhSub" style={{fontSize:12}}>· {T(x.l.status)}</span>
+          <span className="lhSub" style={{display:"block", fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{[x.p.budget?x.budgetText:null, x.p.city, x.p.property_type, x.lastTouch?`${T("контакт")} ${lhDate(x.lastTouch, lang)}`:null, x.next?`⏰ ${lhDate(x.next, lang)}`:T("нет действия"), x.l.manager].filter(Boolean).join(" · ")}</span></span>
+        {x.fresh>0 && <McBadge bg={MC.lime.c} ink="#1a2e05">+{x.fresh}</McBadge>}
+      </button>
+      {openRow===x.l.id && <div style={{padding:"0 14px 12px"}}><QuickBtns x={x} wide/></div>}
+    </div>)}
+    {filtered.length > cLimit*2 && <div style={{padding:10}}><McBtn tone="plain" style={{width:"100%"}} onClick={()=>setCLimit(cLimit+40)}>{T("Показать ещё")}</McBtn></div>}
+  </div>;
+
+  const tasks = () => { const now = new Date(), d0 = new Date(now); d0.setHours(0,0,0,0); const d1 = new Date(d0.getTime()+86400000), d2 = new Date(d0.getTime()+2*86400000);
+    const wEnd = new Date(d0); wEnd.setDate(d0.getDate() + (7 - ((d0.getDay()+6)%7)));
+    const act = filtered.filter(x => !x.closed);
+    const B = [["overdue","Просрочено","red", act.filter(x=>x.overdue)], ["today","Сегодня","yellow", act.filter(x=>x.next && !x.overdue && x.next < d1)],
+      ["tomorrow","Завтра","blue", act.filter(x=>x.next && x.next >= d1 && x.next < d2)], ["week","На этой неделе","purple", act.filter(x=>x.next && x.next >= d2 && x.next < wEnd)],
+      ["later","Позже","gray", act.filter(x=>x.next && x.next >= wEnd)], ["none","Нет запланированных действий","orange", act.filter(x=>!x.next)]];
+    return <div style={{display:"grid", gap:14}}>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(110px,1fr))", gap:8}}>{B.map(([k,t,c,l]) => <div key={k} style={{borderRadius:14, padding:10, background:MC[c].bg, color:MC[c].ink}}><b style={{fontSize:22, display:"block"}}>{l.length}</b><span style={{fontSize:12, fontWeight:800}}>{T(t)}</span></div>)}</div>
+      {B.map(([k,t,c,l]) => l.length>0 && <section key={k} style={{display:"grid", gap:8}}>
+        <div style={{display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:12, background:MC[c].bg, color:MC[c].ink, borderLeft:`6px solid ${MC[c].c}`}}><b style={{flex:1}}>{T(t)}</b><McBadge bg={MC[c].c} ink="#fff">{l.length}</McBadge></div>
+        {[...l].sort((a,b)=>(a.next?.getTime()||0)-(b.next?.getTime()||0)).slice(0, limit["t"+k] || 20).map(x => <div key={x.l.id} className="card" onClick={()=>setPeek(x)} style={{margin:0, padding:12, display:"flex", gap:10, alignItems:"center", cursor:"pointer", ...frame(x)}}>
+          <span style={{width:58, fontWeight:900, color:MC[c].c, fontSize:13}}>{x.next ? x.next.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}) : "—"}</span>
+          <span style={{flex:1, minWidth:0}}><b>{x.l.name || T("Без имени")}</b><span className="lhSub" style={{display:"block", fontSize:12}}>{T(x.l.status)}{x.next?` · ${lhDate(x.next, lang)}`:""} · {x.l.manager || "—"}</span></span>
+          {x.fresh>0 && <McBadge bg={MC.lime.c} ink="#1a2e05">+{x.fresh}</McBadge>}
+          <McBtn tone="dark" style={{minHeight:40, background:"#16a34a", borderColor:"#16a34a", color:"#fff"}} onClick={e=>{e.stopPropagation(); setPhone(x.l.phone);}}>{T("Звонок")}</McBtn>
+        </div>)}
+        {l.length > (limit["t"+k]||20) && <McBtn tone="plain" onClick={()=>setLimit({...limit, ["t"+k]:(limit["t"+k]||20)+20})}>{T("Показать ещё")}</McBtn>}
+      </section>)}
+    </div>; };
+
+  const byManagers = () => { if(!isAdmin) return <p className="muted">{T("Этот вид доступен администратору и руководителю")}</p>;
+    const rows = Object.values(items.reduce((a,x) => { const k = x.l.manager_email || x.l.manager || "—"; const r = a[k] = a[k] || {key:k, name:x.l.manager || k, active:0, fresh:0, raw:0, late:0, noact:0, objs:0, deal:0};
+      if(!x.closed) r.active++; if(x.l.created_at && Date.now()-new Date(x.l.created_at).getTime() < 7*86400000) r.fresh++; if(["Новый Лид","New Lead"].includes(x.l.status)) r.raw++;
+      if(x.overdue) r.late++; if(x.noAction) r.noact++; if(x.fresh) r.objs++; if(["Задаток","Сделка"].includes(x.l.status)) r.deal++; return a; }, {})).sort((a,b)=>b.active-a.active);
+    const go = (k, q) => { setMgrF(k); setQuick(q||""); V.update({view:"table"}); };
+    const H = ["Активные","Новые за 7 дней","Не обработаны","Просрочено","Без действия","С новыми объектами","Задаток / сделка"];
+    return <div style={{overflow:"auto", borderRadius:16, border:"1px solid var(--line, #27272a)"}}>
+      <table className="lhTable" style={{borderCollapse:"collapse", width:"100%", minWidth:820, fontSize:14}}>
+        <thead><tr><th className="lhTh" style={{textAlign:"left"}}>{T("Менеджер")}</th>{H.map(h => <th key={h} className="lhTh">{T(h)}</th>)}</tr></thead>
+        <tbody>{rows.map(r => <tr key={r.key} className="lhTr">
+          <td className="lhTd"><b>{r.name}</b></td>
+          <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key)}>{r.active}</button></td>
+          <td className="lhTd">{r.fresh}</td><td className="lhTd" style={{color:MC.yellow.c, fontWeight:900}}>{r.raw}</td>
+          <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key,"overdue")}><McBadge bg={MC.red.bg} ink={MC.red.ink}>{r.late}</McBadge></button></td>
+          <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key,"noaction")}><McBadge bg={MC.orange.bg} ink={MC.orange.ink}>{r.noact}</McBadge></button></td>
+          <td className="lhTd"><button className="lhNum" onClick={()=>go(r.key,"fresh")}><McBadge bg={MC.lime.bg} ink={MC.lime.ink}>{r.objs}</McBadge></button></td>
+          <td className="lhTd" style={{color:MC.green.c, fontWeight:900}}>{r.deal}</td></tr>)}</tbody>
+      </table></div>; };
+
+  const views = {kanban, table, cards:cardsView, compact, tasks, managers:byManagers};
+  const visibleViews = LH_VIEWS.filter(([k]) => k !== "managers" || isAdmin);
+  return <main className="screen lhScreen">
+    <style>{`.lhScreen .lhSub,.lhScreen .lhStateTxt{opacity:1}.lhTh{position:sticky;top:0;z-index:2;background:var(--soft,#18181b);padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.03em;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line,#27272a)}
+.lhTd{padding:8px 12px;border-bottom:1px solid var(--line,#27272a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--card,#0f0f11)}.lhTr{cursor:pointer}.lhTr:hover .lhTd{filter:brightness(1.15)}.lhTr.sel .lhTd{background:rgba(245,197,24,.12)}
+.lhSticky0{position:sticky;left:0;z-index:3}.lhSticky1{position:sticky;left:40px;z-index:3}th.lhSticky0,th.lhSticky1{z-index:4}.lhResize{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize}.lhResize:hover{background:#F5C518}
+.lhGroupRow{padding:8px 12px;font-weight:900;background:rgba(245,197,24,.14)}.lhIcon{width:34px;height:34px;border-radius:10px;border:1px solid var(--line,#3f3f46);background:transparent;color:inherit;cursor:pointer;font-size:15px}
+.lhIcon:hover{background:rgba(245,197,24,.18)}.lhNum{background:none;border:0;color:inherit;font:inherit;font-weight:900;cursor:pointer;text-decoration:underline dotted}.lhPillLime{background:${MC.lime.c};color:#1a2e05;border-radius:999px;padding:1px 8px;font-weight:900}
+.lhScreen .lhNoWrap{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none}.lhScreen .lhNoWrap::-webkit-scrollbar{display:none}.lhScreen .lhNoWrap>*{flex:0 0 auto!important}
+.lhKCard:hover{transform:translateY(-1px)}.lhCount{font-weight:900;padding:2px 9px;border-radius:999px;background:rgba(245,197,24,.2)}.lhGuess{font-style:normal;opacity:.7}.lhSwitch button{white-space:nowrap}`}</style>
+    <div className="lhNoWrap" style={{display:"flex", gap:8, alignItems:"center"}}>
+      <h2 style={{margin:0, flex:"1 1 auto"}}>{T("Лиды")} <span className="lhSub" style={{fontSize:15}}>{filtered.length}{filtered.length!==leads.length?` / ${leads.length}`:""}</span></h2>
+      <McBtn tone="plain" title={T("Настроить отображение")} aria-label={T("Настроить отображение")} onClick={()=>setShowSettings(true)}>⚙{narrow?"":" "+T("Настроить отображение")}</McBtn>
+      <McBtn tone="lime" onClick={create}>+ {T("Клиент")}</McBtn>
+    </div>
+    <div className="lhSwitch lhNoWrap" role="tablist" aria-label={T("Формат отображения")} style={{display:"flex", gap:6, padding:4, borderRadius:16, background:"var(--soft, #18181b)", margin:"12px 0"}}>
+      {visibleViews.map(([k,t]) => <button key={k} role="tab" aria-selected={s.view===k} onClick={()=>V.update({view:k})} style={{flex:"0 0 auto", minHeight:40, padding:"0 14px", borderRadius:12, border:0, cursor:"pointer", fontWeight:850, background:s.view===k?"#F5C518":"transparent", color:s.view===k?"#0b0b0c":"inherit"}}>{T(t)}</button>)}
+    </div>
+    <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:narrow&&!showF?10:12}} className="lhNoWrap">
+      <input className="input" style={{flex:"1 1 220px", minWidth:0, width:narrow?"auto":undefined}} value={search} onChange={e=>setSearch(e.target.value)} placeholder={T("Имя, телефон, город, район…")}/>
+      {narrow && <McBtn tone={showF||stageF!=="Все"||mgrF!=="Все"?"dark":"plain"} onClick={()=>setShowF(!showF)}>{T("Фильтры")}{stageF!=="Все"||mgrF!=="Все"?" •":""}</McBtn>}
+    </div>
+    {(!narrow || showF) && <div style={{display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:12}}>
+      <select className="input" style={{width:"auto"}} value={stageF} onChange={e=>setStageF(e.target.value)}><option value="Все">{T("Все этапы")}</option>{allStages.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>
+      {isAdmin && <select className="input" style={{width:"auto", maxWidth:240}} value={mgrF} onChange={e=>setMgrF(e.target.value)}><option value="Все">{T("Все менеджеры")}</option>{managers.map(([k,n]) => <option key={k} value={k}>{n}</option>)}</select>}
+    </div>}
+    <div className="lhNoWrap" style={{display:"flex", gap:6, marginBottom:14}}>
+      {[["fresh","С новыми объектами","lime"],["overdue","Просрочено","red"],["noaction","Без действия","orange"],...(isAdmin?[["mine","Мои","blue"]]:[])].map(([k,t,c]) => { const n = items.filter(x => k==="fresh"?x.fresh:k==="overdue"?x.overdue:k==="noaction"?x.noAction:x.l.manager_email===me).length;
+        return <button key={k} onClick={()=>setQuick(quick===k?"":k)} style={{minHeight:36, padding:"0 12px", borderRadius:999, cursor:"pointer", fontWeight:850, border:`1.5px solid ${MC[c].c}`, background:quick===k?MC[c].c:MC[c].bg, color:quick===k?(c==="lime"?"#1a2e05":"#fff"):MC[c].ink}}>{T(t)} {n}</button>; })}
+    </div>
+    {views[s.view] ? views[s.view]() : kanban()}
+    {showSettings && <LeadsViewSettings V={V} isAdmin={isAdmin} lang={lang} onClose={()=>setShowSettings(false)}/>}
+    {peek && <LeadPeek x={peek} lang={lang} om={om} onClose={()=>setPeek(null)} onOpenFull={tab=>openFull(peek.l, tab)} onCall={()=>setPhone(peek.l.phone)} onTask={()=>setNext(peek.l)} onStage={st=>{ moveTo(peek.l, st); setPeek({...peek, l:{...peek.l, status:st}}); }} stagesList={allStages}/>}
+    {phone && <Contact phone={phone} onClose={()=>setPhone(null)}/>}
+  </main>;
+}
+
+function LeadsViewSettings({V, isAdmin, lang="ru", onClose}){
+  const s = V.s; const T = x => tr(lang, x); const [name,setName] = useState("");
+  const toggleField = k => { const has = s.fields.includes(k); if(!has && s.fields.length >= 8) return alert(T("Не больше 8 полей — остальное видно в карточке клиента")); V.update({fields: has ? s.fields.filter(f=>f!==k) : [...s.fields, k], preset:"custom"}); };
+  const moveField = (k, d) => { const a = [...s.fields]; const i = a.indexOf(k), j = i + d; if(i<0 || j<0 || j>=a.length) return; [a[i],a[j]] = [a[j],a[i]]; V.update({fields:a, preset:"custom"}); };
+  const toggleCol = k => V.update({tableCols: s.tableCols.includes(k) ? s.tableCols.filter(c=>c!==k) : [...s.tableCols.filter(c=>c!=="actions"), k, "actions"]});
+  const moveCol = (k, d) => { const a = s.tableCols.filter(c=>c!=="actions"); const i = a.indexOf(k), j = i + d; if(i<0 || j<0 || j>=a.length) return; [a[i],a[j]] = [a[j],a[i]]; V.update({tableCols:[...a, "actions"]}); };
+  const row = {display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:12, background:"var(--soft, #18181b)"};
+  return <Modal onClose={onClose}>
+    <div className="row"><h2 style={{margin:0}}>⚙ {T("Настроить отображение")}</h2><button className="icon" onClick={onClose}>×</button></div>
+    <p className="muted" style={{margin:"6px 0 12px"}}>{T("Сохраняется в вашем профиле и открывается так же на любом устройстве. Другие менеджеры этих настроек не видят.")}</p>
+    <b>{T("Готовые варианты")}</b>
+    <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px,1fr))", gap:8, margin:"8px 0 14px"}}>
+      {Object.entries(LH_PRESETS).map(([k,p]) => <McBtn key={k} tone={s.preset===k?"lime":"plain"} onClick={()=>V.update({...p, preset:k})}>{T(p.label)}</McBtn>)}
+    </div>
+    <b>{T("Поля в карточке")} ({s.fields.length}/8)</b>
+    <div style={{display:"grid", gap:6, margin:"8px 0 14px"}}>
+      {[...s.fields, ...Object.keys(LH_FIELDS).filter(k=>!s.fields.includes(k))].map(k => <label key={k} style={{...row, opacity:s.fields.includes(k)?1:.75}}>
+        <input type="checkbox" checked={s.fields.includes(k)} onChange={()=>toggleField(k)} style={{width:20, height:20}}/><span style={{flex:1}}>{T(LH_FIELDS[k])}</span>
+        {s.fields.includes(k) && <><button type="button" className="lhIcon" aria-label="↑" onClick={e=>{e.preventDefault(); moveField(k,-1);}}>↑</button><button type="button" className="lhIcon" aria-label="↓" onClick={e=>{e.preventDefault(); moveField(k,1);}}>↓</button></>}
+      </label>)}
+    </div>
+    <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px,1fr))", gap:8, marginBottom:14}}>
+      <label style={row}><input type="checkbox" checked={s.photos} onChange={e=>V.update({photos:e.target.checked})} style={{width:20, height:20}}/>{T("Фото / инициалы")}</label>
+      <label style={row}><input type="checkbox" checked={s.colors} onChange={e=>V.update({colors:e.target.checked})} style={{width:20, height:20}}/>{T("Цвет состояния")}</label>
+      <label style={row}>{T("Плотность")}<select className="input" style={{flex:1, minHeight:34}} value={s.density} onChange={e=>V.update({density:e.target.value})}><option value="normal">{T("Обычно")}</option><option value="dense">{T("Плотно")}</option></select></label>
+    </div>
+    <details style={{marginBottom:14}}><summary style={{cursor:"pointer", fontWeight:800}}>{T("Колонки таблицы")} ({s.tableCols.filter(c=>c!=="actions").length})</summary>
+      <div style={{display:"grid", gap:6, marginTop:8}}>{[...s.tableCols.filter(c=>c!=="actions"), ...Object.keys(LH_TABLE_COLS).filter(k=>!s.tableCols.includes(k))].map(k => <label key={k} style={row}>
+        <input type="checkbox" checked={s.tableCols.includes(k)} onChange={()=>toggleCol(k)} style={{width:20, height:20}}/><span style={{flex:1}}>{T(LH_TABLE_COLS[k])}</span>
+        {s.tableCols.includes(k) && <><button type="button" className="lhIcon" onClick={e=>{e.preventDefault(); moveCol(k,-1);}}>↑</button><button type="button" className="lhIcon" onClick={e=>{e.preventDefault(); moveCol(k,1);}}>↓</button></>}</label>)}
+      <small className="muted">{T("Ширину колонки меняйте, потянув за край заголовка. Первая колонка закреплена.")}</small></div></details>
+    <b>{T("Мои представления")}</b>
+    <div style={{display:"flex", gap:8, margin:"8px 0"}}><input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder={T("Название, например «Утро: звонки»")} style={{flex:1}}/><McBtn tone="dark" disabled={!name.trim()} onClick={()=>{ V.saveNamed(name.trim()); setName(""); }}>{T("Сохранить")}</McBtn></div>
+    <div style={{display:"grid", gap:6, marginBottom:14}}>{V.saved.map(r => <div key={r.id} style={row}><button type="button" className="lhNum" style={{flex:1, textAlign:"left"}} onClick={()=>V.update({...r.settings})}>{r.name}</button><button type="button" className="lhIcon" aria-label={T("Удалить")} onClick={()=>V.removeNamed(r)}>×</button></div>)}
+      {!V.saved.length && <small className="muted">{T("Пока нет сохранённых представлений")}</small>}</div>
+    <div className="grid2">
+      <McBtn tone="plain" onClick={V.reset}>↺ {T("Вернуть по умолчанию")}</McBtn>
+      <McBtn tone="lime" onClick={onClose}>✓ {T("Готово")}</McBtn>
+    </div>
+    {isAdmin && <McBtn tone="indigo" style={{width:"100%", marginTop:8}} onClick={V.setAsDefaultForAll}>{T("Сделать этот вид стандартным для всех")}</McBtn>}
+  </Modal>;
+}
+
+// Быстрый просмотр клиента: боковая панель (компьютер) / шторка снизу (телефон), не уходя из списка
+function LeadPeek({x, lang="ru", om, onClose, onOpenFull, onCall, onTask, onStage, stagesList}){
+  const T = t => tr(lang, t); const [hist,setHist] = useState(null);
+  useEffect(() => { let off = false; supabase.from("lead_history").select("kind,text,created_at,author_name").eq("lead_id", Number(x.l.id)).order("created_at",{ascending:false}).limit(5).then(({data}) => { if(!off) setHist(data||[]); }); return () => { off = true; }; }, [x.l.id]);
+  const fresh = (om?.rows||[]).filter(r => String(r.lead_id)===String(x.l.id) && OM_OPEN.includes(r.status));
+  const box = (bg, ink) => ({padding:"10px 12px", borderRadius:14, background:bg, color:ink});
+  return <div className="lhPeekWrap" onClick={onClose} style={{position:"fixed", inset:0, zIndex:2400, background:"rgba(0,0,0,.45)", display:"flex", justifyContent:"flex-end", alignItems:"stretch"}}>
+    <style>{`@media (max-width:759px){.lhPeek{width:100%!important;height:88vh!important;margin-top:auto;border-radius:22px 22px 0 0!important}.lhPeekWrap{align-items:flex-end!important}}`}</style>
+    <aside className="lhPeek card" onClick={e=>e.stopPropagation()} style={{width:460, maxWidth:"100%", height:"100%", margin:0, borderRadius:0, overflow:"auto", padding:20, display:"grid", gap:12, alignContent:"start"}}>
+      <div style={{display:"flex", gap:12, alignItems:"center"}}>
+        <span style={{width:52, height:52, borderRadius:26, display:"grid", placeItems:"center", fontWeight:900, background:x.state?LH_STATE[x.state][0]:"#3f3f46", color:x.state==="lime"?"#1a2e05":"#fff"}}>{lhInitials(x.l.name)}</span>
+        <div style={{flex:1, minWidth:0}}><b style={{fontSize:20, display:"block"}}>{x.l.name || T("Без имени")}</b><span className="lhSub" style={{fontSize:13}}>{x.l.manager || "—"}{x.l.source?` · ${T(x.l.source)}`:""}</span></div>
+        <button className="icon" onClick={onClose} aria-label={T("Закрыть")}>×</button>
+      </div>
+      {x.state && <McPill k={x.state} strong>{T(LH_STATE[x.state][1])}</McPill>}
+      <select className="input" value={x.l.status} onChange={e=>onStage(e.target.value)} aria-label={T("Этап")}>{stagesList.map(st => <option key={st} value={st}>{T(st)}</option>)}</select>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(3, minmax(0,1fr))", gap:8}}>
+        <McBtn tone="dark" style={{background:"#16a34a", borderColor:"#16a34a", color:"#fff"}} onClick={onCall}>{T("Позвонить")}</McBtn>
+        <McBtn tone="purple" onClick={onCall}>{T("Написать")}</McBtn>
+        <McBtn tone="indigo" onClick={onTask}>{T("Задача")}</McBtn>
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
+        <div style={box(MC.blue.bg, MC.blue.ink)}><span style={{fontSize:12, display:"block"}}>{T("Бюджет")}</span><b style={{fontSize:18}}>{x.budgetText}</b></div>
+        <div style={box(x.overdue?MC.red.bg:x.noAction?MC.orange.bg:MC.yellow.bg, x.overdue?MC.red.ink:x.noAction?MC.orange.ink:MC.yellow.ink)}><span style={{fontSize:12, display:"block"}}>{T("Следующее действие")}</span><b>{x.next ? lhDate(x.next, lang) : T("не запланировано")}</b></div>
+      </div>
+      <div><b className="lhSub" style={{fontSize:13}}>{T("Запрос")}</b><p style={{margin:"4px 0 0"}}>{[x.p.property_type, x.p.deal_type, x.p.city, x.p.district, x.p.rooms_min && `${x.p.rooms_min} ${T("комн.")}`, x.payText && T(x.payText), x.firstText && `${T("взнос")} ${x.firstText}`].filter(Boolean).join(" · ") || "—"}</p>
+        {x.l.notes && <p className="lhSub" style={{margin:"6px 0 0", fontSize:13, whiteSpace:"pre-line", maxHeight:120, overflow:"auto"}}>{String(x.l.notes).replace(/^Ответственный менеджер:.*\n?/,"")}</p>}</div>
+      <div><b className="lhSub" style={{fontSize:13}}>{T("Последние коммуникации")}</b>
+        {hist == null ? <p className="muted">…</p> : hist.length ? hist.map((h,i) => <p key={i} style={{margin:"6px 0 0", fontSize:14}}>{lhDate(h.created_at, lang)} · {h.text}</p>) : <p className="muted" style={{margin:"6px 0 0"}}>{T("Записей пока нет")}</p>}</div>
+      {fresh.length>0 && <McBtn tone="lime" onClick={()=>onOpenFull("automatch")}>✨ {T("Новые подходящие объекты")}: {fresh.length}</McBtn>}
+      <McBtn tone="plain" onClick={()=>onOpenFull("automatch")}>{T("Открыть автоподбор")}{x.objects?` (${x.objects})`:""}</McBtn>
+      <McBtn tone="dark" style={{minHeight:52, background:"#F5C518", color:"#0b0b0c", borderColor:"#F5C518"}} onClick={()=>onOpenFull()}>{T("Открыть полную карточку")}</McBtn>
+    </aside>
+  </div>;
+}
+
 // Блок «Автоподбор» в карточке клиента
 function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="", lang="ru", onOpenProperty}){
   const leadId = isDbLeadId(lead.id) ? Number(lead.id) : null;
@@ -2552,7 +3000,7 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
       <input className="input" placeholder={tr(lang,"Комментарий для клиента к этому объекту")} defaultValue={r.manager_comment||""} onBlur={e=>{ if(e.target.value!==(r.manager_comment||"")) setComment(r, e.target.value); }}/>
     </MatchCard>; };
 
-  return <div className="card" style={{display:"grid", gap:10, minWidth:0, overflowWrap:"anywhere"}}>
+  return <div id={`am-block-${leadId}`} className="card" style={{display:"grid", gap:10, minWidth:0, overflowWrap:"anywhere"}}>
     <div className="row"><h3 style={{margin:0}}>🤖 {tr(lang,"Автоподбор")}</h3>
       <span className="chip active">{m ? tr(lang, AM_STATUS[busy==="run"?"running":m.status] || m.status) : tr(lang,"Не запускался")}</span></div>
     {!m && <p className="muted">{tr(lang,"Автоподбор запускается при первом назначении клиента менеджеру. Для клиентов, распределённых раньше, его может запустить администратор.")}</p>}
@@ -2658,6 +3106,8 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
 }
 
 function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile,onOpenLead,onOpenProperty,om,properties=[],agencyName="",lang="ru"}) {
+  // открыть сразу нужный блок (например, «Автоподбор» из раздела «Лиды»)
+  useEffect(() => { if(lead?._openTab !== "automatch") return; const t = setTimeout(() => document.getElementById(`am-block-${Number(lead.id)}`)?.scrollIntoView({behavior:"smooth", block:"start"}), 600); return () => clearTimeout(t); }, [lead?.id]);
   const [local,setLocal] = useState(lead);
   const [showMatch,setShowMatch] = useState(false);
   // Связи «дубль ↔ исходный клиент» — только для администраторов (менеджеру таблица недоступна)
@@ -9918,7 +10368,7 @@ export default function App(){
         <HelpAlerts help={help} setHelp={setHelp} leads={leads} currentProfile={currentProfile} role={role} lang={lang} onOpenLead={setLead} setPage={setPage}/>
         {page==="home"&&<Home leads={visibleLeads} events={visibleEvents} deals={deals} currentProfile={currentProfile} role={role} lang={lang} setPage={setPage} onOpenLead={setLead} agency={currentAgency} agencyName={agencyName} onAgencyLogo={url=>setAgencies(prev=>prev.map(a=>String(a.id)===String(currentProfile?.agency_id)?{...a,logo_url:url}:a))} theme={theme} setTheme={setTheme} om={om} onOpenMatches={()=>setOmList(true)}/>}
         {page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role} currentProfile={currentProfile} lang={lang} users={users}/>} 
-        {page==="clients"&&<Clients leads={visibleLeads} setLeads={setLeads} onOpen={setLead} currentProfile={currentProfile} role={role} users={users} lang={lang}/>} 
+        {page==="clients"&&<LeadsHub leads={visibleLeads} setLeads={setLeads} onOpen={setLead} currentProfile={currentProfile} role={role} users={users} lang={lang} om={om}/>} 
         {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang} properties={properties} users={users}/>} 
         {page==="properties"&&<Properties properties={properties} setProperties={setProperties} onOpen={setProperty} users={users} currentProfile={currentProfile} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}   
         {page==="deals"&&<Deals leads={visibleLeads} properties={properties} currentProfile={currentProfile} role={role} lang={lang} dealsState={[deals,setDeals,dealsLoaded]}/>} 
