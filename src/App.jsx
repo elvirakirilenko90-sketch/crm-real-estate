@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { uiExtra, uiTemplates } from "./i18n-extra.js";
+import ListingCard from "./ListingCard.jsx";
 import { supabase, SUPABASE_URL, SUPABASE_KEY } from "./supabaseClient";
 const stages = ["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
 // Этапы, сохранённые раньше на украинском/английском, показываем в общих колонках воронки
@@ -1086,7 +1087,7 @@ function HomeIcon({name, size=22}){
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{p}</svg>;
 }
 
-function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPage, onOpenLead, agency, agencyName, onAgencyLogo, theme, setTheme}){
+function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPage, onOpenLead, agency, agencyName, onAgencyLogo, theme, setTheme, om, onOpenMatches}){
   const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
   const now = new Date();
   const todayIso = calIso(now);
@@ -1171,6 +1172,8 @@ function Home({leads=[], events=[], deals=[], currentProfile, role, lang, setPag
         <span>{tr(lang,t.label)}</span><b>{t.value}</b>
       </button>)}
     </div>
+
+    {om && <ObjectMatchHomeLine om={om} isAdmin={isAdmin} lang={lang} onOpen={onOpenMatches}/>}
 
     <div className="homeSection">
       <h2>{tr(lang,"Сегодня")}</h2>
@@ -2054,29 +2057,344 @@ function FirstTouchWatcher({currentProfile, leads=[], onOpenLead, lang="ru"}){
 // PDF-презентация подборки в фирменном стиле CRM (обложка, объекты, контакты)
 async function amBuildSelectionPdf({selection, items, currentProfile, agencyName, lang="uk"}){
   const brand = loadAgencyBrand(currentProfile?.agency_id), txt = vipPresentationText(lang), pages = [];
+  const L0 = (ru, uk) => lang==="uk" ? uk : ru;
   const theme = currentProfile?.theme || "dark"; const pp = presPal("luxuryDark", theme);
   await presCoverPage(pages,{pal:pp, brand, agencyName, headline:selection.title, dateLine:`${txt.date}: ${formatPresentationDate(lang)}`, preparedLabel:txt.prepared,
     client:selection.show_client_name ? (selection.client_display_name || "") : "", subtitle:`${items.length} ${lang==="uk"?"об'єктів":"объектов"}`, hero:(items[0]?.public_data?.photos||[])[0]||""});
   for(let i=0;i<items.length;i++){
     const d = items[i].public_data || {};
     const L = (ru, uk) => lang==="uk" ? uk : ru;
-    await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:d.title || `${txt.property} ${i+1}`,
+    await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:pubClean(d.title) || `${txt.property} ${i+1}`,
       photo:(d.photos||[])[0]||"", price:amMoney(d.price, d.currency), priceLabel:txt.price,
-      specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"],[L("ЖК","ЖК"), d.complex_name||"—"],[txt.type, d.property_type||"—"]],
-      aboutTitle:txt.about, about:[items[i].manager_comment, d.description].filter(Boolean).join("\n\n").slice(0,900), hint:d.address||"",
+      specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"],[L("ЖК","ЖК"), d.complex_name||"—"],[txt.type, d.property_type||"—"],[L("Состояние","Стан"), d.condition||"—"],[L("Сделка","Угода"), d.deal_type||"—"]],
+      aboutTitle:txt.about, about:[pubClean(items[i].manager_comment), pubClean(d.description)].filter(Boolean).join("\n\n").slice(0,900), hint:pubClean(d.address)||"",
       noPhotoText:L("Фото уточняйте у менеджера","Фото уточнюйте в менеджера")});
   }
-  await presContactPage(pages,{pal:pp, brand, contactTitle:txt.contact, manager:selection.manager_name || managerDisplayName(currentProfile), contactLine:selection.manager_phone || selection.manager_email || "", thanks:txt.thanks});
+  // контакты — только из подборки (снимок профиля назначенного менеджера), не того, кто нажал кнопку; пустые строки не выводятся
+  const contactLine = [selection.manager_position, selection.manager_phone, selection.manager_telegram&&`Telegram: ${selection.manager_telegram}`, selection.manager_viber&&`Viber: ${selection.manager_viber}`, selection.manager_whatsapp&&`WhatsApp: ${selection.manager_whatsapp}`, selection.manager_email].filter(x=>String(x||"").trim()).join("  ·  ");
+  await presContactPage(pages,{pal:pp, brand, contactTitle:L0("Связаться с менеджером","Зв'язатися з менеджером"), manager:selection.manager_name || "", contactLine, thanks:txt.thanks});
   return buildPdfFromCanvasPages(pages);
 }
 
+// ===== Цвета автоподбора и мониторинга новых объектов =====
+// Цвет — в полосе сверху, рамке, значках и отдельных блоках; основная часть карточки остаётся светлой (контраст текста).
+const MC = {
+  lime:   {c:"#a3e635", bg:"#ecfccb", ink:"#365314", label:"Новый вариант, не обработан"},
+  green:  {c:"#16a34a", bg:"#dcfce7", ink:"#14532d", label:"Полное совпадение"},
+  blue:   {c:"#2563eb", bg:"#dbeafe", ink:"#1e3a8a", label:"В основном бюджете"},
+  yellow: {c:"#ca8a04", bg:"#fef9c3", ink:"#713f12", label:"Допустимое отклонение / требует внимания"},
+  orange: {c:"#ea580c", bg:"#ffedd5", ink:"#7c2d12", label:"Выше бюджета, в пределах +10 000 $"},
+  red:    {c:"#dc2626", bg:"#fee2e2", ink:"#7f1d1d", label:"Критичное несовпадение / неактуален / выше допустимого"},
+  purple: {c:"#7c3aed", bg:"#ede9fe", ink:"#4c1d95", label:"Добавлено в подборку"},
+  indigo: {c:"#4338ca", bg:"#e0e7ff", ink:"#312e81", label:"Предложено клиенту"},
+  gray:   {c:"#9ca3af", bg:"#f3f4f6", ink:"#374151", label:"Отклонено / обработано"},
+};
+// 8 групп результатов: свой цвет, название, порядок
+const MC_GROUPS = [
+  ["full","green","Полное совпадение"],
+  ["budget","blue","Подходит в пределах основного бюджета"],
+  ["deviation","yellow","Подходит с допустимым отклонением"],
+  ["ext","orange","Выше бюджета, но в пределах +10 000 $"],
+  ["check","red","Требует проверки менеджером"],
+  ["added","purple","Уже добавлено в подборку"],
+  ["offered","indigo","Уже предложено клиенту"],
+  ["rejected","gray","Отклонено"],
+];
+const MC_CRITICAL = ["тип сделки","тип недвижимости","город","бюджет","ЖК","район","комнаты"];
+// r — нормализованный вариант: {state, within_budget, in_ext, price, unmatched[], required[], check_status}
+function mcGroup(r){
+  if(["rejected","irrelevant","client_declined"].includes(r.state)) return "rejected";
+  if(["offered","client_interested"].includes(r.state)) return "offered";
+  if(["added","selected"].includes(r.state)) return "added";
+  if(["unavailable","changed","unknown"].includes(r.check_status) || r.price==null || (!r.within_budget && !r.in_ext)) return "check";
+  if(r.in_ext) return "ext";
+  const un = (r.unmatched||[]);
+  if(!un.length) return "full";
+  if(un.length === 1 && !MC_CRITICAL.includes(un[0])) return "budget";
+  return "deviation";
+}
+const mcColorOf = g => MC[(MC_GROUPS.find(x=>x[0]===g)||[])[1]||"gray"];
+// текст для клиента: без ссылок, названий площадок и телефонов из объявлений (та же логика, что в публичном API)
+function pubClean(t){
+  const s = String(t ?? "").replace(/(https?:\/\/|www\.)\S+/gi, "")
+    .replace(/(?<![\p{L}\d])(olx(\.ua)?|dim\.?ria(\.com)?|dom\.?ria(\.com)?|rieltor(\.ua)?|rem\.ua|lun\.ua|lun|flatfy|ria\.com|ріелтор(\.юа)?|дім\.?ріа|дом\.?риа)(?![\p{L}\d])/giu, "")
+    .replace(/(?<![\p{L}\d])ЛУН(?![\p{L}\d])/gu, "").replace(/(\+?38)?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}/g, "")
+    .replace(/[ \t]{2,}/g, " ").replace(/\s+([.,;:!?])/g, "$1").replace(/([.,;:])[.,;:]+/g, "$1").replace(/[ ,;:]+$/g, "").trim();
+  return s || "";
+}
+
+function McLegend({lang="ru", groups=true}){
+  const items = groups ? [["lime","Новый вариант, не обработан"], ...MC_GROUPS.map(([,c,t])=>[c,t])] : Object.entries(MC).map(([k,v])=>[k,v.label]);
+  return <details className="mcLegend"><summary style={{cursor:"pointer",fontWeight:800,fontSize:13}}>🎨 {tr(lang,"Что означают цвета")}</summary>
+    <div style={{display:"grid",gap:6,marginTop:8}}>{items.map(([k,t])=><div key={k+t} style={{display:"flex",gap:8,alignItems:"center",fontSize:13}}>
+      <span style={{width:22,height:14,borderRadius:4,background:MC[k].c,flex:"0 0 auto",border:k==="lime"?"1px solid #65a30d":"none"}}/><span>{tr(lang,t)}</span></div>)}</div>
+  </details>;
+}
+// свои классы mcPill/mcBtn/mcBadge: темы CRM перекрашивают .chip/.btn/.badge через !important, а цвета статусов должны сохраняться
+const McPill = ({k, children, strong}) => <span className="mcPill" style={{display:"inline-flex", alignItems:"center", gap:4, borderRadius:999, padding:"4px 10px", fontSize:13, lineHeight:1.25, background:MC[k].bg, color:MC[k].ink, border:`1px solid ${MC[k].c}`, fontWeight:strong?900:700}}>{children}</span>;
+const McBadge = ({bg, ink, line, children}) => <span className="mcBadge" style={{display:"inline-flex", alignItems:"center", borderRadius:999, padding:"6px 10px", fontSize:12, fontWeight:900, whiteSpace:"nowrap", background:bg, color:ink, border:line?`1px solid ${line}`:"none"}}>{children}</span>;
+const MC_TONE = {indigo:[MC.indigo.c,"#fff",MC.indigo.c], purple:[MC.purple.c,"#fff",MC.purple.c], purpleSoft:[MC.purple.bg,MC.purple.ink,MC.purple.c], red:[MC.red.bg,MC.red.ink,MC.red.c], gray:[MC.gray.bg,MC.gray.ink,MC.gray.c], plain:["#ffffff","#111827","#d1d5db"], dark:["#111827","#ffffff","#111827"], lime:[MC.lime.c,"#1a2e05","#65a30d"]};
+const McBtn = ({tone="plain", children, style, ...rest}) => { const [bg,ink,line] = MC_TONE[tone]; return <button type="button" className="mcBtn" {...rest} style={{minHeight:44, borderRadius:16, padding:"10px 12px", fontWeight:850, fontSize:14, cursor:rest.disabled?"default":"pointer", opacity:rest.disabled?.6:1, background:bg, color:ink, border:`1.5px solid ${line}`, display:"flex", alignItems:"center", justifyContent:"center", gap:6, textAlign:"center", ...style}}>{children}</button>; };
+
+// Карточка варианта (автоподбор и мониторинг): верх — фото, статус, %, «Новый вариант», дата;
+// цена/бюджет/разница; характеристики; соответствие запросу; действия (children)
+function MatchCard({v, lang="ru", children, dim=false, photoHeight=190}){
+  const g = v.group || mcGroup(v), col = mcColorOf(g), gName = (MC_GROUPS.find(x=>x[0]===g)||[])[2];
+  const sn = v.snapshot || {};
+  const budget = Number(v.budget_usd)||null, priceUsd = Number(v.price_usd)||(v.currency==="USD"?Number(v.price):null)||null;
+  const diff = budget && priceUsd ? priceUsd - budget : null;
+  const priceTone = diff==null ? "gray" : diff <= 0 ? "blue" : v.in_ext ? "orange" : "red";
+  const matched = (v.matched||[]).filter(x => !/^источник:/i.test(x));
+  const req = v.required || [];
+  const critical = (v.unmatched||[]).filter(x => req.includes(x) || ["тип сделки","тип недвижимости","город"].includes(x));
+  const soft = (v.unmatched||[]).filter(x => !critical.includes(x));
+  return <ListingCard photos={(sn.photos && sn.photos.length ? sn.photos : [sn.photo]).filter(Boolean)} photoHeight={photoHeight} band={v.isNew ? MC.lime.c : col.c} frame={v.isNew ? MC.lime.c : col.c} dim={dim}
+    badges={<>
+      {v.isNew && <McBadge bg={MC.lime.c} ink="#1a2e05" line="#65a30d">✨ {tr(lang,"Новый вариант")}</McBadge>}
+      <McBadge bg={col.bg} ink={col.ink} line={col.c}>{tr(lang,gName||"")}</McBadge>
+      {v.pct!=null && <McBadge bg="#111827" ink="#fff">{v.pct}% {tr(lang,"совпадения")}</McBadge>}
+      {v.statusLabel && <McBadge bg="rgba(255,255,255,.94)" ink="#111827">{tr(lang,v.statusLabel)}</McBadge>}
+      {v.date && <McBadge bg="rgba(255,255,255,.94)" ink="#374151">🕒 {new Date(v.date).toLocaleString("uk-UA",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</McBadge>}
+    </>}
+    title={v.title || sn.title || tr(lang,"Объект")}
+    location={[sn.city, sn.district, sn.complex_name].filter(Boolean).join(" · ") || null}
+    price={amMoney(v.price, v.currency||"USD")} priceSub={v.currency && v.currency!=="USD" && priceUsd ? <small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>≈ {amMoney(priceUsd)}</small> : null}
+    afterHead={<>
+      {v.extraHead}
+      <div style={{marginTop:12, padding:"10px 12px", borderRadius:14, background:MC[priceTone].bg, border:`1px solid ${MC[priceTone].c}`, color:MC[priceTone].ink, display:"grid", gap:4}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"4px 14px",fontSize:14}}>
+          <span>{tr(lang,"Бюджет клиента")}: <b>{budget?amMoney(budget):"—"}</b></span>
+          <span>{tr(lang,"Цена объекта")}: <b>{priceUsd?amMoney(priceUsd):amMoney(v.price, v.currency)}</b></span>
+          {diff!=null && <span>{tr(lang,"Разница")}: <b>{diff>0?"+":diff<0?"−":""}{amMoney(Math.abs(diff))}</b></span>}
+        </div>
+        <b style={{fontSize:13}}>{diff==null ? tr(lang,"Бюджет не указан — проверьте вручную") : diff<=0 ? "✓ "+tr(lang,"Входит в основной бюджет") : v.in_ext ? "⚠ "+tr(lang,"Выше бюджета, в пределах +10 000 $ (разрешение использовано)") : "⛔ "+tr(lang,"Превышает допустимый бюджет")}</b>
+      </div>
+      {v.change_note && <div style={{marginTop:8}}><McPill k="yellow" strong>↻ {v.change_note}</McPill></div>}
+    </>}
+    chips={[sn.property_type, sn.deal_type, sn.rooms&&`${sn.rooms} ${tr(lang,"комн.")}`, sn.area&&`${sn.area} м²`, sn.floor&&`${sn.floor}${sn.total_floors?` / ${sn.total_floors}`:""} ${tr(lang,"эт.")}`, sn.condition]}>
+    {(matched.length>0 || critical.length>0 || soft.length>0) && <div style={{display:"grid",gap:6,margin:"-4px 0 12px"}}>
+      <small className="muted" style={{fontWeight:800}}>{tr(lang,"Соответствие запросу")}</small>
+      <div className="chips" style={{flexWrap:"wrap"}}>
+        {matched.map(x => /\+10 000/.test(x) ? <McPill key={x} k="orange">⚠ {tr(lang,x)}</McPill> : <McPill key={x} k="green">✓ {tr(lang,x)}</McPill>)}
+        {soft.map(x => <McPill key={"s"+x} k="yellow">≈ {tr(lang,x)}</McPill>)}
+        {critical.map(x => <McPill key={"c"+x} k="red" strong>✗ {tr(lang,x)}</McPill>)}
+      </div></div>}
+    {children}
+  </ListingCard>;
+}
+
+// ===== Мониторинг новых объектов: данные + реальное время =====
+const OM_OPEN = ["new","unseen","viewed"];
+const OM_STATUS = {new:"новый",unseen:"не просмотрен",viewed:"просмотрен, без решения",added:"добавлен в подборку",offered:"предложен клиенту",client_interested:"клиент заинтересован",client_declined:"клиент отказался",rejected:"не подходит",irrelevant:"объект неактуален"};
+function useObjectMatches(currentProfile){
+  const me = String(currentProfile?.email || "").toLowerCase();
+  const [rows,setRows] = useState([]); const [remindMin,setRemindMin] = useState(120); const tRef = useRef(null);
+  const load = useCallback(async () => {
+    if(!me) return;
+    const since = new Date(Date.now() - 30*86400000).toISOString();
+    const {data, error} = await supabase.from("lead_object_matches").select("*").or(`status.in.(new,unseen,viewed),updated_at.gte.${since}`).order("created_at",{ascending:false}).limit(600);
+    if(!error) setRows(data || []);
+  }, [me]);
+  useEffect(() => {
+    if(!me) return;
+    load();
+    supabase.from("crm_settings").select("value").eq("key","object_match_reminder_minutes").maybeSingle().then(({data}) => { const n = Number(data?.value); if(n > 0) setRemindMin(n); });
+    // новые совпадения приходят сразу (Realtime); раз в 2 минуты — страховочная проверка
+    const ch = supabase.channel(`om-${me}`).on("postgres_changes", {event:"*", schema:"public", table:"lead_object_matches"}, () => { clearTimeout(tRef.current); tRef.current = setTimeout(load, 400); }).subscribe();
+    const iv = setInterval(load, 120000);
+    return () => { clearInterval(iv); clearTimeout(tRef.current); supabase.removeChannel(ch); };
+  }, [me, load]);
+  const act = useCallback(async (id, action, reason=null) => {
+    const {data, error} = await supabase.rpc("lead_object_match_action", {p_id:id, p_action:action, p_reason:reason});
+    if(error){ alert(error.message); return false; }
+    setRows(rs => rs.map(r => r.id === id ? {...r, status: data?.status || (action==="viewed" && OM_OPEN.includes(r.status) ? "viewed" : action==="notified" && r.status==="new" ? "unseen" : r.status),
+      last_reminded_at: action==="notified" ? new Date().toISOString() : r.last_reminded_at, notified_at: action==="notified" ? (r.notified_at || new Date().toISOString()) : r.notified_at} : r));
+    clearTimeout(tRef.current); tRef.current = setTimeout(load, 600);
+    return true;
+  }, [load]);
+  return {rows, load, act, remindMin, me};
+}
+// нормализация строки мониторинга для MatchCard
+const omView = (r, extra={}) => ({...r, title:r.snapshot?.title, pct:r.score_pct, budget_usd:r.snapshot?.budget_usd, in_ext:r.in_extension, isNew:["new","unseen"].includes(r.status),
+  state:r.status, date:r.created_at, statusLabel:r.kind==="change" ? "изменение по объекту" : OM_STATUS[r.status], change_note:r.change_note, ...extra});
+
+// Кнопки решения: только действие считается обработкой (открытие — нет)
+function OmActions({r, om, lang="ru", properties=[], onOpenLead, onOpenProperty}){
+  const [busy,setBusy] = useState(false);
+  const run = async (action, reason) => { setBusy(true); await om.act(r.id, action, reason); setBusy(false); };
+  const open = OM_OPEN.includes(r.status);
+  const prop = properties.find(p => String(p.id) === String(r.property_id));
+  return <div style={{display:"grid",gap:8}}>
+    <div className="grid2">
+      <McBtn tone="dark" disabled={busy} onClick={async()=>{ if(r.status!=="viewed"&&open) await om.act(r.id,"viewed"); if(prop) onOpenProperty?.(prop); else alert(tr(lang,"Объект не найден в базе")); }}>🏠 {tr(lang,"Открыть объект")}</McBtn>
+      <McBtn tone="plain" disabled={busy} onClick={async()=>{ if(r.status!=="viewed"&&open) await om.act(r.id,"viewed"); onOpenLead?.(r.lead_id); }}>👤 {tr(lang,"Карточка клиента")}</McBtn>
+    </div>
+    {open && <div className="grid2">
+      <McBtn tone="indigo" disabled={busy} onClick={()=>run("offer")}>📨 {tr(lang,"Предложить клиенту")}</McBtn>
+      <McBtn tone="purple" disabled={busy} onClick={()=>run("add")}>＋ {tr(lang,"Добавить в подборку")}</McBtn>
+      <McBtn tone="gray" disabled={busy} onClick={()=>{ const why = window.prompt(tr(lang,"Почему не подходит? (обязательно)")); if(why && why.trim()) run("reject", why.trim()); }}>✗ {tr(lang,"Не подходит")}</McBtn>
+      <McBtn tone="red" disabled={busy} onClick={()=>{ if(window.confirm(tr(lang,"Отметить объект неактуальным для этого клиента?"))) run("irrelevant"); }}>⛔ {tr(lang,"Объект неактуален")}</McBtn>
+    </div>}
+    {!open && r.decision_reason && <small className="muted">{tr(lang,"Причина")}: {r.decision_reason}</small>}
+  </div>;
+}
+
+let omAudioCtx = null;
+function omSound(){
+  try{
+    omAudioCtx = omAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if(omAudioCtx.state === "suspended") return false;
+    const g = omAudioCtx.createGain(); g.gain.value = 0.08; g.connect(omAudioCtx.destination);
+    [784, 988, 1318].forEach((f,i) => { const o = omAudioCtx.createOscillator(); o.frequency.value = f; o.connect(g); const t = omAudioCtx.currentTime + i*0.16; o.start(t); o.stop(t+0.13); });
+    return true;
+  }catch{ return false; }
+}
+
+// Ярко-салатовая карточка «Появился новый вариант» (назначенному менеджеру). Один сигнал на новый вариант, без бесконечного повтора.
+// Карточка остаётся, пока менеджер не примет решение или не скроет её до следующего напоминания.
+function ObjectMatchNotifier({om, properties=[], onOpenLead, onOpenProperty, lang="ru"}){
+  const {rows, me, remindMin} = om;
+  const [shownPid,setShownPid] = useState(null); const [needSound,setNeedSound] = useState(false); const [min,setMin] = useState(false);
+  const sounded = useRef(new Set()); const hidden = useRef(new Map());
+  const isHidden = r => (hidden.current.get(r.id) || 0) > Date.now() - remindMin*60000;
+  const mine = rows.filter(r => r.manager_email === me);
+  const due = r => r.status === "new" || (["unseen","viewed"].includes(r.status) && (!r.last_reminded_at || Date.now() - new Date(r.last_reminded_at).getTime() > remindMin*60000));
+  const pending = mine.filter(r => due(r) && !isHidden(r));
+  useEffect(() => {
+    if(shownPid != null && mine.some(r => String(r.property_id) === String(shownPid) && OM_OPEN.includes(r.status) && !isHidden(r))) return;
+    const next = pending[pending.length - 1]; // самый ранний необработанный
+    setShownPid(next ? next.property_id : null); setMin(false);
+  }, [rows, shownPid]); // eslint-disable-line
+  const group = shownPid == null ? [] : mine.filter(r => String(r.property_id) === String(shownPid) && OM_OPEN.includes(r.status) && !isHidden(r));
+  useEffect(() => {
+    const fresh = group.filter(r => due(r));
+    if(!fresh.length) return;
+    const key = fresh.map(r => `${r.id}:${r.last_reminded_at||""}`).join(",");
+    if(!sounded.current.has(key)){ sounded.current.add(key); if(!omSound()) setNeedSound(true); }
+    fresh.forEach(r => om.act(r.id, "notified"));
+  }, [group.map(r=>r.id+":"+r.status).join(",")]); // eslint-disable-line
+  if(!group.length) return null;
+  const first = group[0], sn = first.snapshot || {};
+  const more = new Set(pending.map(r => r.property_id)); more.delete(shownPid);
+  const hide = () => { group.forEach(r => hidden.current.set(r.id, Date.now())); setShownPid(null); };
+  return <div role="alert" style={{position:"fixed", left:"max(8px, env(safe-area-inset-left))", right:"max(8px, env(safe-area-inset-right))", bottom:"calc(78px + env(safe-area-inset-bottom))", zIndex:2500, display:"flex", justifyContent:typeof window!=="undefined" && window.innerWidth>900 ? "flex-end" : "center", pointerEvents:"none"}}>
+    <div style={{pointerEvents:"auto", width:"min(560px, 100%)", maxHeight:min?"auto":"60vh", overflow:"auto", background:"#fff", color:"#111827", borderRadius:22, border:`3px solid ${MC.lime.c}`, boxShadow:"0 18px 50px rgba(0,0,0,.35)"}}>
+      <div style={{background:MC.lime.c, color:"#1a2e05", padding:"10px 14px", display:"flex", alignItems:"center", gap:10, position:"sticky", top:0, zIndex:1}}>
+        <b style={{fontSize:17, flex:1}}>🔔 {tr(lang,"Появился новый вариант")}{group.length>1?` · ${tr(lang,"клиентов")}: ${group.length}`:""}</b>
+        {more.size>0 && <McBadge bg="#1a2e05" ink={MC.lime.c}>+{more.size}</McBadge>}
+        <button type="button" style={{background:"rgba(255,255,255,.7)",color:"#1a2e05",border:0,borderRadius:12,minWidth:36,minHeight:34,fontWeight:900,cursor:"pointer"}} onClick={()=>setMin(!min)} aria-label={tr(lang,"Свернуть")}>{min?"▴":"▾"}</button>
+        <button type="button" style={{background:"rgba(255,255,255,.7)",color:"#1a2e05",border:0,borderRadius:12,minWidth:36,minHeight:34,fontWeight:900,cursor:"pointer"}} onClick={hide} title={tr(lang,"Скрыть до напоминания")} aria-label={tr(lang,"Скрыть до напоминания")}>×</button>
+      </div>
+      {needSound && <div style={{padding:"8px 14px", background:MC.yellow.bg, color:MC.yellow.ink, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+        <span style={{flex:1, minWidth:180}}>🔇 {tr(lang,"Браузер заблокировал звук уведомлений")}</span>
+        <McBtn tone="dark" style={{minHeight:36}} onClick={async()=>{ try{ await omAudioCtx?.resume(); }catch{} if(omSound()) setNeedSound(false); }}>🔔 {tr(lang,"Включить звук")}</McBtn></div>}
+      {!min && <div style={{padding:12, display:"grid", gap:10}}>
+        <div style={{display:"flex", gap:12, alignItems:"flex-start"}}>
+          {sn.photo ? <img src={sn.photo} alt="" style={{width:96, height:76, objectFit:"cover", borderRadius:12, flex:"0 0 auto"}}/> : <div style={{width:96,height:76,borderRadius:12,background:"#f4f4f5",display:"grid",placeItems:"center",fontSize:30,flex:"0 0 auto"}}>🏠</div>}
+          <div style={{minWidth:0}}>
+            <b style={{fontSize:22}}>{amMoney(first.price, first.currency)}</b>
+            <div style={{fontWeight:800, overflowWrap:"anywhere"}}>{sn.title || tr(lang,"Объект")}</div>
+            <span style={{display:"block", fontSize:13, color:"#4b5563"}}>{[sn.city, sn.district, sn.complex_name, sn.rooms&&`${sn.rooms} ${tr(lang,"комн.")}`, sn.area&&`${sn.area} м²`].filter(Boolean).join(" · ")}</span>
+          </div>
+        </div>
+        {group.map(r => <div key={r.id} style={{border:`2px solid ${r.status==="viewed"?MC.gray.c:MC.lime.c}`, borderRadius:16, padding:10, opacity:r.status==="viewed"?.8:1, display:"grid", gap:8}}>
+          <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+            <b style={{fontSize:16}}>👤 {r.snapshot?.lead_name || `#${r.lead_id}`}</b>
+            <McBadge bg="#111827" ink="#fff">{r.score_pct}%</McBadge>
+            {r.in_extension && <McPill k="orange" strong>⚠ {tr(lang,"выше бюджета, в пределах +10 000")}{r.over_budget_by?` (+${amMoney(r.over_budget_by)})`:""}</McPill>}
+            {r.kind==="change" && <McPill k="yellow" strong>↻ {r.change_note}</McPill>}
+            {r.status==="viewed" && <span style={{fontSize:13, color:"#4b5563"}}>{tr(lang,"просмотрен — нужно решение")}</span>}
+          </div>
+          <div className="chips" style={{flexWrap:"wrap"}}>{(r.matched||[]).map(x => <McPill key={x} k={/\+10 000/.test(x)?"orange":"green"}>✓ {tr(lang,x)}</McPill>)}</div>
+          <OmActions r={r} om={om} lang={lang} properties={properties} onOpenLead={onOpenLead} onOpenProperty={onOpenProperty}/>
+        </div>)}
+      </div>}
+    </div>
+  </div>;
+}
+
+// Главный экран: строка «Новые подходящие объекты: N» и статистика
+function omStats(rows, remindMin){
+  const open = rows.filter(r => OM_OPEN.includes(r.status));
+  const old = r => Date.now() - new Date(r.created_at).getTime() > remindMin*60000;
+  return {total:open.length, fresh:rows.filter(r => r.status==="new").length, unseen:rows.filter(r => ["new","unseen"].includes(r.status)).length,
+    viewed:rows.filter(r => r.status==="viewed").length, offered:rows.filter(r => r.status==="offered" || r.status==="client_interested").length, overdue:open.filter(old).length};
+}
+function ObjectMatchHomeLine({om, isAdmin, lang="ru", onOpen}){
+  const own = isAdmin ? om.rows : om.rows.filter(r => r.manager_email === om.me);
+  const st = omStats(own, om.remindMin);
+  const byMgr = isAdmin ? Object.values(own.filter(r => OM_OPEN.includes(r.status)).reduce((a,r) => { const k = r.manager_email || "—"; a[k] = a[k] || {name:r.manager_name || k, n:0}; a[k].n++; return a; }, {})).sort((a,b)=>b.n-a.n) : [];
+  return <button onClick={onOpen} style={{width:"100%", textAlign:"left", margin:"12px 0", padding:"14px 16px", borderRadius:20, border:`2px solid ${st.total ? "#65a30d" : MC.gray.c}`, background:st.total ? MC.lime.c : MC.gray.bg, color:st.total ? "#1a2e05" : MC.gray.ink, display:"grid", gap:6, cursor:"pointer"}}>
+    <span style={{display:"flex", alignItems:"center", gap:10}}><b style={{fontSize:18, flex:1, color:st.total ? "#1a2e05" : MC.gray.ink}}>✨ {tr(lang,"Новые подходящие объекты")}: {st.total}</b><span style={{fontWeight:900, color:st.total ? "#1a2e05" : MC.gray.ink}}>›</span></span>
+    <span style={{fontWeight:750, color:st.total ? "#1a2e05" : MC.gray.ink, fontSize:13}}>{tr(lang,"не просмотрено")}: {st.unseen} · {tr(lang,"просмотрено без решения")}: {st.viewed} · {tr(lang,"предложено")}: {st.offered} · {tr(lang,"просрочено")}: {st.overdue}</span>
+    {byMgr.length>0 && <span style={{fontWeight:800, color:st.total ? "#1a2e05" : MC.gray.ink, fontSize:13}}>{byMgr.map(m => `${m.name}: ${m.n}`).join(" · ")}</span>}
+  </button>;
+}
+
+// Список совпадений с группировкой
+function ObjectMatchList({om, isAdmin, lang="ru", properties=[], onOpenLead, onOpenProperty, onClose}){
+  const [by,setBy] = useState("client"); const [scope,setScope] = useState("open"); const [mgr,setMgr] = useState("");
+  let list = (isAdmin ? om.rows : om.rows.filter(r => r.manager_email === om.me));
+  if(isAdmin && mgr) list = list.filter(r => r.manager_email === mgr);
+  if(scope === "open") list = list.filter(r => OM_OPEN.includes(r.status));
+  if(by === "unseen") list = list.filter(r => ["new","unseen"].includes(r.status));
+  if(by === "notoffered") list = list.filter(r => !["offered","client_interested","client_declined"].includes(r.status));
+  const sorted = [...list].sort((a,b) => by==="pct" ? b.score_pct - a.score_pct : new Date(b.created_at) - new Date(a.created_at));
+  const groups = by === "client" ? Object.entries(sorted.reduce((a,r) => { const k = r.snapshot?.lead_name || `#${r.lead_id}`; (a[k] = a[k] || []).push(r); return a; }, {}))
+    : by === "date" ? Object.entries(sorted.reduce((a,r) => { const k = new Date(r.created_at).toLocaleDateString("uk-UA"); (a[k] = a[k] || []).push(r); return a; }, {}))
+    : [["", sorted]];
+  const mgrs = [...new Map(om.rows.map(r => [r.manager_email, r.manager_name || r.manager_email])).entries()].filter(([e]) => e);
+  return <Modal onClose={onClose}>
+    <div className="row"><h2 style={{margin:0}}>✨ {tr(lang,"Новые подходящие объекты")}</h2><button className="icon" onClick={onClose}>×</button></div>
+    <div className="chips" style={{flexWrap:"wrap", margin:"10px 0"}}>
+      {[["client","По клиентам"],["date","По дате"],["pct","По % совпадения"],["unseen","Непросмотренные"],["notoffered","Не предложенные"]].map(([k,t]) => <button key={k} className={cn("chip", by===k && "active")} onClick={()=>setBy(k)}>{tr(lang,t)}</button>)}
+      <button className={cn("chip", scope==="all" && "active")} onClick={()=>setScope(scope==="all"?"open":"all")}>{scope==="all" ? tr(lang,"Все за 30 дней") : tr(lang,"Только необработанные")}</button>
+      {isAdmin && mgrs.length>0 && <select className="input" style={{width:"auto"}} value={mgr} onChange={e=>setMgr(e.target.value)}><option value="">{tr(lang,"Все менеджеры")}</option>{mgrs.map(([e,n]) => <option key={e} value={e}>{n}</option>)}</select>}
+    </div>
+    <McLegend lang={lang} groups={false}/>
+    {sorted.length === 0 && <p className="muted" style={{marginTop:12}}>{tr(lang,"Необработанных совпадений нет")} ✓</p>}
+    {groups.map(([title, items]) => <div key={title || "all"} style={{display:"grid", gap:12, marginTop:12}}>
+      {title && <b style={{fontSize:16}}>{title} · {items.length}</b>}
+      {items.map(r => <MatchCard key={r.id} v={omView(r, {group: OM_OPEN.includes(r.status) ? undefined : mcGroup({state:r.status})})} lang={lang} dim={!OM_OPEN.includes(r.status)} photoHeight={170}
+        extraHead={<small className="muted" style={{display:"block",marginTop:6}}>👤 {r.snapshot?.lead_name || `#${r.lead_id}`}{isAdmin ? ` · ${r.manager_name || r.manager_email || ""}` : ""}</small>}>
+        <OmActions r={r} om={om} lang={lang} properties={properties} onOpenLead={onOpenLead} onOpenProperty={onOpenProperty}/>
+      </MatchCard>)}
+    </div>)}
+  </Modal>;
+}
+
+// Раздел в карточке клиента: «Новые подходящие объекты» + полная история
+function LeadObjectMatches({leadId, om, lang="ru", properties=[], onOpenLead, onOpenProperty}){
+  const [rows,setRows] = useState([]); const [log,setLog] = useState([]); const [all,setAll] = useState(false);
+  const tick = om ? om.rows.filter(r => String(r.lead_id) === String(leadId)).map(r => r.id + r.status).join(",") : "";
+  useEffect(() => { if(!leadId) return;
+    Promise.all([supabase.from("lead_object_matches").select("*").eq("lead_id", leadId).order("created_at",{ascending:false}).limit(100),
+      supabase.from("lead_object_match_log").select("*").eq("lead_id", leadId).order("created_at",{ascending:false}).limit(200)])
+      .then(([a,b]) => { setRows(a.data || []); setLog(b.data || []); }); }, [leadId, tick]);
+  if(!rows.length) return null;
+  const open = rows.filter(r => OM_OPEN.includes(r.status)), done = rows.filter(r => !OM_OPEN.includes(r.status));
+  const localOm = om ? {...om, act: async (...a) => { const ok = await om.act(...a); return ok; }} : null;
+  return <div className="card" style={{display:"grid", gap:10, minWidth:0, borderTop:`6px solid ${open.length ? MC.lime.c : MC.gray.c}`}}>
+    <div className="row"><h3 style={{margin:0}}>✨ {tr(lang,"Новые подходящие объекты")}</h3><McBadge bg={open.length?MC.lime.c:MC.gray.bg} ink={open.length?"#1a2e05":MC.gray.ink}>{open.length}</McBadge></div>
+    {open.map(r => <MatchCard key={r.id} v={omView(r)} lang={lang} photoHeight={170}>{localOm && <OmActions r={r} om={localOm} lang={lang} properties={properties} onOpenLead={onOpenLead} onOpenProperty={onOpenProperty}/>}</MatchCard>)}
+    {done.length>0 && <button className="chip" onClick={()=>setAll(!all)}>{all ? tr(lang,"Скрыть обработанные") : `${tr(lang,"Показать обработанные")} (${done.length})`}</button>}
+    {all && done.map(r => <MatchCard key={r.id} v={omView(r, {group:mcGroup({state:r.status})})} lang={lang} dim photoHeight={140}>
+      {r.decision_reason && <small className="muted">{tr(lang,"Причина")}: {r.decision_reason}</small>}</MatchCard>)}
+    {log.length>0 && <details><summary style={{cursor:"pointer", fontWeight:800}}>{tr(lang,"История по новым объектам")}</summary>
+      {log.map(l => { const r = rows.find(x => x.id === l.match_id); return <small key={l.id} style={{display:"block", margin:"4px 0"}}>
+        {new Date(l.created_at).toLocaleString("uk-UA")} · <b>{l.text}</b>{r ? ` · ${r.snapshot?.title || "#"+r.property_id}` : ""}{l.actor ? ` · ${l.actor==="system"?tr(lang,"система"):l.actor==="client"?tr(lang,"клиент"):l.actor}` : ""}</small>; })}
+    </details>}
+  </div>;
+}
+
 // Блок «Автоподбор» в карточке клиента
-function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="", lang="ru"}){
+function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="", lang="ru", onOpenProperty}){
   const leadId = isDbLeadId(lead.id) ? Number(lead.id) : null;
   const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
   const [m,setM] = useState(null); const [prof,setProf] = useState(null); const [results,setResults] = useState([]); const [sels,setSels] = useState([]); const [log,setLog] = useState([]); const [events,setEvents] = useState([]);
   const [loaded,setLoaded] = useState(false); const [busy,setBusy] = useState(""); const [editProf,setEditProf] = useState(false); const [draft,setDraft] = useState({});
   const [showRejected,setShowRejected] = useState(false); const [manualId,setManualId] = useState("");
+  const [selItems,setSelItems] = useState([]); const [curMgr,setCurMgr] = useState(null); const [keepContacts,setKeepContacts] = useState({});
   const [an,setAn] = useState(null); // поиск в «Аналитике»: {loading, items, picked}
   const [selForm,setSelForm] = useState({title:`Подборка для ${lead.name||"клиента"}`, comment:"", showName:false, hideAddress:false, days:"30"});
   const idemRef = useRef(null); const remindedRef = useRef(false);
@@ -2090,7 +2408,9 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
       supabase.from("lead_matching_log").select("*").eq("lead_id", leadId).order("created_at",{ascending:false}).limit(30)]);
     setM(a.data || null); setProf(b.data || null); setResults(c.data || []); setSels(d.data || []); setLog(e.data || []);
     const ids = (d.data || []).map(s => s.id);
-    if(ids.length){ const {data:ev} = await supabase.from("client_selection_events").select("selection_id,item_id,kind,comment,created_at").in("selection_id", ids).order("created_at",{ascending:false}).limit(500); setEvents(ev || []); }
+    if(ids.length){ const [{data:ev},{data:si}] = await Promise.all([supabase.from("client_selection_events").select("selection_id,item_id,kind,comment,created_at").in("selection_id", ids).order("created_at",{ascending:false}).limit(500),
+      supabase.from("client_selection_items").select("selection_id,dedupe_key,property_id").in("selection_id", ids)]); setEvents(ev || []); setSelItems(si || []); }
+    const {data:mc} = await supabase.rpc("crm_lead_manager_contacts",{p_lead:leadId}); setCurMgr(mc || null);
     setLoaded(true);
   }, [leadId]);
   useEffect(() => { load(); }, [load]);
@@ -2203,26 +2523,34 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
   const req = (editProf ? draft.required : pr.required) || ["deal_type","property_type","city","budget"];
   const toggleReq = k => setDraft({...draft, required: req.includes(k) ? req.filter(x=>x!==k) : [...req,k]});
   const visible = [...results].sort((a,b)=>(a.position||0)-(b.position||0)).filter(r => showRejected || r.state !== "rejected");
-  const inBudget = visible.filter(r => r.within_budget), over = visible.filter(r => !r.within_budget);
   const selectedCount = results.filter(r => r.state === "selected").length;
   const evOf = (sid, kind) => events.filter(e => e.selection_id === sid && e.kind === kind);
-  const ResultRow = ({r}) => <div className="card" style={{margin:"6px 0", padding:12, opacity:r.state==="rejected"?.55:1, borderColor:r.state==="selected"?"var(--accent)":undefined}}>
-    <div style={{display:"flex", gap:10, alignItems:"flex-start"}}>
-      <input type="checkbox" style={{marginTop:4, width:20, height:20, flex:"0 0 auto"}} checked={r.state==="selected"} onChange={e=>setState(r, e.target.checked?"selected":"suggested")}/>
-      <div style={{flex:1, minWidth:0}}><b>{r.title || "Объект"}</b> · <b style={{color:"var(--accent)"}}>{amMoney(r.price, r.currency)}</b>{r.currency!=="USD"&&r.price_usd?` (${amMoney(r.price_usd)})`:""}
-        <div className="muted" style={{fontSize:13, marginTop:2}}>{[r.snapshot?.city, r.snapshot?.district, r.snapshot?.rooms&&`${r.snapshot.rooms} комн.`, r.snapshot?.area&&`${r.snapshot.area} м²`, r.snapshot?.floor&&`${r.snapshot.floor}${r.snapshot?.total_floors?`/${r.snapshot.total_floors}`:""} эт.`].filter(Boolean).join(" · ")} · {r.source==="crm"?tr(lang,"база CRM"):r.source==="analytics"?tr(lang,"Аналитика"):tr(lang,"вручную")}</div></div>
-    </div>
-    <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:6}}><button className="chip" title="↑" onClick={()=>move(r,-1)}>↑</button><button className="chip" title="↓" onClick={()=>move(r,1)}>↓</button>
-      <button className="chip" onClick={()=>setState(r, r.state==="rejected"?"suggested":"rejected")}>{r.state==="rejected"?tr(lang,"Вернуть"):tr(lang,"Не подходит")}</button></div>
-    <div className="chips" style={{margin:"6px 0",flexWrap:"wrap"}}>
-      {(r.matched||[]).map(x=><span key={"m"+x} className="chip" style={{background:"rgba(34,197,94,.15)"}}>✓ {tr(lang,x)}</span>)}
-      {(r.unmatched||[]).map(x=><span key={"u"+x} className="chip" style={{background:"rgba(239,68,68,.15)"}}>✗ {tr(lang,x)}</span>)}
-      {!r.within_budget && r.over_budget_by>0 && <span className="chip" style={{background:"rgba(245,158,11,.25)",fontWeight:800}}>{tr(lang,"Выше бюджета на")} {amMoney(r.over_budget_by)}</span>}
-      {r.check_status && <span className="chip">{r.check_status==="ok"?"✓ "+tr(lang,"актуально"):r.check_status==="changed"?"⚠ "+tr(lang,"цена изменилась"):r.check_status==="unavailable"?"⛔ "+tr(lang,"снято с продажи"):"? "+tr(lang,"не проверено")}</span>}
-      {r.source_url && <a className="chip" href={r.source_url} target="_blank" rel="noreferrer">↗ {tr(lang,"объявление")}</a>}
-    </div>
-    <input className="input" placeholder={tr(lang,"Комментарий для клиента к этому объекту")} defaultValue={r.manager_comment||""} onBlur={e=>{ if(e.target.value!==(r.manager_comment||"")) setComment(r, e.target.value); }}/>
-  </div>;
+  // вариант → цветовая группа (полное совпадение / в бюджете / отклонение / +10 000 / проверить / в подборке / предложено / отклонено)
+  const extOn = m?.budget_extension_status === "yes", extAmt = Number(m?.budget_extension_amount || 10000);
+  const sentSelIds = new Set(sels.filter(x => x.sent_at || x.open_count > 0).map(x => x.id));
+  const offeredKey = r => selItems.some(i => sentSelIds.has(i.selection_id) && (i.dedupe_key === r.dedupe_key || (r.property_id && String(i.property_id) === String(r.property_id))));
+  const viewOf = r => { const inExt = !r.within_budget && extOn && Number(r.over_budget_by||0) > 0 && Number(r.over_budget_by) <= extAmt;
+    const state = r.state === "rejected" ? "rejected" : offeredKey(r) ? "offered" : r.state;
+    return {...r, in_ext:inExt, state, budget_usd:m?.matching_parameters?.budget_usd || (pr.currency==="USD"||!pr.currency ? pr.budget : null), required:(pr.required||[]).map(k => ({deal_type:"тип сделки",property_type:"тип недвижимости",city:"город",budget:"бюджет",rooms:"комнаты",district:"район",complex_name:"ЖК"})[k] || k),
+      snapshot: (r.snapshot?.photos||[]).length || r.snapshot?.photo ? r.snapshot : {...(r.snapshot||{}), photos: (()=>{ const pp = r.property_id && properties.find(p => String(p.id) === String(r.property_id)); try{ return pp ? extractPropertyPhotos(pp).slice(0,8) : []; }catch{ return []; } })()},
+      pct: (r.matched||[]).filter(x=>!/^источник:/i.test(x)).length + (r.unmatched||[]).length ? Math.round(100 * (r.matched||[]).filter(x=>!/^источник:/i.test(x)).length / Math.max(1, (r.matched||[]).filter(x=>!/^источник:/i.test(x)).length + (r.unmatched||[]).length)) : null,
+      date:r.created_at, isNew: r.state === "suggested" && Date.now() - new Date(r.created_at).getTime() < 86400000,
+      statusLabel: r.check_status==="unavailable" ? "снято с продажи" : r.check_status==="changed" ? "цена изменилась" : null}; };
+  const ResultRow = ({r}) => { const v = viewOf(r); const g = mcGroup(v); const prop = r.property_id && properties.find(p => String(p.id) === String(r.property_id));
+    return <MatchCard v={{...v, group:g}} lang={lang} dim={g==="rejected"} photoHeight={170}
+      extraHead={<div style={{display:"flex",gap:8,alignItems:"center",marginTop:8,flexWrap:"wrap"}}>
+        <label className="chip" style={{fontWeight:800}}><input type="checkbox" style={{width:18,height:18}} checked={r.state==="selected"} onChange={e=>setState(r, e.target.checked?"selected":"suggested")}/> {tr(lang,"В подборку")}</label>
+        <button className="chip" title="↑" onClick={()=>move(r,-1)}>↑</button><button className="chip" title="↓" onClick={()=>move(r,1)}>↓</button>
+        <small className="muted">{r.source==="crm"?tr(lang,"база CRM"):r.source==="analytics"?tr(lang,"Аналитика"):tr(lang,"вручную")}{(r.matched||[]).find(x=>/^источник:/i.test(x)) ? ` · ${(r.matched||[]).find(x=>/^источник:/i.test(x)).replace(/^источник:\s*/i,"")}` : ""}</small></div>}>
+      <div className="grid2" style={{marginBottom:8}}>
+        <McBtn tone="indigo" onClick={()=>{ setState(r,"selected"); setTimeout(()=>document.getElementById(`am-sel-${leadId}`)?.scrollIntoView({behavior:"smooth", block:"center"}), 50); }}>📨 {tr(lang,"Предложить клиенту")}</McBtn>
+        <McBtn tone={r.state==="selected"?"purpleSoft":"purple"} onClick={()=>setState(r, r.state==="selected"?"suggested":"selected")}>{r.state==="selected"?"✓ "+tr(lang,"В подборке"):"＋ "+tr(lang,"Добавить в подборку")}</McBtn>
+        <McBtn tone="dark" onClick={()=>{ if(prop) onOpenProperty?.(prop); else if(r.source_url) window.open(r.source_url,"_blank","noopener,noreferrer"); else alert(tr(lang,"Карточка объекта недоступна")); }}>🏠 {tr(lang,"Открыть карточку")}</McBtn>
+        <McBtn tone="gray" onClick={()=>setState(r, r.state==="rejected"?"suggested":"rejected")}>{r.state==="rejected"?"↺ "+tr(lang,"Вернуть"):"✗ "+tr(lang,"Не подходит")}</McBtn>
+      </div>
+      {r.state!=="rejected" && <McBtn tone="red" style={{width:"100%", marginBottom:8}} onClick={async()=>{ if(!window.confirm(tr(lang,"Отметить объект неактуальным?"))) return; await supabase.from("lead_match_results").update({state:"rejected", check_status:"unavailable", updated_at:new Date().toISOString()}).eq("id", r.id); await load(); }}>⛔ {tr(lang,"Объект неактуален")}</McBtn>}
+      <input className="input" placeholder={tr(lang,"Комментарий для клиента к этому объекту")} defaultValue={r.manager_comment||""} onBlur={e=>{ if(e.target.value!==(r.manager_comment||"")) setComment(r, e.target.value); }}/>
+    </MatchCard>; };
 
   return <div className="card" style={{display:"grid", gap:10, minWidth:0, overflowWrap:"anywhere"}}>
     <div className="row"><h3 style={{margin:0}}>🤖 {tr(lang,"Автоподбор")}</h3>
@@ -2287,12 +2615,15 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
 
     {m && results.length>0 && <div>
       <div className="row"><b>{tr(lang,"Найденные варианты")}: {results.filter(r=>r.state!=="rejected").length}</b><label className="chip"><input type="checkbox" checked={showRejected} onChange={e=>setShowRejected(e.target.checked)}/> {tr(lang,"показать исключённые")}</label></div>
-      {inBudget.map(r=><ResultRow key={r.id} r={r}/>)}
-      {over.length>0 && <><b style={{display:"block",margin:"10px 0 4px",color:"#f59e0b"}}>{tr(lang,"Выше бюджета клиента")}</b>{over.map(r=><ResultRow key={r.id} r={r}/>)}</>}
+      <McLegend lang={lang}/>
+      {MC_GROUPS.map(([gk, ck, gt]) => { const list = visible.filter(r => mcGroup(viewOf(r)) === gk); if(!list.length) return null;
+        return <section key={gk} style={{display:"grid", gap:10, marginTop:12}}>
+          <div style={{display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:12, background:MC[ck].bg, color:MC[ck].ink, borderLeft:`6px solid ${MC[ck].c}`}}><b style={{flex:1}}>{tr(lang,gt)}</b><McBadge bg={MC[ck].c} ink="#fff">{list.length}</McBadge></div>
+          {list.map(r=><ResultRow key={r.id} r={r}/>)}</section>; })}
     </div>}
     {m && <div className="row" style={{gap:6}}><select className="input" value={manualId} onChange={e=>setManualId(e.target.value)}><option value="">{tr(lang,"+ Добавить объект из базы вручную")}</option>{properties.filter(p=>isDbLeadId(p.id)).map(p=><option key={p.id} value={p.id}>{p.title} · {amMoney(p.price,p.currency||"USD")}</option>)}</select>{manualId&&<Button variant="soft" onClick={addManual}>{tr(lang,"Добавить")}</Button>}</div>}
 
-    {m && selectedCount>0 && <div className="card" style={{padding:10, display:"grid", gap:6}}>
+    {m && selectedCount>0 && <div id={`am-sel-${leadId}`} className="card" style={{padding:10, display:"grid", gap:6}}>
       <b>{tr(lang,"Подборка для клиента")} · {tr(lang,"выбрано")} {selectedCount}</b>
       <input className="input" value={selForm.title} onChange={e=>setSelForm({...selForm,title:e.target.value})} placeholder={tr(lang,"Название подборки")}/>
       <textarea className="input" value={selForm.comment} onChange={e=>setSelForm({...selForm,comment:e.target.value})} placeholder={tr(lang,"Общий комментарий для клиента")}/>
@@ -2307,6 +2638,11 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
         <div className="row"><b>{s.title}</b><span className="chip">{s.status==="disabled"?tr(lang,"ссылка отключена"):s.sent_at?tr(lang,"отправлено"):tr(lang,"создана")}</span></div>
         <small className="muted">{new Date(s.created_at).toLocaleString("uk-UA")} · {tr(lang,"открытий")}: {s.open_count||0}{s.last_opened_at?` (${new Date(s.last_opened_at).toLocaleString("uk-UA")})`:""} · 👍 {evOf(s.id,"interested").length} · 👎 {evOf(s.id,"not_suitable").length}{s.expires_at?` · ${tr(lang,"до")} ${new Date(s.expires_at).toLocaleDateString("uk-UA")}`:""}</small>
         {evOf(s.id,"comment").slice(0,3).map((e,i)=><small key={i} style={{display:"block"}}>💬 {e.comment}</small>)}
+        <small style={{display:"block",marginTop:4}}>👤 {tr(lang,"Контакты в подборке")}: <b>{s.manager_name || "—"}</b>{[s.manager_phone, s.manager_telegram&&"Telegram", s.manager_viber&&"Viber", s.manager_whatsapp&&"WhatsApp", s.manager_email].filter(Boolean).length ? ` · ${[s.manager_phone, s.manager_telegram&&"Telegram", s.manager_viber&&"Viber", s.manager_whatsapp&&"WhatsApp", s.manager_email].filter(Boolean).join(", ")}` : ""}</small>
+        {curMgr?.email && s.manager_email && curMgr.email !== String(s.manager_email).toLowerCase() && !keepContacts[s.id] && <div style={{marginTop:6, padding:"8px 10px", borderRadius:12, background:MC.yellow.bg, color:MC.yellow.ink, border:`1px solid ${MC.yellow.c}`}}>
+          <b>⚠ {tr(lang,"Клиент передан менеджеру")} {curMgr.name}. {tr(lang,"Обновить контактные данные в этой подборке?")}</b>
+          <div className="chips" style={{marginTop:6, flexWrap:"wrap"}}><button className="chip" style={{fontWeight:900}} onClick={async()=>{ const {error} = await supabase.rpc("client_selection_update_contacts",{p_selection:s.id}); if(error) return alert(error.message); await load(); }}>✓ {tr(lang,"Да, обновить")}</button>
+            <button className="chip" onClick={()=>setKeepContacts({...keepContacts,[s.id]:true})}>{tr(lang,"Нет, оставить как есть")}</button></div></div>}
         <div className="chips" style={{marginTop:6,flexWrap:"wrap"}}>
           <button className="chip" onClick={()=>sendSel(s,"copy")}>🔗 {tr(lang,"Копировать ссылку")}</button>
           <a className="chip" href={amSelectionLink(s.token)} target="_blank" rel="noreferrer">👁 {tr(lang,"Открыть")}</a>
@@ -2321,7 +2657,7 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
   </div>;
 }
 
-function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile,onOpenLead,properties=[],agencyName="",lang="ru"}) {
+function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,currentProfile,onOpenLead,onOpenProperty,om,properties=[],agencyName="",lang="ru"}) {
   const [local,setLocal] = useState(lead);
   const [showMatch,setShowMatch] = useState(false);
   // Связи «дубль ↔ исходный клиент» — только для администраторов (менеджеру таблица недоступна)
@@ -2428,7 +2764,8 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
     <Field label="Заметки менеджера"><textarea value={local.notes} onChange={e=>setLocal({...local,notes:e.target.value})}/></Field>
     <Button className="full matchOpenBtn" onClick={()=>setShowMatch(true)}>🔎 Подобрать объекты</Button>
     {showMatch && <ClientMatch lead={local} properties={properties} currentProfile={currentProfile} agencyName={agencyName} lang={lang} onClose={()=>setShowMatch(false)}/>}
-    <AutoMatchBlock lead={lead} role={role} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang}/>
+    <AutoMatchBlock lead={lead} role={role} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang} onOpenProperty={onOpenProperty}/>
+    {isDbLeadId(lead.id) && <LeadObjectMatches leadId={Number(lead.id)} om={om} lang={lang} properties={properties} onOpenLead={onOpenLead} onOpenProperty={onOpenProperty}/>}
 
     <div className="card">
       <h3>История работы с клиентом</h3>
@@ -6414,15 +6751,11 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
       {renderedFiltered.map(x=>{
         const crm=crmMatch(x),checked=selected.includes(String(x._key)),fav=favorites.includes(String(x._key)),photo=x.main_photo_url||(Array.isArray(x.photo_urls)?x.photo_urls[0]:"");
         const ai=aiFor(x);
-        return <article className="card" key={x._key} style={{padding:0,overflow:"hidden",borderRadius:24}}>
-          <div style={{height:240,background:"var(--soft)",position:"relative",overflow:"hidden"}}>
-            {photo?<img src={photo} alt="" loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{height:"100%",display:"grid",placeItems:"center",fontSize:54}}>🏠</div>}
-            <div style={{position:"absolute",left:14,top:14,display:"flex",gap:8,flexWrap:"wrap"}}><span className="badge">{x.source_name||"Источник"}</span><span className="badge" style={sellerKind(x)==="owner"?{background:"#dcfce7",color:"#166534"}:sellerKind(x)==="realtor"?{background:"#dbeafe",color:"#1d4ed8"}:{}}>{sellerKind(x)==="owner"?"👤 ":sellerKind(x)==="realtor"?"🏢 ":""}{sellerLabel(x)}</span>{crm&&<span className="badge" style={{background:"#dcfce7",color:"#166534"}}>✓ В CRM</span>}</div>
-          </div>
-          <div style={{padding:20}}>
-            <div className="row" style={{alignItems:"flex-start"}}><section><h3 style={{margin:"0 0 7px",fontSize:21}}>{x.title||x.complex_name||"Объект недвижимости"}</h3><p className="muted" style={{margin:0}}>📍 {[x.country,x.region,x.city,x.district,x.complex_name].filter(Boolean).join(" · ")||"Локация не указана"}</p></section><b style={{fontSize:24,whiteSpace:"nowrap",textAlign:"right"}}>{listingPriceText(x)}{listingPriceOriginal(x)&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{listingPriceOriginal(x)}</small>}{priceUsd(x)>0&&Number(x.area||0)>=10&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{showPpm(priceUsd(x)/Number(x.area))} / м²</small>}</b></div>
-            {(x._duplicate_links||[]).length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:10,fontSize:13}}><b>🔁 {tr(lang,"Этот же объект")}:</b>{x._duplicate_links.map((l,i)=><a key={l.url+i} className="chip" href={l.url} target="_blank" rel="noopener noreferrer" style={{minHeight:30,padding:"4px 10px",textDecoration:"none"}}>{l.source} ↗</a>)}</div>}
-            <div className="chips" style={{margin:"14px 0"}}>{x.rooms&&<span className="chip">{x.rooms} комн.</span>}{x.area&&<span className="chip">{x.area} м²</span>}{x.floor&&<span className="chip">{x.floor} этаж</span>}{x.deal_type&&<span className="chip">{x.deal_type}</span>}</div>
+        return <ListingCard key={x._key} photos={[photo]} badges={<><span className="badge">{x.source_name||"Источник"}</span><span className="badge" style={sellerKind(x)==="owner"?{background:"#dcfce7",color:"#166534"}:sellerKind(x)==="realtor"?{background:"#dbeafe",color:"#1d4ed8"}:{}}>{sellerKind(x)==="owner"?"👤 ":sellerKind(x)==="realtor"?"🏢 ":""}{sellerLabel(x)}</span>{crm&&<span className="badge" style={{background:"#dcfce7",color:"#166534"}}>✓ В CRM</span>}</>}
+          title={x.title||x.complex_name||"Объект недвижимости"} location={[x.country,x.region,x.city,x.district,x.complex_name].filter(Boolean).join(" · ")||"Локация не указана"}
+          price={listingPriceText(x)} priceSub={<>{listingPriceOriginal(x)&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{listingPriceOriginal(x)}</small>}{priceUsd(x)>0&&Number(x.area||0)>=10&&<small className="muted" style={{display:"block",fontSize:12,fontWeight:600}}>{showPpm(priceUsd(x)/Number(x.area))} / м²</small>}</>}
+          afterHead={(x._duplicate_links||[]).length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:10,fontSize:13}}><b>🔁 {tr(lang,"Этот же объект")}:</b>{x._duplicate_links.map((l,i)=><a key={l.url+i} className="chip" href={l.url} target="_blank" rel="noopener noreferrer" style={{minHeight:30,padding:"4px 10px",textDecoration:"none"}}>{l.source} ↗</a>)}</div>}
+          chips={[x.rooms&&`${x.rooms} комн.`, x.area&&`${x.area} м²`, x.floor&&`${x.floor} этаж`, x.deal_type]}>
             <p className="muted" style={{fontSize:13}}>{x.origin==="live"?tr(lang,"Опубликовано на площадке"):tr(lang,"Обновлено")}: {getListingDate(x)?new Date(getListingDate(x)).toLocaleDateString(lang==="en"?"en-GB":"uk-UA",{day:"numeric",month:"long",year:"numeric"}):tr(lang,"площадка не указала дату")}</p>{sellerKind(x)==="realtor"&&contactPhone(x)&&<div style={{margin:"-2px 0 12px",padding:"9px 12px",borderRadius:12,background:"color-mix(in srgb,#3b82f6 8%,var(--card))",fontWeight:800}}>☎ Риэлтор: <a href={`tel:${contactPhone(x).replace(/[^+\d]/g,"")}`} style={{color:"inherit"}}>{contactPhone(x)}</a></div>}
             <div className="grid2">
               <Button style={actionStyle} onClick={()=>openListing(x)}>{crm?"🏠 Открыть объект CRM":"↗ Открыть объявление"}</Button>
@@ -6438,8 +6771,7 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
               <button className="icon" title="AI-анализ" onClick={()=>setAiOpenId(aiOpenId===x._key?"":x._key)} style={{minHeight:42,fontSize:18}}>⭐</button>
             </div>
             {aiOpenId===x._key&&<div style={{marginTop:12,padding:15,borderRadius:16,background:"color-mix(in srgb,var(--accent) 10%,var(--card))",border:"1px solid color-mix(in srgb,var(--accent) 28%,#e5e7eb)"}}><div className="row"><b>⭐ Анализ AI</b><span className="badge gold">Потенциал {ai.score}%</span></div><p className="muted" style={{margin:"8px 0 6px"}}>Почему объект интересен:</p>{ai.reasons.map((r,i)=><div key={i} style={{margin:"6px 0"}}>✓ {r}</div>)}</div>}
-          </div>
-        </article>;
+        </ListingCard>;
       })}
     </div>}
 
@@ -6687,7 +7019,8 @@ function Access({agencies,setAgencies,users,setUsers}) {
       phone: editingUser.phone || "",
       email: editingUser.email || "",
       role: editingUser.role || "Менеджер по продажам",
-      birth_date: editingUser.birth_date || null
+      birth_date: editingUser.birth_date || null,
+      position: editingUser.position || null, telegram: editingUser.telegram || null, viber: editingUser.viber || null, whatsapp: editingUser.whatsapp || null
     };
     const { data, error } = await supabase.from("users").update(payload).eq("id", editingUser.id).select().single();
     if (error) { alert("Ошибка редактирования пользователя: " + error.message); return; }
@@ -6760,6 +7093,10 @@ function Access({agencies,setAgencies,users,setUsers}) {
       <input className="input" placeholder="ФИО" value={editingUser.full_name || editingUser.name || ""} onChange={e=>setEditingUser({...editingUser,full_name:e.target.value})}/>
       <input className="input" placeholder="Телефон" value={editingUser.phone || ""} onChange={e=>setEditingUser({...editingUser,phone:e.target.value})}/>
       <label className="muted">Дата рождения<input className="input" type="date" value={editingUser.birth_date || ""} onChange={e=>setEditingUser({...editingUser,birth_date:e.target.value})}/></label>
+      <input className="input" placeholder="Должность (видит клиент в подборке)" value={editingUser.position || ""} onChange={e=>setEditingUser({...editingUser,position:e.target.value})}/>
+      <input className="input" placeholder="Telegram" value={editingUser.telegram || ""} onChange={e=>setEditingUser({...editingUser,telegram:e.target.value})}/>
+      <input className="input" placeholder="Viber" value={editingUser.viber || ""} onChange={e=>setEditingUser({...editingUser,viber:e.target.value})}/>
+      <input className="input" placeholder="WhatsApp" value={editingUser.whatsapp || ""} onChange={e=>setEditingUser({...editingUser,whatsapp:e.target.value})}/>
       <input className="input" placeholder="Email" value={editingUser.email || ""} onChange={e=>setEditingUser({...editingUser,email:e.target.value})}/>
       <select className="input" value={editingUser.role || "Менеджер по продажам"} onChange={e=>setEditingUser({...editingUser,role:e.target.value})}><option>Менеджер по продажам</option><option>Администратор директор</option><option>Администратор тех отдел</option></select>
       <Button className="full" onClick={saveUser}>Сохранить пользователя</Button>
@@ -8128,6 +8465,31 @@ function FeedSourcesAdmin({currentProfile, lang, onChanged}){
   </div>;
 }
 
+// «Мои контакты для презентаций»: эти данные видит клиент в блоке «Связаться с менеджером» (пустые поля не показываются)
+function MyContactsCard({currentProfile, lang="ru"}){
+  const [f,setF] = useState(null); const [busy,setBusy] = useState(false); const [ok,setOk] = useState(false); const fileRef = useRef(null);
+  useEffect(() => { if(currentProfile?.id) supabase.from("users").select("id,full_name,phone,position,telegram,viber,whatsapp,avatar_url").eq("id", currentProfile.id).maybeSingle().then(({data}) => setF(data || {})); }, [currentProfile?.id]);
+  if(!f) return null;
+  const save = async (patch = {}) => { setBusy(true); const row = {...f, ...patch}; const {error} = await supabase.from("users").update({position:row.position||null, phone:row.phone||"", telegram:row.telegram||null, viber:row.viber||null, whatsapp:row.whatsapp||null, avatar_url:row.avatar_url||null}).eq("id", currentProfile.id);
+    setBusy(false); if(error) return alert(error.message); setF(row); setOk(true); setTimeout(()=>setOk(false), 2500); };
+  const upload = async file => { if(!file) return; if(file.size > 4*1024*1024) return alert(tr(lang,"Фото должно быть меньше 4 МБ"));
+    setBusy(true); const ext = (file.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"") || "jpg"; const path = `manager-photos/${currentProfile.id}-${Date.now()}.${ext}`;
+    const up = await supabase.storage.from("property-media").upload(path, file, {upsert:true, contentType:file.type||undefined}); setBusy(false);
+    if(up.error) return alert(up.error.message); await save({avatar_url: supabase.storage.from("property-media").getPublicUrl(path).data.publicUrl}); };
+  const I = (k, ph) => <input className="input" placeholder={tr(lang,ph)} value={f[k]||""} onChange={e=>setF({...f,[k]:e.target.value})}/>;
+  return <div className="card">
+    <h3>👤 {tr(lang,"Мои контакты для презентаций")}</h3>
+    <p className="muted">{tr(lang,"Клиент увидит их в конце подборки в блоке «Связаться с менеджером». Пустые поля не показываются.")}</p>
+    <div style={{display:"flex",gap:12,alignItems:"center",margin:"8px 0"}}>
+      {f.avatar_url ? <img src={f.avatar_url} alt="" style={{width:64,height:64,borderRadius:32,objectFit:"cover"}}/> : <div style={{width:64,height:64,borderRadius:32,background:"#f4f4f5",display:"grid",placeItems:"center",fontSize:26}}>👤</div>}
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{display:"none"}} onChange={e=>{ upload(e.target.files?.[0]); e.target.value=""; }}/>
+      <Button variant="soft" disabled={busy} onClick={()=>fileRef.current?.click()}>📷 {tr(lang,f.avatar_url?"Заменить фото":"Загрузить фото")}</Button>
+    </div>
+    <div className="formGrid">{I("position","Должность")}{I("phone","Рабочий телефон")}{I("telegram","Telegram (@ник или номер)")}{I("viber","Viber (номер)")}{I("whatsapp","WhatsApp (номер)")}</div>
+    <Button className="full" style={{marginTop:8}} disabled={busy} onClick={()=>save()}>{ok?"✓ "+tr(lang,"Сохранено"):tr(lang,"Сохранить контакты")}</Button>
+  </div>;
+}
+
 function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,users,currentProfile,onLogout,agencyName,onLeadsImported,onOpenLead}) {
   const isTech = role === "Администратор тех отдел";
   const [agencyBrand,setAgencyBrand] = useState(()=>loadAgencyBrand(currentProfile?.agency_id));
@@ -8243,6 +8605,7 @@ function More({role,setRole,setPage,theme,setTheme,lang,setLang,leads,setLeads,u
   };
 
   return <main className="screen">
+    <MyContactsCard currentProfile={currentProfile} lang={lang}/>
     <div className="card">
       <h3>{tr(lang,"Язык интерфейса")}</h3>
       <div className="grid3"><Button variant={lang==="ru"?"primary":"soft"} onClick={()=>{setLang("ru"); if(currentProfile?.id) supabase.from("users").update({language:"ru"}).eq("id", currentProfile.id);}}>Русский</Button><Button variant={lang==="uk"?"primary":"soft"} onClick={()=>{setLang("uk"); if(currentProfile?.id) supabase.from("users").update({language:"uk"}).eq("id", currentProfile.id);}}>Українська</Button><Button variant={lang==="en"?"primary":"soft"} onClick={()=>{setLang("en"); if(currentProfile?.id) supabase.from("users").update({language:"en"}).eq("id", currentProfile.id);}}>English</Button></div><p className="muted">Выбор сохраняется индивидуально. Полный перевод всех экранов включим следующим этапом, сейчас фиксируется язык пользователя.</p>
@@ -9146,6 +9509,7 @@ export default function App(){
 
   const [lead,setLead] = useState(null);
   const [property,setProperty] = useState(null);
+  const om = useObjectMatches(currentProfile); const [omList,setOmList] = useState(false);
 
   const profileName = currentProfile?.full_name || currentProfile?.name || "";
   const profileEmail = currentProfile?.email || session?.user?.email || "";
@@ -9552,7 +9916,7 @@ export default function App(){
       <main className="main">
         {page!=="home"&&<Top page={page} setPage={setPage} agencyName={agencyName} lang={lang} agencyId={currentProfile?.agency_id}/>}
         <HelpAlerts help={help} setHelp={setHelp} leads={leads} currentProfile={currentProfile} role={role} lang={lang} onOpenLead={setLead} setPage={setPage}/>
-        {page==="home"&&<Home leads={visibleLeads} events={visibleEvents} deals={deals} currentProfile={currentProfile} role={role} lang={lang} setPage={setPage} onOpenLead={setLead} agency={currentAgency} agencyName={agencyName} onAgencyLogo={url=>setAgencies(prev=>prev.map(a=>String(a.id)===String(currentProfile?.agency_id)?{...a,logo_url:url}:a))} theme={theme} setTheme={setTheme}/>}
+        {page==="home"&&<Home leads={visibleLeads} events={visibleEvents} deals={deals} currentProfile={currentProfile} role={role} lang={lang} setPage={setPage} onOpenLead={setLead} agency={currentAgency} agencyName={agencyName} onAgencyLogo={url=>setAgencies(prev=>prev.map(a=>String(a.id)===String(currentProfile?.agency_id)?{...a,logo_url:url}:a))} theme={theme} setTheme={setTheme} om={om} onOpenMatches={()=>setOmList(true)}/>}
         {page==="feed"&&<Feed posts={posts} setPosts={setPosts} role={role} currentProfile={currentProfile} lang={lang} users={users}/>} 
         {page==="clients"&&<Clients leads={visibleLeads} setLeads={setLeads} onOpen={setLead} currentProfile={currentProfile} role={role} users={users} lang={lang}/>} 
         {page==="calendar"&&<Calendar events={visibleEvents} setEvents={setEvents} leads={visibleLeads} setLeads={setLeads} onOpenLead={setLead} currentProfile={currentProfile} role={role} lang={lang} properties={properties} users={users}/>} 
@@ -9567,7 +9931,9 @@ export default function App(){
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
         {currentProfile?.email&&<FirstTouchWatcher currentProfile={currentProfile} leads={leads} onOpenLead={openLeadById} lang={lang}/>}
-        {lead&&<LeadModal key={lead.id} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang}/>} 
+        {currentProfile?.email&&!omList&&<ObjectMatchNotifier om={om} properties={properties} onOpenLead={openLeadById} onOpenProperty={setProperty} lang={lang}/>}
+        {omList&&<ObjectMatchList om={om} isAdmin={["Администратор директор","Администратор тех отдел"].includes(role)} lang={lang} properties={properties} onOpenLead={id=>{setOmList(false);openLeadById(id);}} onOpenProperty={p=>{setOmList(false);setProperty(p);}} onClose={()=>setOmList(false)}/>}
+        {lead&&<LeadModal key={lead.id} om={om} onOpenProperty={setProperty} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang}/>} 
         {property&&<PropertyModal property={property} setProperties={setProperties} onClose={()=>setProperty(null)} users={users} currentProfile={currentProfile} role={role} lang={lang} agencyName={agencyName} theme={theme} leads={visibleLeads} recordActivity={recordManagerActivity}/>}  
       </main>
     </div>
