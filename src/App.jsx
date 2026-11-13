@@ -3430,7 +3430,7 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
 .lcStages{display:flex;gap:3px;overflow-x:auto;scrollbar-width:none;padding:2px 0}.lcStages::-webkit-scrollbar{display:none}
 .lcStage{flex:1 0 auto;min-width:118px;min-height:44px;padding:0 16px 0 22px;border:0;cursor:pointer;font-weight:900;font-size:13px;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%)}
 .lcStage:first-child{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%);border-radius:10px 0 0 10px;padding-left:14px}
-.lcTabs{display:flex;overflow-x:auto;border-bottom:1px solid #27272a;scrollbar-width:none}.lcTabs::-webkit-scrollbar{display:none}
+.lcTabs{display:flex;flex-wrap:wrap;border-bottom:1px solid #27272a;scroll-margin-top:12px}.lcTabs::-webkit-scrollbar{display:none}
 @media (min-width:901px){.sheet:has(.lcWrap){max-width:min(1280px,96vw)!important;width:min(1280px,96vw)!important}}
 .lcTab{flex:0 0 auto;padding:12px 16px;background:none;border:0;border-bottom:3px solid transparent;color:#a1a1aa;font-weight:850;cursor:pointer}.lcTab.on{color:inherit;border-bottom-color:#F5C518}`}</style>
     {isAdminRole && (dupOf.length>0 || dupCopies.length>0 || dupPending.length>0) && <div className="card" style={{margin:"0 0 10px",display:"grid",gap:6}}>
@@ -3451,6 +3451,7 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
           <McBtn tone="dark" style={{background:"#16A34A", borderColor:"#16A34A", color:"#fff"}} onClick={()=>{ if(local.phone) window.location.href = `tel:${String(local.phone).replace(/[^\d+]/g,"")}`; }}>📞 {T("Позвонить")}</McBtn>
           <McBtn tone="purple" onClick={()=>setShowContact(true)}>💬 {T("Написать")}</McBtn>
           <McBtn tone="dark" style={{background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} onClick={()=>setShowMatch(true)}>📨 {T("Отправить презентацию")}</McBtn>
+          <McBtn tone="dark" style={{background:"#F5C518", borderColor:"#F5C518", color:"#0b0b0c"}} onClick={()=>{ setCtab("question"); setTimeout(()=>document.getElementById(`lc-acts-${local.id}`)?.scrollIntoView({behavior:"smooth", block:"start"}), 50); }}>❓ {T("Вопрос директору")}</McBtn>
           <button className="icon" onClick={onClose} aria-label={T("Закрыть")}>×</button>
         </div>
       </div>
@@ -3489,7 +3490,7 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
         {/* справа: дело / комментарий / звонок / показ + запланировано + история */}
         <main style={{display:"grid", gap:14, minWidth:0}}>
           <section style={box}>
-            <div className="lcTabs">{tabs.map(([k,t]) => <button key={k} className={cn("lcTab", ctab===k && "on")} onClick={()=>{ setCtab(k); if(eventTypes.includes(k)) setEvent({...event, type:k}); }}>{T(t)}</button>)}</div>
+            <div className="lcTabs" id={`lc-acts-${local.id}`}>{tabs.map(([k,t]) => <button key={k} className={cn("lcTab", ctab===k && "on")} onClick={()=>{ setCtab(k); if(eventTypes.includes(k)) setEvent({...event, type:k}); }}>{T(t)}</button>)}</div>
             <div style={{padding:12, display:"grid", gap:10}}>
               {ctab === "comment" && <>
                 <textarea className="input" rows={3} placeholder={T("Что сказал клиент, договорённости…")} value={workComment} onChange={e=>setWorkComment(e.target.value)}/>
