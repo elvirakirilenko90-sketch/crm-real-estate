@@ -3026,6 +3026,10 @@ function LeadPeek({x, lang="ru", om, onClose, onOpenFull, onCall, onTask, onStag
         <McBtn tone="indigo" onClick={onTask}>{T("Задача")}</McBtn>
       </div>
       <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
+        <McBtn tone="dark" style={{background:"#0D9488", borderColor:"#0D9488", color:"#fff"}} onClick={()=>onOpenFull("present")}>📨 {T("Отправить презентацию")}</McBtn>
+        <McBtn tone="dark" style={{background:"#F5C518", borderColor:"#F5C518", color:"#0b0b0c"}} onClick={()=>onOpenFull("question")}>❓ {T("Вопрос директору")}</McBtn>
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8}}>
         <div style={box(MC.blue.bg, MC.blue.ink)}><span style={{fontSize:12, display:"block"}}>{T("Бюджет")}</span><b style={{fontSize:18}}>{x.budgetText}</b></div>
         <div style={box(x.overdue?MC.red.bg:x.noAction?MC.sun.bg:MC.yellow.bg, x.overdue?MC.red.ink:x.noAction?MC.sun.ink:MC.yellow.ink)}><span style={{fontSize:12, display:"block"}}>{T("Следующее действие")}</span><b>{x.next ? lhDate(x.next, lang) : T("не запланировано")}</b></div>
       </div>
@@ -3326,8 +3330,10 @@ function LeadModal({lead,setLeads,setEvents,setHelp,help,onClose,role,users,curr
   // открыть сразу нужный блок (например, «Автоподбор» из раздела «Лиды»)
   useEffect(() => { if(lead?._openTab !== "automatch") return; const t = setTimeout(() => document.getElementById(`am-block-${Number(lead.id)}`)?.scrollIntoView({behavior:"smooth", block:"start"}), 600); return () => clearTimeout(t); }, [lead?.id]);
   const [local,setLocal] = useState(lead);
-  const [showMatch,setShowMatch] = useState(false);
-  const [showContact,setShowContact] = useState(false); const [ctab,setCtab] = useState("comment");
+  const [showMatch,setShowMatch] = useState(lead?._openTab === "present");
+  const [showContact,setShowContact] = useState(false); const [ctab,setCtab] = useState(lead?._openTab === "question" ? "question" : "comment");
+  // из быстрого просмотра «❓ Вопрос директору» — сразу к полю вопроса
+  useEffect(() => { if(lead?._openTab !== "question") return; const t = setTimeout(() => document.getElementById(`lc-acts-${lead.id}`)?.scrollIntoView({behavior:"smooth", block:"start"}), 400); return () => clearTimeout(t); }, [lead?.id]);
   // Связи «дубль ↔ исходный клиент» — только для администраторов (менеджеру таблица недоступна)
   const isAdminRole = role === "Администратор директор" || role === "Администратор тех отдел";
   const [dupLinks,setDupLinks] = useState([]);
