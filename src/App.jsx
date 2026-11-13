@@ -7887,6 +7887,353 @@ async function callLeadImport(body) {
   return data;
 }
 
+// ===== Загрузка лидов из таблицы Excel с настройкой колонок =====
+// Каждый менеджер сам говорит CRM, какая колонка его таблицы — какое поле CRM, как переводить значения
+// («ОЛХ Адриана» → источник «ОЛХ») и какой цвет строки — какой этап. Настройки хранятся в crm_user_views (scope lead_import).
+// .xlsx читаем сами (zip + XML): так видны цвета заливки ячеек. .xls — через SheetJS (без цветов), CSV/TXT — как текст.
+
+const LI_FIELDS = [
+  {id:"skip", label:"Не загружать"},
+  {id:"name", label:"Имя клиента"},
+  {id:"phone", label:"Телефон"},
+  {id:"source", label:"Источник"},
+  {id:"stage", label:"Этап воронки"},
+  {id:"lead_date", label:"Дата лида"},
+  {id:"next_contact_at", label:"Следующий контакт"},
+  {id:"manager", label:"Ответственный"},
+  {id:"notes", label:"В заметку"},
+];
+const LI_GUESS = [
+  [/^(№|n|no|#|п\/п|№ п\/п)$/i, "skip"],
+  [/имя|ім['’]я|фио|піб|клиент|клієнт|name/i, "name"],
+  [/телеф|номер|phone|тел\b|контакт клиента|ник/i, "phone"],
+  [/источ|джерел|тип лида|тип ліда|канал|откуда|звідки|source|площадк/i, "source"],
+  [/этап|етап|статус|воронк|stage|status/i, "stage"],
+  [/след|наступн|перезвон|передзвон|напомин|next/i, "next_contact_at"],
+  [/дата|date|когда|коли/i, "lead_date"],
+  [/менеджер|риэлтор|ріелтор|риелтор|агент|ответствен|відповідал/i, "manager"],
+];
+const LI_STAGE_RULES = [
+  [/^нов|новый лид|новий лід/i, "Новый Лид"],
+  [/отказ|відмов|не\s*актуал|неактуал|слил|не\s*интерес|у других|передумал/i, "Отказ"],
+  [/сделк|угод|продал|купил|закрыл|оформил|нотариус/i, "Сделка"],
+  [/задат|завдат|аванс|бронь|забронир/i, "Задаток"],
+  [/проведен[а-яёіїєґ]* встреч|был[аи]? на показ|показ (был|провел)|посмотрел/i, "Проведена встреча"],
+  [/встреч|показ|назначил|зустріч/i, "Назначена встреча"],
+  [/думает|дума[ею]т|подума|розмірков/i, "Думает"],
+  [/отлож|відклад|позже|пізніше/i, "Отложили"],
+  [/в работе|у роботі|работа|робота|подбира|подбор|підбір/i, "В работе"],
+  [/созвон|поговорил|на связи|первый контакт|перший контакт|контакт/i, "Первый контакт"],
+];
+// «20.11.2026», «20.11.26 14:30», «2026-11-20» → ISO (местное время); иначе текст как есть
+function liDateIso(text){
+  const t = String(text || "").trim(); let m;
+  if((m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2}))?/))) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 10), +(m[5] || 0)).toISOString();
+  if((m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\s+(\d{1,2})[:.](\d{2}))?/))){ let y = +m[3]; if(y < 100) y += 2000;
+    return new Date(y, +m[2] - 1, +m[1], +(m[4] || 10), +(m[5] || 0)).toISOString(); }
+  return t;
+}
+const liNorm = s => String(s ?? "").toLowerCase().replace(/ё/g,"е").replace(/\s+/g," ").trim();
+// Этап по тексту: точное название этапа или ключевые слова
+function liStageOf(text){
+  const t = liNorm(text); if(!t) return "";
+  const exact = stages.find(s => liNorm(s) === t); if(exact) return exact;
+  for(const [re, st] of LI_STAGE_RULES) if(re.test(t)) return st;
+  return "";
+}
+// Источник CRM по тексту: «ОЛХ Адриана» → «ОЛХ», «тик ток» → «Тик-Ток рабочий»
+function liSourceOf(text){
+  const t = liNorm(text); if(!t) return "";
+  const exact = sources.find(s => liNorm(s) === t); if(exact) return exact;
+  const personal = /личн|особ|мой|мій/.test(t);
+  if(/олх|olx/.test(t)) return "ОЛХ";
+  if(/тик|tik|тт\b/.test(t)) return personal ? "Тик-Ток личный" : "Тик-Ток рабочий";
+  if(/инст|інст|insta/.test(t)) return personal ? "Инстаграм личный" : "Инстаграм рабочий";
+  if(/фейс|face|\bfb\b|\bфб\b/.test(t)) return personal ? "Фейсбук личный" : "Фейсбук рабочий";
+  if(/телег|telegr|\bтг\b|\btg\b/.test(t)) return "Телеграмм-канал рабочий";
+  if(/повтор/.test(t)) return "Повторный клиент";
+  if(/рекоменд/.test(t)) return /клиент|клієнт/.test(t) ? "Рекомендации клиентов" : "Рекомендации";
+  if(/руковод|керівн/.test(t)) return "Лид руководство";
+  return "";
+}
+
+// --- минимальный читатель .xlsx: zip (DecompressionStream) + XML ---
+async function liUnzip(buf){
+  const dv = new DataView(buf); const u8 = new Uint8Array(buf); const files = {};
+  let eocd = -1; for(let i = u8.length - 22; i >= Math.max(0, u8.length - 70000); i--) if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  if(eocd < 0) throw new Error("Файл не похож на .xlsx");
+  const count = dv.getUint16(eocd + 10, true); let p = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder();
+  for(let k = 0; k < count; k++){
+    if(dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
+    files[name] = {method, csize, off};
+    p += 46 + nlen + xlen + clen;
+  }
+  const read = async (name) => { const f = files[name]; if(!f) return null;
+    const lnlen = dv.getUint16(f.off + 26, true), lxlen = dv.getUint16(f.off + 28, true); const start = f.off + 30 + lnlen + lxlen;
+    const data = u8.subarray(start, start + f.csize);
+    if(f.method === 0) return dec.decode(data);
+    const ds = new DecompressionStream("deflate-raw"); const out = await new Response(new Blob([data]).stream().pipeThrough(ds)).arrayBuffer();
+    return dec.decode(out); };
+  return {files, read};
+}
+const LI_INDEXED = ["000000","FFFFFF","FF0000","00FF00","0000FF","FFFF00","FF00FF","00FFFF","000000","FFFFFF","FF0000","00FF00","0000FF","FFFF00","FF00FF","00FFFF","800000","008000","000080","808000","800080","008080","C0C0C0","808080","9999FF","993366","FFFFCC","CCFFFF","660066","FF8080","0066CC","CCCCFF","000080","FF00FF","FFFF00","00FFFF","800080","800000","008080","0000FF","00CCFF","CCFFFF","CCFFCC","FFFF99","99CCFF","FF99CC","CC99FF","FFCC99","3366FF","33CCCC","99CC00","FFCC00","FF9900","FF6600","666699","969696","003366","339966","003300","333300","993300","993366","333399","333333"];
+function liTint(hex, tint){
+  if(!tint) return hex; const c = [0,2,4].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const r = c.map(v => Math.round(tint < 0 ? v * (1 + tint) : v + (255 - v) * tint));
+  return r.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+const LI_BUILTIN_DATE = new Set([14,15,16,17,18,19,20,21,22,27,28,29,30,31,32,33,34,35,36,45,46,47,50,51,52,53,54,55,56,57,58]);
+async function liReadXlsx(file){
+  const zip = await liUnzip(await file.arrayBuffer());
+  const P = new DOMParser(); const xml = async n => { const t = await zip.read(n); return t ? P.parseFromString(t, "application/xml") : null; };
+  const all = (doc, tag) => doc ? Array.from(doc.getElementsByTagName(tag)) : [];
+  // общие строки
+  const sst = (await xml("xl/sharedStrings.xml")); const shared = all(sst, "si").map(si => all(si, "t").map(t => t.textContent).join(""));
+  // тема → цвета
+  const theme = await xml("xl/theme/theme1.xml"); const themeColors = [];
+  const scheme = theme ? (theme.getElementsByTagName("a:clrScheme")[0] || theme.getElementsByTagNameNS("*","clrScheme")[0]) : null;
+  if(scheme){ const order = ["lt1","dk1","lt2","dk2","accent1","accent2","accent3","accent4","accent5","accent6","hlink","folHlink"];
+    const byName = {}; Array.from(scheme.children).forEach(el => { const n = el.localName; const c = el.children[0]; byName[n] = c ? (c.getAttribute("lastClr") || c.getAttribute("val") || "") : ""; });
+    order.forEach(n => themeColors.push((byName[n] || "").toUpperCase())); }
+  const colorOf = el => { if(!el) return ""; const rgb = el.getAttribute("rgb"); const tint = Number(el.getAttribute("tint") || 0);
+    if(rgb) return liTint(rgb.slice(-6).toUpperCase(), tint);
+    const th = el.getAttribute("theme"); if(th != null && themeColors[+th]) return liTint(themeColors[+th], tint);
+    const ix = el.getAttribute("indexed"); if(ix != null && LI_INDEXED[+ix]) return LI_INDEXED[+ix];
+    return ""; };
+  // стили: заливки и форматы чисел
+  const st = await xml("xl/styles.xml");
+  const fills = all(st, "fill").map(f => { const pf = f.getElementsByTagName("patternFill")[0]; if(!pf) return "";
+    const type = pf.getAttribute("patternType"); if(!type || type === "none" || type === "gray125") return "";
+    return colorOf(pf.getElementsByTagName("fgColor")[0]) || colorOf(pf.getElementsByTagName("bgColor")[0]); });
+  const customFmt = {}; all(st, "numFmt").forEach(n => { customFmt[n.getAttribute("numFmtId")] = n.getAttribute("formatCode") || ""; });
+  const xfsEl = st ? st.getElementsByTagName("cellXfs")[0] : null;
+  const xfs = xfsEl ? Array.from(xfsEl.getElementsByTagName("xf")).map(x => { const id = +(x.getAttribute("numFmtId") || 0);
+    const code = (customFmt[id] || "").replace(/"[^"]*"|\[[^\]]*\]|\\./g, "");
+    return {fill: fills[+(x.getAttribute("fillId") || 0)] || "", date: LI_BUILTIN_DATE.has(id) || (/[dy]/i.test(code) || /m{1,4}[^a-z]*[dy]|[dy][^a-z]*m/i.test(code))}; }) : [];
+  // листы
+  const wb = await xml("xl/workbook.xml"); const rels = await xml("xl/_rels/workbook.xml.rels");
+  const relMap = {}; all(rels, "Relationship").forEach(r => { relMap[r.getAttribute("Id")] = r.getAttribute("Target"); });
+  const sheets = [];
+  for(const sh of all(wb, "sheet")){
+    const rid = sh.getAttribute("r:id") || sh.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships","id");
+    let target = relMap[rid] || ""; target = target.startsWith("/") ? target.slice(1) : "xl/" + target.replace(/^\.\//,"");
+    const doc = await xml(target); if(!doc) continue;
+    const rows = [];
+    for(const r of all(doc, "row")){
+      const ri = +(r.getAttribute("r") || rows.length + 1) - 1; const cells = [];
+      for(const c of Array.from(r.getElementsByTagName("c"))){
+        const ref = c.getAttribute("r") || ""; const col = ref.replace(/\d+/g,"").split("").reduce((a,ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+        const t = c.getAttribute("t"); const xf = xfs[+(c.getAttribute("s") || 0)] || {};
+        const vEl = c.getElementsByTagName("v")[0]; let v = vEl ? vEl.textContent : ""; let text = "", date = "";
+        if(t === "s") text = shared[+v] ?? "";
+        else if(t === "inlineStr") text = all(c, "t").map(x => x.textContent).join("");
+        else if(t === "b") text = v === "1" ? "TRUE" : "FALSE";
+        else if(t === "str" || t === "e") text = v;
+        else if(v !== ""){ const n = Number(v);
+          if(xf.date && n > 0 && n < 2958466){ const d = new Date(Math.round((n - 25569) * 86400000)); date = d.toISOString().slice(0, 19); text = d.toISOString().slice(0,10).split("-").reverse().join("."); }
+          else text = Number.isInteger(n) ? String(n) : String(+n.toFixed(6)); }
+        if(col >= 0) cells[col] = {text: String(text).trim(), color: xf.fill || "", date};
+      }
+      rows[ri] = cells;
+    }
+    sheets.push({name: sh.getAttribute("name") || `Лист ${sheets.length + 1}`, rows: Array.from(rows, r => Array.from(r || [], c => c || {text:"", color:""}))});
+  }
+  return sheets;
+}
+function liReadCsv(text){
+  const lines = String(text || "").replace(/\r/g, "").split("\n");
+  const sample = lines.slice(0, 20).join("\n");
+  const delim = ["\t",";",","].map(d => [d, sample.split(d).length]).sort((a,b) => b[1] - a[1])[0][0];
+  const parse = line => { const out = []; let cur = "", q = false;
+    for(let i = 0; i < line.length; i++){ const ch = line[i];
+      if(q){ if(ch === '"' && line[i + 1] === '"'){ cur += '"'; i++; } else if(ch === '"') q = false; else cur += ch; }
+      else if(ch === '"') q = true; else if(ch === delim){ out.push(cur); cur = ""; } else cur += ch; }
+    out.push(cur); return out; };
+  return [{name:"Таблица", rows: lines.map(l => parse(l).map(t => ({text:t.trim(), color:""})))}];
+}
+async function liReadFile(file){
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  if(ext === "xlsx" || ext === "xlsm"){
+    try{ if(typeof DecompressionStream !== "undefined") return {sheets: await liReadXlsx(file), colors:true}; }catch(e){ console.warn("xlsx reader:", e); }
+  }
+  if(["xlsx","xlsm","xls"].includes(ext)){
+    const XLSX = await import(/* @vite-ignore */ "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+    const book = XLSX.read(await file.arrayBuffer(), {cellDates:true});
+    return {colors:false, sheets: book.SheetNames.map(n => ({name:n, rows: XLSX.utils.sheet_to_json(book.Sheets[n], {header:1, defval:"", raw:false}).map(r => r.map(t => ({text:String(t).trim(), color:""})))}))};
+  }
+  return {colors:false, sheets: liReadCsv(await file.text())};
+}
+// Строка заголовков: первая из 15 строк, где ≥2 ячейки и есть знакомые названия колонок
+function liGuessHeader(rows){
+  let best = -1, score = 0;
+  rows.slice(0, 15).forEach((r, i) => { const cells = (r || []).filter(c => c?.text); if(cells.length < 2) return;
+    const sc = cells.filter(c => LI_GUESS.some(([re]) => re.test(c.text)) && !/\d{6,}/.test(c.text)).length;
+    if(sc > score){ score = sc; best = i; } });
+  return best;
+}
+const liColKey = (header, i) => liNorm(header) || `#${i + 1}`;
+const liColor = c => c && !/^(FFFFFF|FFFFFFFF)$/i.test(c) ? c.toUpperCase() : "";
+const LI_DEFAULT = {map:{}, values:{}, rules:[], colors:{}, colorCol:"any", headerRow:null};
+
+function useLeadImportSettings(me){
+  const [s,setS] = useState(() => { try{ return {...LI_DEFAULT, ...JSON.parse(localStorage.getItem("li_settings") || "{}")}; }catch{ return LI_DEFAULT; } });
+  const tRef = useRef(null);
+  useEffect(() => { if(!me) return; supabase.from("crm_user_views").select("settings").eq("scope","lead_import").eq("name","__current__").maybeSingle()
+    .then(({data}) => { if(data?.settings){ const next = {...LI_DEFAULT, ...data.settings}; setS(next); try{ localStorage.setItem("li_settings", JSON.stringify(next)); }catch{} } }); }, [me]);
+  const update = useCallback(patch => setS(prev => { const next = {...prev, ...(typeof patch === "function" ? patch(prev) : patch)};
+    try{ localStorage.setItem("li_settings", JSON.stringify(next)); }catch{}
+    clearTimeout(tRef.current); tRef.current = setTimeout(() => { if(me) supabase.from("crm_user_views").upsert({user_email:me, scope:"lead_import", name:"__current__", settings:next, updated_at:new Date().toISOString()}, {onConflict:"user_email,scope,name"}).then(()=>{}); }, 600);
+    return next; }), [me]);
+  return [s, update];
+}
+
+function LeadImportTable({staffOptions, currentProfile, busy, onPreview}){
+  const [s, update] = useLeadImportSettings(currentProfile?.email || "");
+  const [book,setBook] = useState(null);   // {fileName, sheets, colors}
+  const [sheetIx,setSheetIx] = useState(0);
+  const [err,setErr] = useState("");
+  const [ruleDraft,setRuleDraft] = useState({field:"source", contains:"", value:""});
+  const managerNames = staffOptions.map(u => u.name || u.email);
+  const sheet = book?.sheets?.[sheetIx];
+  const rows = sheet?.rows || [];
+  const headerRow = s.headerRow != null && s.headerRow < rows.length ? s.headerRow : liGuessHeader(rows);
+  const width = Math.max(0, ...rows.slice(0, 200).map(r => r?.length || 0));
+  const headers = Array.from({length: width}, (_, i) => headerRow >= 0 ? (rows[headerRow]?.[i]?.text || "") : "");
+  const cols = headers.map((h, i) => { const key = liColKey(h, i); const guess = h ? (LI_GUESS.find(([re]) => re.test(h))?.[1] || "notes") : "notes";
+    return {i, key, header: h || `Колонка ${i + 1}`, field: s.map[key] || guess, saved: !!s.map[key]}; })
+    .filter(c => rows.some((r, ri) => ri > headerRow && r?.[c.i]?.text));
+  const fieldCol = f => cols.find(c => c.field === f);
+  // Расшифровка цветов: ячейка с названием этапа и заливкой (на любом листе)
+  const legend = useMemo(() => { const m = {}; (book?.sheets || []).forEach(sh => sh.rows.forEach(r => (r || []).forEach(c => {
+    const col = liColor(c?.color); if(!col || !c.text || c.text.length > 40) return; const st = liStageOf(c.text); if(st && !m[col]) m[col] = st; }))); return m; }, [book]);
+  const dataRows = rows.map((r, ri) => ({r, ri})).filter(({r, ri}) => ri > headerRow && r && (() => {
+    const nameC = fieldCol("name"), phoneC = fieldCol("phone");
+    const has = (nameC && r[nameC.i]?.text) || (phoneC && r[phoneC.i]?.text);
+    if(!has) return false;
+    // строка-подсказка из расшифровки: одна заполненная ячейка с названием этапа
+    // одна заполненная ячейка без телефона — заголовок или расшифровка («Расшифровка:», «Задаток»), не клиент
+    const filled = r.filter(c => c?.text); return !(filled.length === 1 && !(phoneC && r[phoneC.i]?.text));
+  })());
+  const rowColor = r => { if(s.colorCol !== "any"){ const c = cols.find(x => x.key === s.colorCol); return liColor(r[c ? c.i : -1]?.color); }
+    const counts = {}; (r || []).forEach(c => { const k = liColor(c?.color); if(k) counts[k] = (counts[k] || 0) + 1; });
+    return Object.entries(counts).sort((a,b) => b[1] - a[1])[0]?.[0] || ""; };
+  const colorStats = useMemo(() => { const m = {}; dataRows.forEach(({r}) => { const k = rowColor(r); if(k) m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a,b) => b[1] - a[1]); }, [book, sheetIx, headerRow, s.colorCol, s.map]);
+  const stageByColor = k => s.colors[k] || legend[k] || "";
+  // перевод значения: своё соответствие → правило «содержит» → автоматически
+  const mapValue = (field, raw) => { const n = liNorm(raw); if(!n) return "";
+    const own = s.values?.[field]?.[n]; if(own) return own;
+    const rule = (s.rules || []).find(x => x.field === field && x.contains && n.includes(liNorm(x.contains))); if(rule) return rule.value;
+    if(field === "source") return liSourceOf(raw) || raw;
+    if(field === "stage") return liStageOf(raw);
+    if(field === "manager"){ // «Русаков», «Эльвира» → полное имя сотрудника
+      const words = n.split(/[^a-zа-яіїєґ'’-]+/i).filter(w => w.length >= 3);
+      const hit = managerNames.find(m => liNorm(m).split(/\s+/).some(part => words.some(w => part === w || (part.length >= 4 && w.length >= 4 && part.slice(0, 5) === w.slice(0, 5)))));
+      return hit || raw; }
+    return raw; };
+  const distinct = f => { const c = fieldCol(f); if(!c) return []; const m = {}; dataRows.forEach(({r}) => { const t = r[c.i]?.text; if(t){ const n = liNorm(t); m[n] = m[n] || {raw:t, n, count:0}; m[n].count++; } });
+    return Object.values(m).sort((a,b) => b.count - a.count).slice(0, 40); };
+  const build = () => dataRows.map(({r, ri}) => {
+    const o = {row: ri + 1, notes: []}; let stageText = "";
+    cols.forEach(c => { const cell = r[c.i] || {}; const t = cell.text; if(!t) return;
+      if(c.field === "skip") return;
+      if(c.field === "notes"){ o.notes.push(`${c.header}: ${t}`); return; }
+      if(c.field === "lead_date"){ const iso = cell.date || liDateIso(t); o.lead_date = /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : t; return; }
+      if(c.field === "next_contact_at"){ const iso = cell.date ? liDateIso(cell.date) : liDateIso(t); if(/^\d{4}-/.test(iso)) o.next_contact_at = iso; else o.notes.push(`${c.header}: ${t}`); return; }
+      if(c.field === "source"){ o.source = mapValue("source", t); if(liNorm(o.source) !== liNorm(t)) o.notes.push(`${c.header}: ${t}`); return; }
+      if(c.field === "stage"){ stageText = t; const st = mapValue("stage", t); if(st) o.stage = st; return; }
+      if(c.field === "manager"){ o.manager = mapValue("manager", t); return; }
+      if(!o[c.field]) o[c.field] = t; else o.notes.push(`${c.header}: ${t}`); });
+    if(!o.stage){ const k = rowColor(r); const st = k && stageByColor(k); if(st) o.stage = st; }
+    if(!o.stage && stageText) o.stage_text = stageText;
+    o.notes = o.notes.join("\n");
+    return o; });
+
+  const open = async (file) => { if(!file) return; setErr(""); setBook(null);
+    try{ const res = await liReadFile(file); if(!res.sheets.length) throw new Error("В файле нет листов"); setBook({fileName:file.name, ...res}); setSheetIx(0); }
+    catch(e){ setErr(`Не удалось прочитать файл: ${e.message}`); } };
+  const setField = (key, field) => update(prev => ({map:{...prev.map, [key]: field}}));
+  const setValue = (field, n, value) => update(prev => ({values:{...prev.values, [field]:{...(prev.values?.[field] || {}), [n]: value}}}));
+  const swatch = k => <span style={{display:"inline-block", width:22, height:22, borderRadius:6, background:"#" + k, border:"1px solid #52525b", flex:"0 0 auto"}}/>;
+  const box = {display:"grid", gap:8, padding:12, borderRadius:16, border:"1.5px solid #F5C518", margin:"10px 0"};
+
+  return <div className="liTable">
+    <label className="btn soft full" style={{marginTop:10, textAlign:"center", cursor:"pointer"}}>
+      {book ? `📄 ${book.fileName} · выбрать другой файл` : "📄 Выбрать таблицу Excel (.xlsx) или CSV"}
+      <input type="file" accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv" style={{display:"none"}} onChange={e => { open(e.target.files?.[0]); e.target.value = ""; }}/>
+    </label>
+    <p className="muted">Ваши настройки колонок, значений и цветов сохраняются — в следующий раз CRM разложит такую же таблицу сама.</p>
+    {err && <p className="badge red" style={{whiteSpace:"normal"}}>{err}</p>}
+    {book && <>
+      <div className="grid2">
+        {book.sheets.length > 1 && <label>Лист<select className="input" value={sheetIx} onChange={e => setSheetIx(+e.target.value)}>{book.sheets.map((x, i) => <option key={i} value={i}>{x.name}</option>)}</select></label>}
+        <label>Строка с названиями колонок<select className="input" value={headerRow} onChange={e => update({headerRow: +e.target.value})}>
+          <option value={-1}>Нет названий</option>{rows.slice(0, 15).map((r, i) => <option key={i} value={i}>{`Строка ${i + 1}: ${(r || []).map(c => c?.text).filter(Boolean).slice(0, 3).join(" | ").slice(0, 40)}`}</option>)}</select></label>
+      </div>
+
+      <div style={box}>
+        <b>1. Какая колонка — какое поле CRM</b>
+        {cols.map(c => <div key={c.i} className="liCol" style={{display:"grid", gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)", gap:8, alignItems:"center"}}>
+          <span style={{minWidth:0}}><b style={{display:"block", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{c.header}</b>
+            <span className="muted" style={{fontSize:12, display:"block", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{dataRows.slice(0, 3).map(({r}) => r[c.i]?.text).filter(Boolean).join(" · ") || "—"}</span></span>
+          <select className="input" value={c.field} onChange={e => setField(c.key, e.target.value)}>{LI_FIELDS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
+        </div>)}
+        {!fieldCol("name") && !fieldCol("phone") && <p className="badge gold" style={{whiteSpace:"normal"}}>Укажите колонку с именем или телефоном клиента</p>}
+      </div>
+
+      {["source","stage","manager"].map(f => { const list = distinct(f); if(!list.length) return null;
+        const label = {source:"Источник", stage:"Этап", manager:"Ответственный"}[f];
+        const opts = f === "source" ? sources : f === "stage" ? stages : managerNames;
+        return <div key={f} style={box}>
+          <b>{`2. Значения колонки «${fieldCol(f).header}» = ${label} в CRM`}</b>
+          <span className="muted" style={{fontSize:13}}>CRM подставила похожие значения сама — поправьте, если нужно. Запоминается навсегда.</span>
+          {list.map(v => { const cur = mapValue(f, v.raw); const known = opts.includes(cur);
+            return <div key={v.n} style={{display:"grid", gridTemplateColumns:"minmax(0,1fr) auto minmax(0,1fr)", gap:8, alignItems:"center"}}>
+              <span style={{minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{v.raw} <span className="muted">×{v.count}</span></span><span>→</span>
+              <select className="input" value={known ? cur : ""} onChange={e => setValue(f, v.n, e.target.value)} style={{borderColor: known ? undefined : "#f59e0b"}}>
+                <option value="">{f === "stage" ? "— по цвету / Новый Лид —" : f === "source" ? `как есть: ${v.raw}` : `как в таблице: ${v.raw}`}</option>{opts.map(o => <option key={o} value={o}>{o}</option>)}</select>
+            </div>; })}
+        </div>; })}
+
+      <div style={box}>
+        <b>3. Правила «если в таблице есть слово — в CRM будет…»</b>
+        <span className="muted" style={{fontSize:13}}>Например: источник содержит «олх» → «ОЛХ» (подойдёт и «ОЛХ Адриана»).</span>
+        {(s.rules || []).map((x, i) => <div key={i} className="row" style={{gap:8}}><span style={{flex:1}}>{`${LI_FIELDS.find(f => f.id === x.field)?.label}: содержит «${x.contains}» → ${x.value}`}</span>
+          <button type="button" className="linkBtn" onClick={() => update(prev => ({rules: prev.rules.filter((_, j) => j !== i)}))}>Убрать</button></div>)}
+        <div className="grid2" style={{gap:8}}>
+          <select className="input" value={ruleDraft.field} onChange={e => setRuleDraft({...ruleDraft, field:e.target.value, value:""})}>{[["source","Источник"],["stage","Этап"],["manager","Ответственный"]].map(([k,l]) => <option key={k} value={k}>{l}</option>)}</select>
+          <input className="input" value={ruleDraft.contains} onChange={e => setRuleDraft({...ruleDraft, contains:e.target.value})} placeholder="слово в таблице, напр. олх"/>
+          <select className="input" value={ruleDraft.value} onChange={e => setRuleDraft({...ruleDraft, value:e.target.value})}><option value="">значение в CRM…</option>
+            {(ruleDraft.field === "source" ? sources : ruleDraft.field === "stage" ? stages : managerNames).map(o => <option key={o} value={o}>{o}</option>)}</select>
+          <Button variant="soft" disabled={!ruleDraft.contains.trim() || !ruleDraft.value} onClick={() => { update(prev => ({rules:[...(prev.rules || []), {...ruleDraft, contains:ruleDraft.contains.trim()}]})); setRuleDraft({...ruleDraft, contains:"", value:""}); }}>＋ Добавить правило</Button>
+        </div>
+      </div>
+
+      <div style={box}>
+        <b>4. Цвета строк = этапы воронки</b>
+        {!book.colors && <span className="muted" style={{fontSize:13}}>В этом формате файла цветов нет. Сохраните таблицу как .xlsx — CRM увидит заливку строк.</span>}
+        {book.colors && !colorStats.length && <span className="muted" style={{fontSize:13}}>В строках клиентов нет цветной заливки.</span>}
+        {colorStats.length > 0 && <>
+          {Object.keys(legend).length > 0 && <span className="badge green" style={{whiteSpace:"normal"}}>{`Найдена расшифровка цветов в таблице: ${Object.entries(legend).map(([,st]) => st).join(", ")}`}</span>}
+          <label>Цвет брать из<select className="input" value={s.colorCol} onChange={e => update({colorCol:e.target.value})}><option value="any">любой ячейки строки</option>{cols.map(c => <option key={c.key} value={c.key}>{`колонки «${c.header}»`}</option>)}</select></label>
+          {colorStats.map(([k, n]) => <div key={k} style={{display:"grid", gridTemplateColumns:"auto minmax(0,1fr) minmax(0,1.4fr)", gap:8, alignItems:"center"}}>
+            {swatch(k)}<span>{`строк: ${n}`}{!s.colors[k] && legend[k] ? " · из расшифровки" : ""}</span>
+            <select className="input" value={stageByColor(k)} onChange={e => update(prev => ({colors:{...prev.colors, [k]: e.target.value}}))}><option value="">не учитывать цвет</option>{stages.map(o => <option key={o} value={o}>{o}</option>)}</select>
+          </div>)}
+        </>}
+      </div>
+
+      <div className="row" style={{gap:8, flexWrap:"wrap"}}>
+        <span className="muted">{`Клиентов в таблице: ${dataRows.length}`}</span>
+        <button type="button" className="linkBtn" onClick={() => { if(window.confirm("Сбросить все ваши настройки загрузки таблиц?")) update({...LI_DEFAULT}); }}>Сбросить настройки</button>
+      </div>
+      <Button className="full" disabled={!!busy || !dataRows.length || (!fieldCol("name") && !fieldCol("phone"))} onClick={() => onPreview(build())}>{busy || `Проверить ${dataRows.length} клиентов`}</Button>
+    </>}
+  </div>;
+}
+
 // Загрузка лидов: список (вставка или Excel/CSV) и скриншоты переписки. Сначала предпросмотр, потом сохранение.
 // Все загруженные клиенты попадают менеджерам этапом «Новый Лид». Старые карточки не меняются.
 // Дубли видит только администратор: может пропустить или всё равно отдать в работу. Дубль от менеджера уходит админу на решение.
@@ -7921,7 +8268,7 @@ function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}
   const showResult = (data) => {
     setRowStaff(data.staff || []);
     // дубль по умолчанию не сохраняем — администратор решает сам
-    setRows((data.leads || []).map((l, i) => ({...l, lead_date: l.lead_date || "", key: Date.now() + "-" + i, include: !!(l.name || l.phone) && !l.duplicate_of})));
+    setRows((data.leads || []).map((l, i) => ({...l, lead_date: l.lead_date || "", key: Date.now() + "-" + i, include: !!(l.name || l.phone) && !l.duplicate_of, keep_stage: !!data._fromTable})));
     if (!data.leads?.length) setMessage({type: "red", text: "Не удалось найти клиентов. Проверьте текст или скриншот."});
   };
 
@@ -7948,6 +8295,13 @@ function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}
   const checkList = () => run("Проверяем список…", async () => {
     if (!text.trim()) throw new Error("Вставьте список или выберите файл.");
     showResult(await callLeadImport({mode: "preview", text, source, manager_email: managerEmail}));
+  });
+
+  // Таблица с настроенными колонками: строки уже разложены по полям, сервер проверяет телефоны, дубли и ответственных
+  const previewTable = (tableRows) => run("Проверяем таблицу…", async () => {
+    if (!tableRows.length) throw new Error("В таблице не найдено клиентов.");
+    const data = await callLeadImport({mode: "preview", rows: tableRows, source, manager_email: managerEmail});
+    showResult({...data, _fromTable: true});
   });
 
   const recognize = () => run("Читаем переписку…", async () => {
@@ -7980,7 +8334,7 @@ function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}
 
   return <div className="card">
     <h3>Загрузка лидов</h3>
-    <p className="muted">Список из заметок, Excel или скриншот переписки — CRM найдёт имя, телефон и запрос клиента. Все клиенты попадают менеджерам этапом «Новый Лид», перед сохранением всё можно проверить и исправить.</p>
+    <p className="muted">Список из заметок, Excel или скриншот переписки — CRM найдёт имя, телефон и запрос клиента. Из списка и скриншота клиенты попадают этапом «Новый Лид»; из «Таблицы Excel» — на этап по колонке «Этап» или по цвету строки. Перед сохранением всё можно проверить и исправить.</p>
 
     {isAdmin && pendingDups.length > 0 && <div className="card" style={{margin: "10px 0", display: "grid", gap: 10}}>
       <b>{`Дубли на проверке: ${pendingDups.length}`}</b>
@@ -8002,6 +8356,7 @@ function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}
     <div className="chips" style={{margin: "10px 0"}}>
       <button type="button" className={cn("chip", tab === "list" && "active")} onClick={() => { setTab("list"); setRows([]); setMessage(null); }}>Список / Excel</button>
       <button type="button" className={cn("chip", tab === "screenshot" && "active")} onClick={() => { setTab("screenshot"); setRows([]); setMessage(null); }}>Скриншот переписки</button>
+      <button type="button" className={cn("chip", tab === "table" && "active")} onClick={() => { setTab("table"); setRows([]); setMessage(null); }}>Таблица Excel · мои колонки</button>
     </div>
 
     <div className="grid2">
@@ -8029,6 +8384,8 @@ function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}
       <textarea className="input" style={{minHeight: 80}} placeholder="Или вставьте текст переписки" value={chatText} onChange={e => setChatText(e.target.value)}/>
       <Button className="full" disabled={!!busy} onClick={recognize}>{busy || "Распознать клиента"}</Button>
     </>}
+
+    {tab === "table" && <LeadImportTable staffOptions={staffOptions} currentProfile={currentProfile} busy={busy} onPreview={previewTable}/>}
 
     {tab === "list" && <>
       <label className="btn soft full" style={{marginTop: 10, textAlign: "center", cursor: "pointer"}}>
@@ -8060,7 +8417,9 @@ function LeadImport({role, users, currentProfile, leads, onImported, onOpenLead}
           <input className="input" list="lead-import-sources" placeholder="Источник" value={r.source || ""} onChange={e => update(r.key, {source: e.target.value})}/>
           <label>Дата лида<input className="input" type="date" value={r.lead_date || ""} onChange={e => update(r.key, {lead_date: e.target.value})}/></label>
           {isAdmin && staffOptions.length > 0 && <label>Ответственный<select className="input" value={r.manager_email || managerEmail} onChange={e => update(r.key, {manager_email: e.target.value})}>{staffOptions.map(u => <option key={u.email} value={u.email}>{u.name || u.email}</option>)}</select></label>}
-          <p className="muted" style={{alignSelf: "center", margin: 0}}>Этап: Новый Лид</p>
+          {r.keep_stage ? <label>Этап<select className="input" value={r.stage || "Новый Лид"} onChange={e => update(r.key, {stage: e.target.value})}>{stages.map(st => <option key={st} value={st}>{st}</option>)}</select></label>
+            : <p className="muted" style={{alignSelf: "center", margin: 0}}>Этап: Новый Лид</p>}
+          {r.next_contact_at && <p className="muted" style={{alignSelf: "center", margin: 0}}>{`Следующий контакт: ${new Date(r.next_contact_at).toLocaleString("ru-RU", {day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"})}`}</p>}
         </div>
         <textarea className="input" style={{minHeight: 60}} placeholder="Заметка" value={r.notes || ""} onChange={e => update(r.key, {notes: e.target.value})}/>
         {r.warnings?.length > 0 && <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
