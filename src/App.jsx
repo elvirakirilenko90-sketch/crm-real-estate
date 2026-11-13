@@ -1840,7 +1840,9 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
   // текст объявления можно поправить только для этой подборки (карточка объекта и объявление не меняются)
   const [list,setList] = useState(() => items.map((it,i) => { const pp = it.own && it.property_id ? properties.find(p => String(p.id) === String(it.property_id)) : null;
     const desc = pubClean(it.description || it.extra || (pp ? (lang === "uk" && pp.description_uk ? pp.description_uk : pp.description) : "") || "");
-    return {...it, _k:i, comment:it.comment || "", editTitle:pubClean(it.title || pp?.title || ""), editDesc:desc, _origTitle:pubClean(it.title || pp?.title || ""), _origDesc:desc, _edit:false}; }));
+    return {...it, _k:i, comment:it.comment || "", editTitle:pubClean(it.title || pp?.title || ""), editDesc:desc, _origTitle:pubClean(it.title || pp?.title || ""), _origDesc:desc, _edit:false,
+      // только для команды: телефон продавца/риэлтора и заметка — пишутся в историю клиента, клиенту не уходят
+      _phone: amNormPhone(it.contact_phone) || amContactPhone(it) || (pp?.ownerPhone || ""), _contact: it.contact_name || (pp?.owner || ""), _note:""}; }));
   const [preview,setPreview] = useState(false);
   const upd = (k, patch) => setList(l => l.map(x => x._k === k ? {...x, ...patch} : x));
   const [title,setTitle] = useState(`${T("Подборка для")} ${String(lead.name||"").split(" ")[0] || T("клиента")}`);
@@ -1859,6 +1861,15 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
     setBusy(""); if(error) return alert(error.message);
     const {data:sel} = await supabase.from("client_selections").select("*").eq("id", data.id).maybeSingle();
     setDone({...data, sel}); onDone?.();
+    // история клиента: что отправили, откуда, кому звонили (ссылки на объявления и телефоны — только для команды)
+    const lines = list.map((it, i) => { const pp = it.own && it.property_id ? properties.find(p => String(p.id) === String(it.property_id)) : null;
+      const head = [it.editTitle || it.title, it.rooms && `${it.rooms}к`, it.area && `${it.area} м²`, it.price && amMoney(it.price, it.currency || "USD")].filter(Boolean).join(", ");
+      return [`${i + 1}. ${head}`,
+        it.own ? `   Объект CRM №${it.property_id}${pp?.title ? ` «${pp.title}»` : ""}` : `   Источник: ${amSourceName(it) || "—"}`,
+        (it._phone || it._contact) && `   Контакт: ${[it._contact, it._phone].filter(Boolean).join(" ")}`,
+        it.source_url && `   ${it.source_url}`,
+        it._note && `   Заметка: ${it._note}`].filter(Boolean).join("\n"); });
+    addLeadHistory({id:leadDbId}, "selection", [`Создана подборка «${title}» · ${T("объектов")}: ${list.length}`, ...lines, data?.token ? `Ссылка для клиента: ${amSelectionLink(data.token)}` : ""].filter(Boolean).join("\n"), currentProfile);
   };
   const link = done?.token ? amSelectionLink(done.token) : "";
   const send = async via => {
@@ -1867,6 +1878,7 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
     const urls = {viber:`viber://forward?text=${encodeURIComponent(text)}`, telegram:`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(title)}`, whatsapp:`https://wa.me/${digits}?text=${encodeURIComponent(text)}`};
     if(via === "copy"){ try{ await navigator.clipboard.writeText(link); alert(T("Ссылка скопирована")); }catch{} } else window.open(urls[via], "_blank");
     supabase.rpc("client_selection_mark_sent",{p_selection:done.id, p_via:via}).then(()=>{});
+    addLeadHistory({id:leadDbId}, "event", `${T("Подборка")} «${title}» ${via === "copy" ? T("— ссылка скопирована") : `${T("отправлена в")} ${({viber:"Viber", telegram:"Telegram", whatsapp:"WhatsApp"})[via] || via}`}`, currentProfile);
   };
   const pdf = async () => {
     if(busy) return; setBusy("pdf");
@@ -1906,6 +1918,15 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
             <button type="button" style={{background:"none", border:0, color:"#F5C518", fontWeight:800, cursor:"pointer"}} onClick={()=>upd(it._k, {editTitle:it._origTitle, editDesc:it._origDesc})}>↺ {T("Вернуть исходный текст")}</button>
           </div></div>}
         <input className="input" value={it.comment} onChange={e=>setList(l=>l.map(x=>x._k===it._k?{...x, comment:e.target.value}:x))} placeholder={T("Комментарий к объекту для клиента (необязательно)")}/>
+        <div style={{display:"grid", gap:6, padding:10, borderRadius:12, border:"1.5px dashed #0D9488", background:"rgba(13,148,136,.08)"}}>
+          <span style={{fontSize:12, fontWeight:800, color:"#5eead4"}}>🔒 {T("Только для вас — сохранится в истории клиента, клиент не увидит")}</span>
+          {!it.own && it.source_url && <a href={it.source_url} target="_blank" rel="noreferrer" style={{fontSize:13, color:"#60a5fa", wordBreak:"break-all"}}>{amSourceName(it) || T("Объявление")} ↗</a>}
+          <div className="grid2" style={{gap:6}}>
+            <input className="input" value={it._contact} onChange={e=>upd(it._k, {_contact:e.target.value})} placeholder={T("Кому звонили (имя)")}/>
+            <input className="input" inputMode="tel" value={it._phone} onChange={e=>upd(it._k, {_phone:e.target.value})} placeholder={T("Телефон продавца / риэлтора")}/>
+          </div>
+          <input className="input" value={it._note} onChange={e=>upd(it._k, {_note:e.target.value})} placeholder={T("Заметка для себя: о чём договорились, комиссия…")}/>
+        </div>
       </div>)}</div>
       <div style={{display:"flex", gap:12, flexWrap:"wrap", marginBottom:12}}>
         <label style={{display:"flex", gap:8, alignItems:"center"}}><input type="checkbox" checked={showName} onChange={e=>setShowName(e.target.checked)} style={{width:20, height:20}}/>{T("Показать имя клиента")}</label>
@@ -7283,10 +7304,11 @@ function MarketAnalyticsV2({leads,properties,currentProfile,onOpenProperty,agenc
 
   const sendToClient=()=>{ if(!onSendToClient) return;
     const items=combinedListings.filter(x=>selected.includes(String(x._key))).map(x=>{ const c=crmMatch(x);
-      if(c) return {own:true, property_id:c.id, title:c.title, price:c.price, currency:c.currency, city:c.city, district:c.district, complex_name:c.complex_name, area:c.area, rooms:c.rooms, floor:c.floor, total_floors:c.total_floors, description:c.description};
+      if(c) return {own:true, property_id:c.id, title:c.title, price:c.price, currency:c.currency, city:c.city, district:c.district, complex_name:c.complex_name, area:c.area, rooms:c.rooms, floor:c.floor, total_floors:c.total_floors, description:c.description, source_url:x.source_url, source_name:x.source_name, contact_phone:contactPhone(x)};
       const photos=Array.isArray(x.photo_urls)?x.photo_urls.filter(Boolean):[];
       return {title:x.title||x.complex_name, price:x.price, currency:x.currency||"USD", city:x.city, district:x.district, complex_name:x.complex_name, area:x.area, rooms:x.rooms, floor:x.floor, total_floors:x.total_floors||x.raw_data?.total_floors,
-        condition:x.condition, description:x.description, photo_urls:photos, main_photo_url:x.main_photo_url||photos[0]||"", source_url:x.source_url}; });
+        condition:x.condition, description:x.description, photo_urls:photos, main_photo_url:x.main_photo_url||photos[0]||"", source_url:x.source_url,
+        source_name:x.source_name, contact_phone:contactPhone(x), contact_name:x.owner_name||x.raw_data?.contact_name||x.raw_data?.user_name||""}; });
     onSendToClient(items); };
   return <main className="screen">
     {onSendToClient&&selected.length>0&&<div style={{position:"fixed",left:"max(12px,env(safe-area-inset-left))",right:"max(12px,env(safe-area-inset-right))",bottom:"calc(16px + env(safe-area-inset-bottom))",zIndex:3100,display:"flex",justifyContent:"center",pointerEvents:"none"}}>
@@ -7579,7 +7601,29 @@ function useLeadHistory(leadId){
 }
 // У каждого нового комментария — свой цвет
 const LH_COLORS = ["#3b82f6","#a855f7","#14b8a6","#f97316","#ec4899","#22c55e","#06b6d4","#e11d48","#8b5cf6","#0ea5e9"];
-const LH_KIND = {comment:{icon:"💬", label:"Комментарий"}, question:{icon:"❓", label:"Вопрос директору"}, reply:{icon:"⭐", label:"ОТВЕТ ДИРЕКТОРА"}, stage:{icon:"➜", label:"Этап"}, event:{icon:"📅", label:"Событие"}, system:{icon:"•", label:""}};
+// Телефон продавца/риэлтора из объявления (для истории клиента; клиенту не показывается)
+const amNormPhone = v => { const t = String(v || "").trim(); const d = t.replace(/\D/g, "");
+  if(d.length === 9) return "+380" + d; if(d.length === 10 && d.startsWith("0")) return "+38" + d; if(d.length === 12 && d.startsWith("380")) return "+" + d; return t; };
+function amContactPhone(x){ return amNormPhone(amContactPhoneRaw(x)); }
+function amContactPhoneRaw(x){
+  if(!x) return "";
+  const raw = x.raw_data || {};
+  const direct = [x.contact_phone, x.phone, x.owner_phone, x.ownerPhone, x.realtor_phone, x.agent_phone, raw.phone, raw.contact_phone, raw.telephone, raw.mobile].find(v => v && /\d{6,}/.test(String(v).replace(/\D/g,"")));
+  if(direct) return String(direct).trim();
+  const seen = new Set(); const walk = (o, depth) => { if(!o || depth > 4 || typeof o !== "object" || seen.has(o)) return ""; seen.add(o);
+    for(const [k,v] of Object.entries(o)){ if(/phone|tel|mobile/i.test(k) && v && typeof v !== "object" && String(v).replace(/\D/g,"").length >= 9) return String(v).trim();
+      if(v && typeof v === "object"){ const r = walk(v, depth + 1); if(r) return r; } } return ""; };
+  const deep = walk(raw, 0); if(deep) return deep;
+  const m = String(x.description || "").match(/(?:\+?38\s?)?\(?0\d{2}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/); return m ? m[0].trim() : "";
+}
+const amSourceName = it => it?.source_name || it?.source || (() => { try{ return new URL(it?.source_url || it?.link || "").hostname.replace(/^www\./,""); }catch{ return ""; } })();
+// Ссылки и телефоны в истории клиента — нажимаются
+function lhLinkify(text){
+  const parts = String(text || "").split(/(https?:\/\/[^\s]+|\+?\d[\d\s()-]{8,}\d)/g);
+  return parts.map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer" style={{color:"#60a5fa", wordBreak:"break-all"}}>{p}</a>
+    : /^\+?\d[\d\s()-]{8,}\d$/.test(p) && p.replace(/\D/g,"").length >= 9 ? <a key={i} href={`tel:${p.replace(/[^\d+]/g,"")}`} style={{color:"#4ade80", fontWeight:800}}>{p}</a> : p);
+}
+const LH_KIND = {selection:{icon:"📨", label:"Подборка · видит только команда"}, comment:{icon:"💬", label:"Комментарий"}, question:{icon:"❓", label:"Вопрос директору"}, reply:{icon:"⭐", label:"ОТВЕТ ДИРЕКТОРА"}, stage:{icon:"➜", label:"Этап"}, event:{icon:"📅", label:"Событие"}, system:{icon:"•", label:""}};
 function LeadHistoryList({rows, legacy = [], lang, limit}){
   const fmt = (v) => { try { return new Date(v).toLocaleString(lang === "en" ? "en-GB" : lang === "uk" ? "uk-UA" : "ru-RU", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"}); } catch { return ""; } };
   let ci = 0;
@@ -7596,9 +7640,9 @@ function LeadHistoryList({rows, legacy = [], lang, limit}){
         <small>{r.author_name || tr(lang,"Директор")} · {fmt(r.created_at)}</small>
       </div>;
       if(r.kind === "system" || r.kind === "stage" || r.kind === "event") return <div key={r.id} className={cn("lhItem lhSys", "lh-" + r.kind)}><span>{k.icon}</span><span>{r.text}</span><small>{r.author_name ? r.author_name + " · " : ""}{fmt(r.created_at)}</small></div>;
-      return <div key={r.id} className={cn("lhItem", r.kind === "question" ? "lhQuestion" : "lhComment")} style={r.color ? {"--lh":r.color} : undefined}>
+      return <div key={r.id} className={cn("lhItem", r.kind === "question" ? "lhQuestion" : "lhComment")} style={r.kind === "selection" ? {"--lh":"#0D9488"} : r.color ? {"--lh":r.color} : undefined}>
         <div className="lhHead"><b>{k.icon} {tr(lang,k.label)}</b><small>{r.author_name || ""} · {fmt(r.created_at)}</small></div>
-        <div className="lhText">{r.text}</div>
+        <div className="lhText">{lhLinkify(r.text)}</div>
       </div>; })}
     {old.slice().reverse().map((h,i) => <div key={"old" + i} className="lhItem lhSys"><span>•</span><span>{h}</span></div>)}
   </div>;
