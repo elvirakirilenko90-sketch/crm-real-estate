@@ -1850,10 +1850,11 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
   const [busy,setBusy] = useState(""); const [done,setDone] = useState(null); const idem = useRef(null);
   const move = (i,d) => setList(l => { const a = [...l], j = i + d; if(j < 0 || j >= a.length) return l; [a[i],a[j]] = [a[j],a[i]]; return a; });
   const edits = it => ({...(it.editTitle.trim() && it.editTitle !== it._origTitle ? {title:it.editTitle.trim()} : {}), ...(it.editDesc !== it._origDesc ? {description:it.editDesc} : {})});
-  const toItem = it => it.own && it.property_id ? {source:"crm", property_id:it.property_id, manager_comment:it.comment, data:edits(it)}
+  const internal = it => ({name:it._contact || null, phone:it._phone || null, note:it._note || null, source_name:it.own ? null : (amSourceName(it) || null)});
+  const toItem = it => it.own && it.property_id ? {source:"crm", property_id:it.property_id, manager_comment:it.comment, data:edits(it), internal:internal(it)}
     : {source:"analytics", dedupe_key: it.source_url ? `url:${String(it.source_url).toLowerCase().replace(/[?#].*$/,"")}` : `nb:${it.title}:${it.rooms}:${it.area}:${it.floor}:${it.price}`, manager_comment:it.comment, check_status:"ok", checked_at:new Date().toISOString(),
        data:{title:it.editTitle.trim() || it.title, price:it.price, currency:it.currency||"USD", city:it.city, district:it.nb?null:it.district, complex_name:it.nb?it.title:it.complex_name, area:it.area, rooms:it.rooms, floor:it.floor, total_floors:it.total_floors,
-         description:it.editDesc, photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url}};
+         description:it.editDesc, photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url}, internal:internal(it)};
   const create = async () => {
     if(busy || !list.length) return; setBusy("create");
     if(!idem.current) idem.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -1861,15 +1862,7 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
     setBusy(""); if(error) return alert(error.message);
     const {data:sel} = await supabase.from("client_selections").select("*").eq("id", data.id).maybeSingle();
     setDone({...data, sel}); onDone?.();
-    // история клиента: что отправили, откуда, кому звонили (ссылки на объявления и телефоны — только для команды)
-    const lines = list.map((it, i) => { const pp = it.own && it.property_id ? properties.find(p => String(p.id) === String(it.property_id)) : null;
-      const head = [it.editTitle || it.title, it.rooms && `${it.rooms}к`, it.area && `${it.area} м²`, it.price && amMoney(it.price, it.currency || "USD")].filter(Boolean).join(", ");
-      return [`${i + 1}. ${head}`,
-        it.own ? `   Объект CRM №${it.property_id}${pp?.title ? ` «${pp.title}»` : ""}` : `   Источник: ${amSourceName(it) || "—"}`,
-        (it._phone || it._contact) && `   Контакт: ${[it._contact, it._phone].filter(Boolean).join(" ")}`,
-        it.source_url && `   ${it.source_url}`,
-        it._note && `   Заметка: ${it._note}`].filter(Boolean).join("\n"); });
-    addLeadHistory({id:leadDbId}, "selection", [`Создана подборка «${title}» · ${T("объектов")}: ${list.length}`, ...lines, data?.token ? `Ссылка для клиента: ${amSelectionLink(data.token)}` : ""].filter(Boolean).join("\n"), currentProfile);
+    // историю клиента со ссылками и контактами пишет сервер (client_selection_create) — для любого способа создания подборки
   };
   const link = done?.token ? amSelectionLink(done.token) : "";
   const send = async via => {
@@ -2454,6 +2447,38 @@ function omSound(){
 
 // Ярко-салатовая карточка «Появился новый вариант» (назначенному менеджеру). Один сигнал на новый вариант, без бесконечного повтора.
 // Карточка остаётся, пока менеджер не примет решение или не скроет её до следующего напоминания.
+// Оповещение: клиент ответил в подборке («Интересует» / «Не подходит» / комментарий). Источник — lead_history (kind client_reaction):
+// новые записи приходят сразу (realtime), пропущенные пока CRM была закрыта — показываются при входе.
+function ClientReactionNotifier({me, onOpenLead, lang="ru"}){
+  const [list,setList] = useState([]); const key = `crn_seen_${me || ""}`;
+  const seen = () => { try{ return localStorage.getItem(key) || new Date(Date.now() - 3*86400000).toISOString(); }catch{ return new Date(Date.now() - 3*86400000).toISOString(); } };
+  const markSeen = () => { try{ localStorage.setItem(key, new Date().toISOString()); }catch{} };
+  useEffect(() => { if(!me) return; let off = false;
+    supabase.from("lead_history").select("id,lead_id,text,created_at").eq("kind","client_reaction").gt("created_at", seen()).order("created_at",{ascending:false}).limit(20)
+      .then(({data}) => { if(!off && data?.length){ setList(data); if(data.some(r => /ИНТЕРЕСУЕТ/.test(r.text))) omSound(); } });
+    const ch = supabase.channel(`client-reactions-${Math.random().toString(36).slice(2,8)}`)
+      .on("postgres_changes", {event:"INSERT", schema:"public", table:"lead_history", filter:"kind=eq.client_reaction"}, p => {
+        setList(prev => prev.some(r => r.id === p.new?.id) ? prev : [p.new, ...prev]); if(/ИНТЕРЕСУЕТ/.test(p.new?.text || "")) omSound(); })
+      .subscribe();
+    return () => { off = true; try{ supabase.removeChannel(ch); }catch{} };
+  }, [me]); // eslint-disable-line
+  if(!list.length) return null;
+  const r = list[0]; const yes = /ИНТЕРЕСУЕТ/.test(r.text); const [head, ...rest] = String(r.text || "").split("\n");
+  const close = () => { setList([]); markSeen(); };
+  return <div role="alert" style={{position:"fixed", left:"max(8px, env(safe-area-inset-left))", right:"max(8px, env(safe-area-inset-right))", top:"calc(10px + env(safe-area-inset-top))", zIndex:10000, display:"flex", justifyContent:"center", pointerEvents:"none"}}>
+    <div style={{pointerEvents:"auto", width:"min(560px,100%)", borderRadius:20, overflow:"hidden", background:"#fff", color:"#111827", border:`3px solid ${yes ? "#65A30D" : "#F5C518"}`, boxShadow:"0 18px 50px rgba(0,0,0,.4)"}}>
+      <div style={{background: yes ? "#A3E635" : "#FEF9C3", color: yes ? "#1a2e05" : "#713f12", padding:"10px 14px", display:"flex", gap:8, alignItems:"center"}}>
+        <b style={{flex:1, fontSize:16}}>🔔 {yes ? tr(lang,"Клиент выбрал подходящий объект!") : tr(lang,"Клиент ответил по подборке")}{list.length > 1 ? ` · +${list.length - 1}` : ""}</b>
+        <button type="button" onClick={close} aria-label={tr(lang,"Закрыть")} style={{background:"rgba(255,255,255,.7)", border:0, borderRadius:12, minWidth:36, minHeight:34, fontWeight:900, cursor:"pointer"}}>×</button></div>
+      <div style={{padding:12, display:"grid", gap:6}}>
+        <b style={{fontSize:16}}>{head}</b>
+        {rest.filter(Boolean).slice(0, 4).map((t, i) => <span key={i} style={{fontSize:14, wordBreak:"break-word"}}>{lhLinkify(t, {link:"#1d4ed8", phone:"#15803d"})}</span>)}
+        <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:4}}>
+          <McBtn tone="dark" style={{background:"#16a34a", borderColor:"#16a34a", color:"#fff", minHeight:44}} onClick={() => { onOpenLead?.(r.lead_id); setList(l => l.slice(1)); if(list.length <= 1) markSeen(); }}>👤 {tr(lang,"Открыть клиента")}</McBtn>
+          {list.length > 1 && <McBtn tone="plain" style={{minHeight:44}} onClick={() => setList(l => l.slice(1))}>{tr(lang,"Следующий")} →</McBtn>}
+        </div></div></div></div>;
+}
+
 function ObjectMatchNotifier({om, properties=[], onOpenLead, onOpenProperty, lang="ru"}){
   const {rows, me, remindMin} = om;
   const [shownPid,setShownPid] = useState(null); const [needSound,setNeedSound] = useState(false); const [min,setMin] = useState(false);
@@ -3089,7 +3114,7 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
     setM(a.data || null); setProf(b.data || null); setResults(c.data || []); setSels(d.data || []); setLog(e.data || []);
     const ids = (d.data || []).map(s => s.id);
     if(ids.length){ const [{data:ev},{data:si}] = await Promise.all([supabase.from("client_selection_events").select("selection_id,item_id,kind,comment,created_at").in("selection_id", ids).order("created_at",{ascending:false}).limit(500),
-      supabase.from("client_selection_items").select("selection_id,dedupe_key,property_id").in("selection_id", ids)]); setEvents(ev || []); setSelItems(si || []); }
+      supabase.from("client_selection_items").select("id,selection_id,position,dedupe_key,property_id,source_url,public_data,internal_contact").in("selection_id", ids).order("position")]); setEvents(ev || []); setSelItems(si || []); }
     const {data:mc} = await supabase.rpc("crm_lead_manager_contacts",{p_lead:leadId}); setCurMgr(mc || null);
     setLoaded(true);
   }, [leadId]);
@@ -3168,7 +3193,8 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
     if(!idemRef.current) idemRef.current = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
     setBusy("sel");
     const items = picked.map(r => r.property_id && r.source !== "analytics" ? {source:"crm", property_id:r.property_id, manager_comment:r.manager_comment||""}
-      : {source:"analytics", dedupe_key:r.dedupe_key, manager_comment:r.manager_comment||"", checked_at:r.checked_at, check_status:r.check_status, data:{...r.snapshot, title:r.title, price:r.price, currency:r.currency}});
+      : {source:"analytics", dedupe_key:r.dedupe_key, manager_comment:r.manager_comment||"", checked_at:r.checked_at, check_status:r.check_status, data:{...r.snapshot, title:r.title, price:r.price, currency:r.currency, link:r.source_url || r.snapshot?.link},
+         internal:{phone:amContactPhone(r.snapshot) || null, source_name:amSourceName({...r.snapshot, source_url:r.source_url}) || null}});
     const expires = selForm.days ? new Date(Date.now()+Number(selForm.days)*86400000).toISOString() : null;
     const {data, error} = await supabase.rpc("client_selection_create",{p_lead:leadId, p_title:selForm.title, p_items:items, p_opts:{show_client_name:selForm.showName, hide_address:selForm.hideAddress, general_comment:selForm.comment, expires_at:expires, publish:true}, p_idem:idemRef.current});
     setBusy(""); if(error) return alert(error.message);
@@ -3328,6 +3354,23 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
         <div className="row"><b>{s.title}</b><span className="chip">{s.status==="disabled"?tr(lang,"ссылка отключена"):s.sent_at?tr(lang,"отправлено"):tr(lang,"создана")}</span></div>
         <small className="muted">{new Date(s.created_at).toLocaleString("uk-UA")} · {tr(lang,"открытий")}: {s.open_count||0}{s.last_opened_at?` (${new Date(s.last_opened_at).toLocaleString("uk-UA")})`:""} · 👍 {evOf(s.id,"interested").length} · 👎 {evOf(s.id,"not_suitable").length}{s.expires_at?` · ${tr(lang,"до")} ${new Date(s.expires_at).toLocaleDateString("uk-UA")}`:""}</small>
         {evOf(s.id,"comment").slice(0,3).map((e,i)=><small key={i} style={{display:"block"}}>💬 {e.comment}</small>)}
+        {/* объекты подборки: ссылка на объявление, контакт (видит только команда) и ответ клиента */}
+        {(() => { const its = selItems.filter(i => i.selection_id === s.id); if(!its.length) return null;
+          const react = id => events.find(e => e.item_id === id && ["interested","not_suitable"].includes(e.kind)); // события уже отсортированы: новые сверху
+          const liked = its.filter(i => react(i.id)?.kind === "interested").length;
+          return <details open={liked > 0} style={{marginTop:8}}>
+            <summary style={{cursor:"pointer", fontWeight:800}}>{tr(lang,"Объекты в подборке")}: {its.length}{liked ? ` · 🔥 ${tr(lang,"Интересует")}: ${liked}` : ""}</summary>
+            <div style={{display:"grid", gap:6, marginTop:6}}>{its.map(i => { const ev = react(i.id); const yes = ev?.kind === "interested", no = ev?.kind === "not_suitable"; const pd = i.public_data || {}; const pp = i.property_id ? properties.find(x => String(x.id) === String(i.property_id)) : null;
+              const ic = {...(pp && String(pp.ownerPhone || "").replace(/\D/g,"").length >= 9 ? {name:pp.owner, phone:pp.ownerPhone} : {}), ...(i.internal_contact || {})};
+              const phone = ic.phone || ""; const contact = [ic.name, phone].filter(Boolean).join(" ");
+              return <div key={i.id} style={{padding:"8px 10px", borderRadius:12, display:"grid", gap:3, background: yes ? "#A3E635" : no ? "#27272a" : "rgba(255,255,255,.04)", color: yes ? "#1a2e05" : no ? "#a1a1aa" : "inherit", border: yes ? "2px solid #65A30D" : "1px solid #3f3f46"}}>
+                <div style={{display:"flex", gap:8, alignItems:"flex-start"}}><b style={{flex:1, minWidth:0}}>{i.position}. {pd.title || tr(lang,"Объект")}{pd.price ? ` · ${amMoney(pd.price, pd.currency || "USD")}` : ""}</b>
+                  {yes && <span style={{padding:"2px 8px", borderRadius:999, background:"#1a2e05", color:"#A3E635", fontWeight:900, fontSize:12, whiteSpace:"nowrap"}}>👍 {tr(lang,"Интересует")}</span>}
+                  {no && <span style={{padding:"2px 8px", borderRadius:999, background:"#3f3f46", color:"#e4e4e7", fontWeight:800, fontSize:12, whiteSpace:"nowrap"}}>👎 {tr(lang,"Не подходит")}</span>}</div>
+                {ev?.comment && <span style={{fontSize:13}}>💬 {ev.comment}</span>}
+                <span style={{fontSize:13}}>{i.property_id ? `${tr(lang,"Объект CRM")} №${i.property_id}` : (ic.source_name || "")}{contact ? " · " : ""}{contact && <>{ic.name ? `${ic.name} ` : ""}{phone && <a href={`tel:${phone.replace(/[^\d+]/g,"")}`} style={{color: yes ? "#14532d" : "#4ade80", fontWeight:900}}>{phone}</a>}</>}{!contact && !i.property_id ? ` · ${tr(lang,"контакт не указан")}` : ""}</span>
+                {i.source_url && <a href={i.source_url} target="_blank" rel="noreferrer" style={{fontSize:13, color: yes ? "#1e3a8a" : "#60a5fa", wordBreak:"break-all"}}>{i.source_url}</a>}
+              </div>; })}</div></details>; })()}
         <small style={{display:"block",marginTop:4}}>👤 {tr(lang,"Контакты в подборке")}: <b>{s.manager_name || "—"}</b>{[s.manager_phone, s.manager_telegram&&"Telegram", s.manager_viber&&"Viber", s.manager_whatsapp&&"WhatsApp", s.manager_email].filter(Boolean).length ? ` · ${[s.manager_phone, s.manager_telegram&&"Telegram", s.manager_viber&&"Viber", s.manager_whatsapp&&"WhatsApp", s.manager_email].filter(Boolean).join(", ")}` : ""}</small>
         {curMgr?.email && s.manager_email && curMgr.email !== String(s.manager_email).toLowerCase() && !keepContacts[s.id] && <div style={{marginTop:6, padding:"8px 10px", borderRadius:12, background:MC.yellow.bg, color:MC.yellow.ink, border:`1px solid ${MC.yellow.c}`}}>
           <b>⚠ {tr(lang,"Клиент передан менеджеру")} {curMgr.name}. {tr(lang,"Обновить контактные данные в этой подборке?")}</b>
@@ -7618,12 +7661,12 @@ function amContactPhoneRaw(x){
 }
 const amSourceName = it => it?.source_name || it?.source || (() => { try{ return new URL(it?.source_url || it?.link || "").hostname.replace(/^www\./,""); }catch{ return ""; } })();
 // Ссылки и телефоны в истории клиента — нажимаются
-function lhLinkify(text){
+function lhLinkify(text, c = {}){
   const parts = String(text || "").split(/(https?:\/\/[^\s]+|\+?\d[\d\s()-]{8,}\d)/g);
-  return parts.map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer" style={{color:"#60a5fa", wordBreak:"break-all"}}>{p}</a>
-    : /^\+?\d[\d\s()-]{8,}\d$/.test(p) && p.replace(/\D/g,"").length >= 9 ? <a key={i} href={`tel:${p.replace(/[^\d+]/g,"")}`} style={{color:"#4ade80", fontWeight:800}}>{p}</a> : p);
+  return parts.map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer" style={{color:c.link || "#60a5fa", wordBreak:"break-all"}}>{p}</a>
+    : /^\+?\d[\d\s()-]{8,}\d$/.test(p) && p.replace(/\D/g,"").length >= 9 ? <a key={i} href={`tel:${p.replace(/[^\d+]/g,"")}`} style={{color:c.phone || "#4ade80", fontWeight:800}}>{p}</a> : p);
 }
-const LH_KIND = {selection:{icon:"📨", label:"Подборка · видит только команда"}, comment:{icon:"💬", label:"Комментарий"}, question:{icon:"❓", label:"Вопрос директору"}, reply:{icon:"⭐", label:"ОТВЕТ ДИРЕКТОРА"}, stage:{icon:"➜", label:"Этап"}, event:{icon:"📅", label:"Событие"}, system:{icon:"•", label:""}};
+const LH_KIND = {client_reaction:{icon:"⭐", label:"Ответ клиента по подборке"}, selection:{icon:"📨", label:"Подборка · видит только команда"}, comment:{icon:"💬", label:"Комментарий"}, question:{icon:"❓", label:"Вопрос директору"}, reply:{icon:"⭐", label:"ОТВЕТ ДИРЕКТОРА"}, stage:{icon:"➜", label:"Этап"}, event:{icon:"📅", label:"Событие"}, system:{icon:"•", label:""}};
 function LeadHistoryList({rows, legacy = [], lang, limit}){
   const fmt = (v) => { try { return new Date(v).toLocaleString(lang === "en" ? "en-GB" : lang === "uk" ? "uk-UA" : "ru-RU", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"}); } catch { return ""; } };
   let ci = 0;
@@ -7639,6 +7682,10 @@ function LeadHistoryList({rows, legacy = [], lang, limit}){
         <div className="lhText">{r.text}</div>
         <small>{r.author_name || tr(lang,"Директор")} · {fmt(r.created_at)}</small>
       </div>;
+      if(r.kind === "client_reaction"){ const yes = /ИНТЕРЕСУЕТ/.test(r.text || ""), no = /Не подходит/.test(r.text || "");
+        return <div key={r.id} className="lhItem" style={{padding:"12px 14px", borderRadius:16, display:"grid", gap:6, background: yes ? "#A3E635" : no ? "#27272a" : "#FEF9C3", color: yes ? "#1a2e05" : no ? "#d4d4d8" : "#713f12", border: yes ? "3px solid #65A30D" : "1px solid #3f3f46", boxShadow: yes ? "0 0 0 4px rgba(163,230,53,.25)" : "none"}}>
+          <div style={{display:"flex", gap:8, alignItems:"center"}}><b style={{flex:1, fontSize:15}}>{yes ? "🔥 " : ""}{tr(lang,"Ответ клиента по подборке")}</b><span style={{fontSize:12, fontWeight:700, opacity:.8}}>{fmt(r.created_at)}</span></div>
+          <div style={{whiteSpace:"pre-wrap", fontWeight: yes ? 800 : 500, fontSize:15}}>{lhLinkify(r.text, yes ? {link:"#1e3a8a", phone:"#14532d"} : {})}</div></div>; }
       if(r.kind === "system" || r.kind === "stage" || r.kind === "event") return <div key={r.id} className={cn("lhItem lhSys", "lh-" + r.kind)}><span>{k.icon}</span><span>{r.text}</span><small>{r.author_name ? r.author_name + " · " : ""}{fmt(r.created_at)}</small></div>;
       return <div key={r.id} className={cn("lhItem", r.kind === "question" ? "lhQuestion" : "lhComment")} style={r.kind === "selection" ? {"--lh":"#0D9488"} : r.color ? {"--lh":r.color} : undefined}>
         <div className="lhHead"><b>{k.icon} {tr(lang,k.label)}</b><small>{r.author_name || ""} · {fmt(r.created_at)}</small></div>
@@ -11168,6 +11215,7 @@ export default function App(){
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
         {currentProfile?.email&&<FirstTouchWatcher currentProfile={currentProfile} leads={leads} onOpenLead={openLeadById} lang={lang}/>}
+        {currentProfile?.email&&<ClientReactionNotifier me={currentProfile.email} onOpenLead={openLeadById} lang={lang}/>}
         {currentProfile?.email&&!omList&&<ObjectMatchNotifier om={om} properties={properties} onOpenLead={openLeadById} onOpenProperty={setProperty} lang={lang}/>}
         {omList&&<ObjectMatchList om={om} isAdmin={["Администратор директор","Администратор тех отдел"].includes(role)} lang={lang} properties={properties} onOpenLead={id=>{setOmList(false);openLeadById(id);}} onOpenProperty={p=>{setOmList(false);setProperty(p);}} onClose={()=>setOmList(false)}/>}
         {lead&&<LeadModal key={lead.id} om={om} onOpenProperty={setProperty} onOpenLead={openLeadById} lead={lead} setLeads={setLeads} setEvents={setEvents} setHelp={setHelp} help={help} onClose={()=>setLead(null)} role={role} users={users} currentProfile={currentProfile} properties={properties} agencyName={agencyName} lang={lang}/>} 
