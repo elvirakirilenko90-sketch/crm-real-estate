@@ -1842,7 +1842,7 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
     const desc = pubClean(it.description || it.extra || (pp ? (lang === "uk" && pp.description_uk ? pp.description_uk : pp.description) : "") || "");
     return {...it, _k:i, comment:it.comment || "", editTitle:pubClean(it.title || pp?.title || ""), editDesc:desc, _origTitle:pubClean(it.title || pp?.title || ""), _origDesc:desc, _edit:false,
       // только для команды: телефон продавца/риэлтора и заметка — пишутся в историю клиента, клиенту не уходят
-      _phone: amNormPhone(it.contact_phone) || amContactPhone(it) || (pp?.ownerPhone || ""), _contact: it.contact_name || (pp?.owner || ""), _note:""}; }));
+      _phone: it.own ? "" : (amNormPhone(it.contact_phone) || amContactPhone(it)), _contact: it.own ? "" : (it.contact_name || ""), _note:""}; }));
   const [preview,setPreview] = useState(false);
   const upd = (k, patch) => setList(l => l.map(x => x._k === k ? {...x, ...patch} : x));
   const [title,setTitle] = useState(`${T("Подборка для")} ${String(lead.name||"").split(" ")[0] || T("клиента")}`);
@@ -1914,6 +1914,8 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
         <div style={{display:"grid", gap:6, padding:10, borderRadius:12, border:"1.5px dashed #0D9488", background:"rgba(13,148,136,.08)"}}>
           <span style={{fontSize:12, fontWeight:800, color:"#5eead4"}}>🔒 {T("Только для вас — сохранится в истории клиента, клиент не увидит")}</span>
           {!it.own && it.source_url && <a href={it.source_url} target="_blank" rel="noreferrer" style={{fontSize:13, color:"#60a5fa", wordBreak:"break-all"}}>{amSourceName(it) || T("Объявление")} ↗</a>}
+          {it.own && (() => { const pp = properties.find(p => String(p.id) === String(it.property_id)); return pp?.property_manager_name || pp?.property_manager_phone
+            ? <span style={{fontSize:13, color:"#d4d4d8"}}>{T("Ответственный за объект")}: <b>{pp.property_manager_name}</b> {pp.property_manager_phone}</span> : null; })()}
           <div className="grid2" style={{gap:6}}>
             <input className="input" value={it._contact} onChange={e=>upd(it._k, {_contact:e.target.value})} placeholder={T("Кому звонили (имя)")}/>
             <input className="input" inputMode="tel" value={it._phone} onChange={e=>upd(it._k, {_phone:e.target.value})} placeholder={T("Телефон продавца / риэлтора")}/>
@@ -3361,7 +3363,9 @@ function AutoMatchBlock({lead, role, currentProfile, properties=[], agencyName="
           return <details open={liked > 0} style={{marginTop:8}}>
             <summary style={{cursor:"pointer", fontWeight:800}}>{tr(lang,"Объекты в подборке")}: {its.length}{liked ? ` · 🔥 ${tr(lang,"Интересует")}: ${liked}` : ""}</summary>
             <div style={{display:"grid", gap:6, marginTop:6}}>{its.map(i => { const ev = react(i.id); const yes = ev?.kind === "interested", no = ev?.kind === "not_suitable"; const pd = i.public_data || {}; const pp = i.property_id ? properties.find(x => String(x.id) === String(i.property_id)) : null;
-              const ic = {...(pp && String(pp.ownerPhone || "").replace(/\D/g,"").length >= 9 ? {name:pp.owner, phone:pp.ownerPhone} : {}), ...(i.internal_contact || {})};
+              const ic0 = i.internal_contact || {};
+              const mName = ic0.manager_name || pp?.property_manager_name || "", mPhone = ic0.manager_phone || pp?.property_manager_phone || "";
+              const ic = {...ic0, ...(i.property_id ? {name:mName ? `${tr(lang,"ответственный")} ${mName}` : (mPhone ? tr(lang,"ответственный") : ""), phone:mPhone} : {})};
               const phone = ic.phone || ""; const contact = [ic.name, phone].filter(Boolean).join(" ");
               return <div key={i.id} style={{padding:"8px 10px", borderRadius:12, display:"grid", gap:3, background: yes ? "#A3E635" : no ? "#27272a" : "rgba(255,255,255,.04)", color: yes ? "#1a2e05" : no ? "#a1a1aa" : "inherit", border: yes ? "2px solid #65A30D" : "1px solid #3f3f46"}}>
                 <div style={{display:"flex", gap:8, alignItems:"flex-start"}}><b style={{flex:1, minWidth:0}}>{i.position}. {pd.title || tr(lang,"Объект")}{pd.price ? ` · ${amMoney(pd.price, pd.currency || "USD")}` : ""}</b>
