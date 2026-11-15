@@ -8075,7 +8075,7 @@ const LI_FIRST_NAMES = new Set(("александр олександр саша 
   + "александра олександра алена альона алёна алина аліна алиса аліса алла анастасия анастасія настя анна ганна аня анжела анжелика антонина валентина валерия валерія варвара вера віра вероника вероніка виктория вікторія вика віка галина галя дарья дарина дарія даша диана діана ева єва евгения євгенія екатерина катерина катя елена олена лена елизавета єлизавета лиза зоя инна інна ирина ірина ира іра карина кристина ксения ксенія ксюша лариса лилия лілія люба любовь любов людмила люда маргарита рита марина мария марія маша милана мілана надежда надія надя наталья наталия наталія наташа нина ніна оксана ольга оля полина поліна раиса светлана світлана света софия софія соня тамара татьяна тетяна таня ульяна уляна юлия юлія юля яна снежана сніжана жанна эвелина евеліна элина еліна сусанна регина регіна лидия лідія майя злата олеся леся мирослава ярослава богдана владислава василиса василина христина кира кіра нелли неля дина лана ангелина ангеліна стефания стефанія виолетта віолетта эмилия емілія алёна жана мила роза эмма лиана ліана натали наталі натали натэлла марьяна мар'яна мар'яна марʼяна аріна арина ярина зоряна соломія мирослава таисия таїсія фаина фаїна эльмира ельміра эльза лейла камила камилла амина диляра алсу гульнара"
   + " alex alexander anna maria olga irina elena natalia sergey andrey dmitry ivan oleg").split(/\s+/).filter(Boolean));
 // Слова, с которых описание начинается, но это не имя
-const LI_NOT_NAME = /^(ищ|шука|хоч|хот|нужн|нуж|потріб|купи|прода|сня|зня|сда|зда|квартир|дом|будин|участ|ділян|жк|клиент|клієнт|покуп|бюдж|цен|ціна|район|звон|дзвон|перезв|передзв|нет$|не$|ні$|да$|так$|был|бул|прос|интерес|цікав|рассм|розгл|смотр|дивит|отправ|відправ|скину|сдела|зроби|договор|домов|для$|от$|від$|по$|на$|без$|срочн|термін|инвест|інвест|семь|сім|пара$|муж|чолов|жена|дружин|олх|olx|тик|tik|инст|інст|insta|фейс|face|теле|вайб|viber|whats|комн|кімн|однуш|двуш|трешк|трёшк|студи|новостр|новобуд|вторич|вторин|аренд|оренд|продаж|покупк|рассроч|розстроч|ипот|іпот|налич|готівк|сегодн|сьогодн|завтр|вчера|вчора|эля$|еля$|лид|лід|повтор|рекоменд|думает|думают|отказ|відмов|задат|показ|встреч|зустр|сделк|угод|нов|в работе|е-?осел|є-?осел|э-?осел|одес|київ|киев|ірпін|ирпен|львов|львів|днепр|дніпр|харьк|харків|приморск|центр|заграниц|за кордон|уехал|молча|номер|телеф|тел$|запрос|запит|комент|коммент|примеч|опис|дата|источ|джерел|этап|етап|статус|менедж|риэлт|ріелт|агент|владимирович)/i;
+const LI_NOT_NAME = /^(ищ|шука|хоч|хот|нужн|нуж|потріб|купи|прода|сня|зня|сда|зда|квартир|дом|будин|участ|ділян|жк|клиент|клієнт|покуп|бюдж|цен|ціна|район|звон|дзвон|перезв|передзв|нет$|не$|ні$|да$|так$|был|бул|прос|интерес|цікав|рассм|розгл|смотр|дивит|отправ|відправ|скину|сдела|зроби|договор|домов|для$|от$|від$|по$|на$|без$|срочн|термін|инвест|інвест|семь|сім|пара$|муж|чолов|жена|дружин|олх|olx|тик|tik|инст|інст|insta|фейс|face|теле|вайб|viber|whats|комн|кімн|однуш|двуш|трешк|трёшк|студи|новостр|новобуд|вторич|вторин|аренд|оренд|продаж|покупк|рассроч|розстроч|ипот|іпот|налич|готівк|сегодн|сьогодн|завтр|вчера|вчора|эля$|еля$|лид|лід|повтор|рекоменд|думает|думают|отказ|відмов|задат|показ|встреч|зустр|сделк|угод|нов|в работе|е-?осел|є-?осел|э-?осел|одес|київ|киев|ірпін|ирпен|львов|львів|днепр|дніпр|харьк|харків|приморск|центр|заграниц|за кордон|уехал|молча|номер|телеф|тел$|запрос|запит|комент|коммент|примеч|опис|дата|источ|джерел|этап|етап|статус|менедж|риэлт|ріелт|агент|владимирович|керівн|руковод|таунх|мистер|містер|пан$|пані$|господин)/i;
 // Имена, которые с маленькой буквы — обычные слова («вера», «роман», «слава»): их берём только с заглавной
 const LI_AMBIG = /^(вера|віра|надежда|надія|любовь|любов|люба|слава|роман|лев|марк|мила|роза|макс|лана|дина|ян|яна|лиза|рита|ира|іра|ева|єва|алла|майя|злата|кира|кіра|нина|ніна|оля|стас|гена|влад|ганна|лена|настя|даша)$/i;
 // ЖК, районы, города и прочие слова с большой буквы, которые не имя
@@ -8119,6 +8119,45 @@ function liNameFromText(text, exclude = [], loose = false){
     if(LI_WORD_END.test(w.toLowerCase())) continue;
     if(ok(k)) return withSurname(k); }
   return "";
+}
+
+// ИМЯ КЛИЕНТА = «Имя Фамилия». Только имя и, если есть, фамилия.
+// Отбрасываем: ники (cocker_truffle, Barbie), латинские дубли (Daria Дарія), отчество (Вʼячеславівна), приписки («СК База», «ТХ», «кв»),
+// повтор имени («Витя Віктор ВЛАДИМИР» → Витя). КАПС исправляем: «Берц НАТАЛІЯ» → «Наталія Берц».
+const LI_PATRONYMIC_END = /(ович|евич|йович|івна|ївна|овна|евна|ична|інічна|ічна|ійович|ьович)$/i;
+// отчество — только если начало слова совпадает с мужским именем («Ігорович», «Василівна»); «Минкович» — фамилия
+const LI_PATRONYMIC = { test: (w) => { const lw = String(w || "").toLowerCase().replace(/['’ʼ]/g, ""); if(!LI_PATRONYMIC_END.test(lw)) return false;
+  for(const n of LI_FIRST_NAMES){ const nn = n.replace(/['’ʼ]/g, ""); if(nn.length >= 4 && lw.startsWith(nn.slice(0, Math.max(4, nn.length - 2)))) return true; } return false; } };
+// окончания фамилий — для слова перед именем («Плиндіна Олена»)
+const LI_SURNAME_END = /(ов|ев|ёв|єв|ин|ін|їн|ын|ко|ук|юк|чук|як|ий|ой|ая|ова|ева|єва|ина|іна|їна|ына|ська|цька|ський|цький|енко|ович|евич|ич|ак|ик|ер|ман|берг|ян|дзе|швили|ець|ц)$/i;
+// ласкательные формы — это не фамилия («Женечка Евгения»)
+const LI_DIMINUTIVE = /(ечка|очка|ичка|енька|онька|уля|юля|уся|юша|ушка|юшка|енок|онок)$/i;
+// латинские буквы-двойники внутри кириллического слова («Дeнuс» → «Денис»)
+const LI_LOOKALIKE = {a:"а",e:"е",o:"о",p:"р",c:"с",x:"х",y:"у",k:"к",m:"м",t:"т",h:"н",b:"в",i:"і",u:"и",A:"А",E:"Е",O:"О",P:"Р",C:"С",X:"Х",Y:"У",K:"К",M:"М",T:"Т",H:"Н",B:"В",I:"І"};
+const liFixMixed = w => /[а-яёіїєґ]/i.test(w) && /[a-z]/i.test(w) ? w.replace(/[a-zA-Z]/g, ch => LI_LOOKALIKE[ch] || ch) : w;
+function liCleanName(raw){
+  const src = String(raw || "").replace(/[ʼ’`]/g, "'").trim(); if(!src) return "";
+  const words = src.split(/[\s,;.·|/\\()]+/).filter(Boolean).map(liFixMixed);
+  const isCyr = w => /^[А-ЯЁІЇЄҐа-яёіїєґ][А-ЯЁІЇЄҐа-яёіїєґ'-]+$/.test(w);
+  const isSurname = w => isCyr(w) && w.length >= 3 && /^[А-ЯЁІЇЄҐ]/.test(w) && !liIsName(w) && !LI_PATRONYMIC.test(w)
+    && !LI_NOT_NAME.test(w) && !LI_PLACES.test(w) && !LI_COMMON.test(w) && !LI_DIMINUTIVE.test(w) && !(w.length <= 3 && w === w.toUpperCase());
+  const cap = w => w.split("-").map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join("-");
+  // 1) первое имя из словаря, кириллица раньше латиницы
+  let k = words.findIndex(w => isCyr(w) && liIsName(w));
+  if(k < 0) k = words.findIndex(w => liIsName(w));
+  if(k >= 0){
+    let sur = "";
+    let j = k + 1; if(words[j] && LI_PATRONYMIC.test(words[j])) j++;          // «Олена Петрівна Шевченко» → Шевченко
+    if(words[j] && isSurname(words[j])) sur = words[j];
+    else if(words[k - 1] && isSurname(words[k - 1]) && LI_SURNAME_END.test(words[k - 1])) sur = words[k - 1];     // «Плиндіна Олена» → Олена Плиндіна
+    return cap(words[k]) + (sur ? " " + cap(sur) : "");
+  }
+  // 2) имени из словаря нет — первые одно-два кириллических слова с большой буквы («Берц», «Михальчан»)
+  const cyr = words.filter(w => isCyr(w) && /^[А-ЯЁІЇЄҐ]/.test(w) && !LI_PATRONYMIC.test(w) && !LI_NOT_NAME.test(w) && !LI_PLACES.test(w) && !LI_COMMON.test(w) && !(w.length <= 3 && w === w.toUpperCase()));
+  if(cyr.length) return cyr.slice(0, 2).map(cap).join(" ");
+  // 3) только латиница (Anna, Barbie) — оставляем как есть, кроме ников с _ и цифрами
+  const lat = words.filter(w => /^[A-Za-z][a-z'-]+$/.test(w));
+  return lat.length ? cap(lat[0]) : "";
 }
 
 // --- минимальный читатель .xlsx: zip (DecompressionStream) + XML ---
@@ -8315,22 +8354,24 @@ function LeadImportTable({staffOptions, currentProfile, busy, onPreview}){
       if(c.field === "notes"){ o.notes.push(`${c.header}: ${t}`); return; }
       if(c.field === "lead_date"){ const iso = cell.date || liDateIso(t); o.lead_date = /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : t; return; }
       if(c.field === "next_contact_at"){ const iso = cell.date ? liDateIso(cell.date) : liDateIso(t); if(/^\d{4}-/.test(iso)) o.next_contact_at = iso; else o.notes.push(`${c.header}: ${t}`); return; }
-      if(c.field === "source"){ o.source = mapValue("source", t); if(liNorm(o.source) !== liNorm(t)) o.notes.push(`${c.header}: ${t}`); return; }
+      if(c.field === "source"){ o.source = mapValue("source", t); return; }   // источник — только в поле «Источник», в заметку не дублируем
       if(c.field === "stage"){ stageText = t; const st = mapValue("stage", t); if(st) o.stage = st; return; }
       if(c.field === "manager"){ o.manager = mapValue("manager", t); return; }
       if(!o[c.field]) o[c.field] = t; else o.notes.push(`${c.header}: ${t}`); });
     // в колонке «Имя» оказался источник («Тикток Владимирович», «ОЛХ»), дата или телефон — разносим по своим полям
     if(o.name){ const raw = o.name; const src = liSourceOf(raw) || (/^(эля|еля)(\s|$)|(^|\s)(лид|лиды|лід|ліди)(\s|$)/i.test(raw) ? raw : "");
-      if(src && !liNameFromText(raw, staffFirst)){ if(!o.source){ o.source = src; if(liNorm(src) !== liNorm(raw)) o.notes.push(`Источник: ${raw}`); } else o.notes.push(raw); o.name = ""; }
+      if(src && !liNameFromText(raw, staffFirst)){ if(!o.source) o.source = liSourceOf(raw) || src; o.name = ""; }
       else if(/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(raw.trim()) || /^\d{5}$/.test(raw.trim())){ if(!o.lead_date){ const iso = liDateIso(raw); if(/^\d{4}-/.test(iso)) o.lead_date = iso.slice(0, 10); } o.name = ""; }
       else if(raw.replace(/\D/g, "").length >= 9 && /^[\d\s+()\-.,E]+$/i.test(raw.trim())){ if(!o.phone) o.phone = raw; o.name = ""; } }
+    // имя — только «Имя Фамилия»: без ников, латинских дублей, отчества и приписок
+    if(o.name) o.name = liCleanName(o.name);
     // имени нет — ищем в описании («Олег, ищет 2к…», «зовут Оля»)
-    if(!o.name){ const n = nameFromDesc(r); if(n) o.name = n; }
+    if(!o.name){ const n = nameFromDesc(r); if(n) o.name = liCleanName(n) || n; }
     // любая дата в строке (число.месяц.год) — дата лида, если колонки даты нет
     if(!o.lead_date) for(const c of cols){ if(c.field === "next_contact_at" || c.field === "skip") continue; const cell = r[c.i] || {};
       const iso = (cell.date && cell.date.slice(0, 10)) || liDateInText(cell.text); if(iso){ o.lead_date = iso; break; } }
     // слово «олх» где угодно в строке (источник, описание) — источник ОЛХ
-    if(o.source !== "ОЛХ" && cols.some(c => c.field !== "skip" && LI_OLX.test(liNorm(r[c.i]?.text)))){ if(o.source && liNorm(o.source) !== "олх") o.notes.push(`Источник в таблице: ${o.source}`); o.source = "ОЛХ"; }
+    if(o.source !== "ОЛХ" && cols.some(c => c.field !== "skip" && LI_OLX.test(liNorm(r[c.i]?.text))))o.source = "ОЛХ";
     if(!o.stage){ const k = rowColor(r); const st = k && stageByColor(k); if(st) o.stage = st; }
     if(!o.stage && stageText) o.stage_text = stageText;
     o.notes = o.notes.join("\n");
