@@ -8005,15 +8005,18 @@ const LI_FIELDS = [
   {id:"manager", label:"Ответственный"},
   {id:"notes", label:"В заметку"},
 ];
+// Порядок важен: «Источник клиентов», «Статус клиента», «Телефон клиента» — это не имя, хотя в названии есть «клиент».
+// Поэтому имя проверяется последним. Кириллица: \b в JS не работает, границы слова заданы явно.
 const LI_GUESS = [
   [/^(№|n|no|#|п\/п|№ п\/п)$/i, "skip"],
-  [/имя|ім['’]я|фио|піб|клиент|клієнт|name/i, "name"],
-  [/телеф|номер|phone|тел\b|контакт клиента|ник/i, "phone"],
-  [/источ|джерел|тип лида|тип ліда|канал|откуда|звідки|source|площадк/i, "source"],
+  [/источ|джерел|тип лида|тип ліда|тип клиент|тип клієнт|откуда клиент|канал|откуда|звідки|source|площадк/i, "source"],
   [/этап|етап|статус|воронк|stage|status/i, "stage"],
   [/след|наступн|перезвон|передзвон|напомин|next/i, "next_contact_at"],
-  [/дата|date|когда|коли/i, "lead_date"],
   [/менеджер|риэлтор|ріелтор|риелтор|агент|ответствен|відповідал/i, "manager"],
+  [/телеф|номер|phone|(?:^|[^а-яёіїєґ])тел(?:[^а-яёіїєґ]|$)|контакт клиента|(?:^|[^а-яёіїєґ])ник(?:[^а-яёіїєґ]|$)/i, "phone"],
+  [/дата|date|когда|коли/i, "lead_date"],
+  [/опис|запрос|запит|коммент|комент|примеч|приміт|замет|нотат|решени|рішенн|инфо|інфо|note/i, "notes"],
+  [/имя|ім['’]я|фио|піб|клиент|клієнт|name/i, "name"],
 ];
 const LI_STAGE_RULES = [
   [/^нов|новый лид|новий лід/i, "Новый Лид"],
@@ -8056,6 +8059,42 @@ function liSourceOf(text){
   if(/повтор/.test(t)) return "Повторный клиент";
   if(/рекоменд/.test(t)) return /клиент|клієнт/.test(t) ? "Рекомендации клиентов" : "Рекомендации";
   if(/руковод|керівн/.test(t)) return "Лид руководство";
+  return "";
+}
+
+// Имя клиента в описании: «зовут Оля», «Олег, ищет 2к», «Сергей Власов 067…», «… клиентка Ирина …».
+// Не берём площадки и сотрудников: «Эля лиды», «Тикток Владимирович», «от Эльвиры».
+const LI_FIRST_NAMES = new Set(("александр олександр саша алекс алексей олексій леша лёша андрей андрій андрюша антон артем артём артур богдан борис вадим валентин валерий валерій василий василь вася виктор віктор витя виталий віталій влад владислав владимир володимир вова володя вячеслав слава геннадий геннадій гена георгий георгій гоша глеб гліб григорий григорій гриша давид данил даниил данило денис дмитрий дмитро дима евгений євген женя егор єгор иван іван ваня игорь ігор илья ілля кирилл кирило константин костянтин костя леонид леонід лёня максим макс марк матвей матвій михаил михайло миша назар никита микита николай микола коля олег павел павло паша петр пётр петро петя роман рома руслан сергей сергій сережа серёжа семен семён станислав стас степан тарас тимур тимофей тимофій федор фёдор федір филипп пилип юрий юрій юра ярослав ян эдуард едуард эрик ерік арсен арсений арсеній аркадий аркадій вениамин ростислав святослав всеволод захар лев марат рустам эмиль анатолий анатолій толя эльдар геннадий остап любомир мирослав зиновий тимофей "
+  + "александра олександра алена альона алёна алина аліна алиса аліса алла анастасия анастасія настя анна ганна аня анжела анжелика антонина валентина валерия валерія варвара вера віра вероника вероніка виктория вікторія вика віка галина галя дарья дарина дарія даша диана діана ева єва евгения євгенія екатерина катерина катя елена олена лена елизавета єлизавета лиза зоя инна інна ирина ірина ира іра карина кристина ксения ксенія ксюша лариса лилия лілія люба любовь любов людмила люда маргарита рита марина мария марія маша милана мілана надежда надія надя наталья наталия наталія наташа нина ніна оксана ольга оля полина поліна раиса светлана світлана света софия софія соня тамара татьяна тетяна таня ульяна уляна юлия юлія юля яна снежана сніжана жанна эвелина евеліна элина еліна сусанна регина регіна лидия лідія майя злата олеся леся мирослава ярослава богдана владислава василиса василина христина кира кіра нелли неля дина лана ангелина ангеліна стефания стефанія виолетта віолетта эмилия емілія алёна жана мила роза эмма лиана ліана"
+  + " alex alexander anna maria olga irina elena natalia sergey andrey dmitry ivan oleg").split(/\s+/).filter(Boolean));
+// Слова, с которых описание начинается, но это не имя
+const LI_NOT_NAME = /^(ищ|шука|хоч|хот|нужн|нуж|потріб|купи|прода|сня|зня|сда|зда|квартир|дом|будин|участ|ділян|жк|клиент|клієнт|покуп|бюдж|цен|ціна|район|звон|дзвон|перезв|передзв|нет$|не$|ні$|да$|так$|был|бул|прос|интерес|цікав|рассм|розгл|смотр|дивит|отправ|відправ|скину|сдела|зроби|договор|домов|для$|от$|від$|по$|на$|без$|срочн|термін|инвест|інвест|семь|сім|пара$|муж|чолов|жена|дружин|олх|olx|тик|tik|инст|інст|insta|фейс|face|теле|вайб|viber|whats|комн|кімн|однуш|двуш|трешк|трёшк|студи|новостр|новобуд|вторич|вторин|аренд|оренд|продаж|покупк|рассроч|розстроч|ипот|іпот|налич|готівк|сегодн|сьогодн|завтр|вчера|вчора|эля$|еля$|лид|лід|повтор|рекоменд|думает|думают|отказ|відмов|задат|показ|встреч|зустр|сделк|угод|нов|в работе|е-?осел|є-?осел|э-?осел|одес|київ|киев|ірпін|ирпен|львов|львів|днепр|дніпр|харьк|харків|приморск|центр|заграниц|за кордон|уехал|молча|номер|телеф|тел$|запрос|запит|комент|коммент|примеч|опис|дата|источ|джерел|этап|етап|статус|менедж|риэлт|ріелт|агент|владимирович)/i;
+const LI_W = "[A-Za-zА-ЯЁІЇЄҐа-яёіїєґ'’-]";
+const liCap = w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : "";
+const liIsName = w => LI_FIRST_NAMES.has(String(w || "").toLowerCase().replace(/[’']/g, "'"));
+// фамилия или отчество после имени: «Власов», «Шевченко», «Владимирович»
+const LI_SURNAME = /^[А-ЯЁІЇЄҐA-Z][а-яёіїєґa-z'’-]*(ов|ев|ёв|ин|ын|ко|ук|юк|чук|як|ий|ой|ая|ова|ева|ина|ына|ська|цька|ський|цький|енко|ович|евич|овна|евна|івна|ївна|ич)$/;
+function liNameFromText(text, exclude = []){
+  const t = String(text || "").replace(/\s+/g, " ").trim(); if(!t) return "";
+  const skip = new Set(exclude.map(x => String(x || "").toLowerCase()));
+  const words = [...t.matchAll(new RegExp(`${LI_W}+`, "g"))].map(m => ({w: m[0], i: m.index}));
+  const ok = (k) => { const x = words[k]; if(!x) return false; const lw = x.w.toLowerCase();
+    if(lw === "эля" || lw === "еля") return false;                                                         // «Эля лиды» — источник
+    const prev = (words[k - 1]?.w || "").toLowerCase(), next = (words[k + 1]?.w || "").toLowerCase();
+    if(/^(от|від|у|менеджер|риэлтор|риелтор|ріелтор|агент|риэлтора|менеджера)$/.test(prev)) return false; // «от Эльвиры»
+    if(skip.has(lw) && /^(лид|лиды|лід|ліди|ліда|лида)$/.test(next)) return false;                         // «Марина лиды» — сотрудник
+    return true; };
+  const withSurname = k => { const nx = words[k + 1]; const between = nx ? t.slice(words[k].i + words[k].w.length, nx.i) : "";
+    return liCap(words[k].w) + (nx && /^\s+$/.test(between) && LI_SURNAME.test(nx.w) && !LI_NOT_NAME.test(nx.w) ? " " + nx.w : ""); };
+  // 1) «зовут Оля», «имя: Олег», «клиентка Ирина»
+  const mk = t.match(new RegExp(`(?:зовут|звати|имя|ім['’]я|клиент(?:ка)?|клієнт(?:ка)?|покупатель(?:ница)?|покупець)\\s*[:\\-–—]?\\s*(${LI_W}{2,20})`, "i"));
+  if(mk && (liIsName(mk[1]) || /^[А-ЯЁІЇЄҐA-Z]/.test(mk[1])) && !LI_NOT_NAME.test(mk[1])){ const k = words.findIndex(x => x.i === (mk.index + mk[0].length - mk[1].length)); if(k >= 0 && ok(k)) return withSurname(k); }
+  // 2) первое известное имя с заглавной буквы (или в самом начале описания)
+  for(let k = 0; k < words.length; k++){ const w = words[k].w;
+    if(liIsName(w) && (/^[А-ЯЁІЇЄҐA-Z]/.test(w) || k === 0) && ok(k)) return withSurname(k); }
+  // 3) «Ярема 067…», «Ярема - +380…» — слово с заглавной в начале, сразу за ним телефон
+  const lead = t.match(new RegExp(`^(${LI_W}{2,20})(?:\\s+(${LI_W}{2,20}))?\\s*[,:;—–-]?\\s*\\+?\\(?\\d{3}`));
+  if(lead && /^[А-ЯЁІЇЄҐA-Z]/.test(lead[1]) && !LI_NOT_NAME.test(lead[1]) && ok(0)) return withSurname(0);
   return "";
 }
 
@@ -8204,16 +8243,24 @@ function LeadImportTable({staffOptions, currentProfile, busy, onPreview}){
   const headerRow = s.headerRow != null && s.headerRow < rows.length ? s.headerRow : liGuessHeader(rows);
   const width = Math.max(0, ...rows.slice(0, 200).map(r => r?.length || 0));
   const headers = Array.from({length: width}, (_, i) => headerRow >= 0 ? (rows[headerRow]?.[i]?.text || "") : "");
-  const cols = headers.map((h, i) => { const key = liColKey(h, i); const guess = h ? (LI_GUESS.find(([re]) => re.test(h))?.[1] || "notes") : "notes";
+  // догадка CRM: одно поле — одна колонка; вторая колонка с тем же полем уходит в заметку
+  const guessed = new Set();
+  const cols = headers.map((h, i) => { const key = liColKey(h, i); let guess = h ? (LI_GUESS.find(([re]) => re.test(h))?.[1] || "notes") : "notes";
+    if(!s.map[key] && !["notes","skip"].includes(guess)){ if(guessed.has(guess)) guess = "notes"; else guessed.add(guess); }
     return {i, key, header: h || `Колонка ${i + 1}`, field: s.map[key] || guess, saved: !!s.map[key]}; })
     .filter(c => rows.some((r, ri) => ri > headerRow && r?.[c.i]?.text));
   const fieldCol = f => cols.find(c => c.field === f);
+  // колонки-описания: сначала «Описание / Запрос / Комментарий», потом остальные «в заметку»
+  const DESC_RE = /опис|запрос|запит|коммент|комент|примеч|приміт|замет|нотат|решени|рішенн|инфо|інфо|note/i;
+  const descCols = cols.filter(c => c.field === "notes").sort((a, b) => (DESC_RE.test(b.header) ? 1 : 0) - (DESC_RE.test(a.header) ? 1 : 0));
+  const staffFirst = managerNames.map(n => liNorm(n).split(/\s+/)[0]).filter(Boolean);
+  const nameFromDesc = r => { for(const c of descCols){ const n = liNameFromText(r[c.i]?.text, staffFirst); if(n) return n; } return ""; };
   // Расшифровка цветов: ячейка с названием этапа и заливкой (на любом листе)
   const legend = useMemo(() => { const m = {}; (book?.sheets || []).forEach(sh => sh.rows.forEach(r => (r || []).forEach(c => {
     const col = liColor(c?.color); if(!col || !c.text || c.text.length > 40) return; const st = liStageOf(c.text); if(st && !m[col]) m[col] = st; }))); return m; }, [book]);
   const dataRows = rows.map((r, ri) => ({r, ri})).filter(({r, ri}) => ri > headerRow && r && (() => {
     const nameC = fieldCol("name"), phoneC = fieldCol("phone");
-    const has = (nameC && r[nameC.i]?.text) || (phoneC && r[phoneC.i]?.text);
+    const has = (nameC && r[nameC.i]?.text) || (phoneC && r[phoneC.i]?.text) || nameFromDesc(r);
     if(!has) return false;
     // строка-подсказка из расшифровки: одна заполненная ячейка с названием этапа
     // одна заполненная ячейка без телефона — заголовок или расшифровка («Расшифровка:», «Задаток»), не клиент
@@ -8248,6 +8295,13 @@ function LeadImportTable({staffOptions, currentProfile, busy, onPreview}){
       if(c.field === "stage"){ stageText = t; const st = mapValue("stage", t); if(st) o.stage = st; return; }
       if(c.field === "manager"){ o.manager = mapValue("manager", t); return; }
       if(!o[c.field]) o[c.field] = t; else o.notes.push(`${c.header}: ${t}`); });
+    // в колонке «Имя» оказался источник («Тикток Владимирович», «ОЛХ»), дата или телефон — разносим по своим полям
+    if(o.name){ const raw = o.name; const src = liSourceOf(raw) || (/^(эля|еля)(\s|$)|(^|\s)(лид|лиды|лід|ліди)(\s|$)/i.test(raw) ? raw : "");
+      if(src && !liNameFromText(raw, staffFirst)){ if(!o.source){ o.source = src; if(liNorm(src) !== liNorm(raw)) o.notes.push(`Источник: ${raw}`); } else o.notes.push(raw); o.name = ""; }
+      else if(/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(raw.trim()) || /^\d{5}$/.test(raw.trim())){ if(!o.lead_date){ const iso = liDateIso(raw); if(/^\d{4}-/.test(iso)) o.lead_date = iso.slice(0, 10); } o.name = ""; }
+      else if(raw.replace(/\D/g, "").length >= 9 && /^[\d\s+()\-.,E]+$/i.test(raw.trim())){ if(!o.phone) o.phone = raw; o.name = ""; } }
+    // имени нет — ищем в описании («Олег, ищет 2к…», «зовут Оля»)
+    if(!o.name){ const n = nameFromDesc(r); if(n) o.name = n; }
     if(!o.stage){ const k = rowColor(r); const st = k && stageByColor(k); if(st) o.stage = st; }
     if(!o.stage && stageText) o.stage_text = stageText;
     o.notes = o.notes.join("\n");

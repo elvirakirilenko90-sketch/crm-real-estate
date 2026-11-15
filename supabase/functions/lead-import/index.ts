@@ -1,4 +1,5 @@
-// lead-import v8 — загрузка лидов списком, из таблицы Excel (колонки настроены менеджером) и из скриншотов переписки.
+// lead-import v9 — загрузка лидов списком, из таблицы Excel (колонки настроены менеджером) и из скриншотов переписки.
+// v9: «Источник клиентов» больше не принимается за колонку «Имя»; имя ищется в описании, если колонки имени нет.
 // v8: preview принимает rows — готовые строки из таблицы (имя, телефон, источник, этап, дата, ответственный, заметка);
 //     для таких строк этап из таблицы сохраняется (keep_stage), иначе — как раньше «Новый Лид».
 // POST { mode: "preview" | "commit" | "decide", text?, images?, ai_text?, manager_email?, source?, leads?, id?, action? }
@@ -163,15 +164,55 @@ const sourceHeader = (line: string) => {
 const PHONE_IN_TEXT = /(?:\+?\d{1,3}[\s\-]?)?\(?0?\d{2,3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/;
 
 const SPLIT = /\t|;|\s\|\s|,(?!\d)/;
+// Копия из Excel/Google Таблиц — колонки через табуляцию: запятые внутри описания колонку не делят
+const splitCells = (line: string) => line.includes("\t") ? line.split("\t") : line.split(SPLIT);
 const NAME_RE = /^[A-Za-zА-Яа-яЁёІіЇїЄєҐґ'’\-\s.]{2,40}$/;
 // Короткая ячейка с названием площадки — это источник
 const SOURCE_RE = /^(тик-?ток|tik-?tok|инста|інста|insta|телегр|telegr|фейсбук|facebook|fb\b|viber|вайбер|whats|olx|олх|дом\.?риа|dim\.?ria|dom\.?ria|лун|lun|rieltor|сайт|site|рекоменд|повторн|звонок|дзвінок|реклам|google|гугл|youtube|ютуб|авито|лид|лід|эля|еля)/i;
+// Порядок проверки важен: «Источник клиентов», «Телефон клиента», «Описание клиента» — не имя, хотя есть слово «клиент».
 const HEADER = {
+  source: /источ|джерел|source|канал|откуда|звідки|тип лида|тип ліда|тип клиент|тип клієнт|площадк/i,
+  phone: /телеф|phone|номер|(?:^|[^а-яёіїєґ])тел(?:[^а-яёіїєґ]|$)/i,
+  notes: /замет|нотат|коммент|комент|note|запрос|запит|описан|опис|примеч|приміт|решени|рішенн/i,
   name: /имя|ім['’]я|фио|піб|name|клиент|клієнт/i,
-  phone: /телеф|phone|номер|тел\b/i,
-  source: /источ|джерел|source|канал|откуда|звідки/i,
-  notes: /замет|нотат|коммент|комент|note|запрос|запит|описан|опис/i,
 };
+
+// Имя клиента в описании: «зовут Оля», «Олег, ищет 2к», «Сергей Власов 067…», «… клиентка Ирина …».
+// Не берём площадки и сотрудников: «Эля лиды», «Тикток Владимирович», «от Эльвиры».
+const LI_FIRST_NAMES = new Set(("александр олександр саша алекс алексей олексій леша лёша андрей андрій андрюша антон артем артём артур богдан борис вадим валентин валерий валерій василий василь вася виктор віктор витя виталий віталій влад владислав владимир володимир вова володя вячеслав слава геннадий геннадій гена георгий георгій гоша глеб гліб григорий григорій гриша давид данил даниил данило денис дмитрий дмитро дима евгений євген женя егор єгор иван іван ваня игорь ігор илья ілля кирилл кирило константин костянтин костя леонид леонід лёня максим макс марк матвей матвій михаил михайло миша назар никита микита николай микола коля олег павел павло паша петр пётр петро петя роман рома руслан сергей сергій сережа серёжа семен семён станислав стас степан тарас тимур тимофей тимофій федор фёдор федір филипп пилип юрий юрій юра ярослав ян эдуард едуард эрик ерік арсен арсений арсеній аркадий аркадій вениамин ростислав святослав всеволод захар лев марат рустам эмиль анатолий анатолій толя эльдар геннадий остап любомир мирослав зиновий тимофей "
+  + "александра олександра алена альона алёна алина аліна алиса аліса алла анастасия анастасія настя анна ганна аня анжела анжелика антонина валентина валерия валерія варвара вера віра вероника вероніка виктория вікторія вика віка галина галя дарья дарина дарія даша диана діана ева єва евгения євгенія екатерина катерина катя елена олена лена елизавета єлизавета лиза зоя инна інна ирина ірина ира іра карина кристина ксения ксенія ксюша лариса лилия лілія люба любовь любов людмила люда маргарита рита марина мария марія маша милана мілана надежда надія надя наталья наталия наталія наташа нина ніна оксана ольга оля полина поліна раиса светлана світлана света софия софія соня тамара татьяна тетяна таня ульяна уляна юлия юлія юля яна снежана сніжана жанна эвелина евеліна элина еліна сусанна регина регіна лидия лідія майя злата олеся леся мирослава ярослава богдана владислава василиса василина христина кира кіра нелли неля дина лана ангелина ангеліна стефания стефанія виолетта віолетта эмилия емілія алёна жана мила роза эмма лиана ліана"
+  + " alex alexander anna maria olga irina elena natalia sergey andrey dmitry ivan oleg").split(/\s+/).filter(Boolean));
+// Слова, с которых описание начинается, но это не имя
+const LI_NOT_NAME = /^(ищ|шука|хоч|хот|нужн|нуж|потріб|купи|прода|сня|зня|сда|зда|квартир|дом|будин|участ|ділян|жк|клиент|клієнт|покуп|бюдж|цен|ціна|район|звон|дзвон|перезв|передзв|нет$|не$|ні$|да$|так$|был|бул|прос|интерес|цікав|рассм|розгл|смотр|дивит|отправ|відправ|скину|сдела|зроби|договор|домов|для$|от$|від$|по$|на$|без$|срочн|термін|инвест|інвест|семь|сім|пара$|муж|чолов|жена|дружин|олх|olx|тик|tik|инст|інст|insta|фейс|face|теле|вайб|viber|whats|комн|кімн|однуш|двуш|трешк|трёшк|студи|новостр|новобуд|вторич|вторин|аренд|оренд|продаж|покупк|рассроч|розстроч|ипот|іпот|налич|готівк|сегодн|сьогодн|завтр|вчера|вчора|эля$|еля$|лид|лід|повтор|рекоменд|думает|думают|отказ|відмов|задат|показ|встреч|зустр|сделк|угод|нов|в работе|е-?осел|є-?осел|э-?осел|одес|київ|киев|ірпін|ирпен|львов|львів|днепр|дніпр|харьк|харків|приморск|центр|заграниц|за кордон|уехал|молча|номер|телеф|тел$|запрос|запит|комент|коммент|примеч|опис|дата|источ|джерел|этап|етап|статус|менедж|риэлт|ріелт|агент|владимирович)/i;
+const LI_W = "[A-Za-zА-ЯЁІЇЄҐа-яёіїєґ'’-]";
+const liCap = (w: string) => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : "";
+const liIsName = (w: string) => LI_FIRST_NAMES.has(String(w || "").toLowerCase().replace(/[’']/g, "'"));
+// фамилия или отчество после имени: «Власов», «Шевченко», «Владимирович»
+const LI_SURNAME = /^[А-ЯЁІЇЄҐA-Z][а-яёіїєґa-z'’-]*(ов|ев|ёв|ин|ын|ко|ук|юк|чук|як|ий|ой|ая|ова|ева|ина|ына|ська|цька|ський|цький|енко|ович|евич|овна|евна|івна|ївна|ич)$/;
+function liNameFromText(text: string, exclude: string[] = []): string {
+  const t = String(text || "").replace(/\s+/g, " ").trim(); if(!t) return "";
+  const skip = new Set(exclude.map(x => String(x || "").toLowerCase()));
+  const words = [...t.matchAll(new RegExp(`${LI_W}+`, "g"))].map((m) => ({ w: m[0], i: m.index as number }));
+  const ok = (k: number) => { const x = words[k]; if(!x) return false; const lw = x.w.toLowerCase();
+    if(lw === "эля" || lw === "еля") return false;                                                         // «Эля лиды» — источник
+    const prev = (words[k - 1]?.w || "").toLowerCase(), next = (words[k + 1]?.w || "").toLowerCase();
+    if(/^(от|від|у|менеджер|риэлтор|риелтор|ріелтор|агент|риэлтора|менеджера)$/.test(prev)) return false; // «от Эльвиры»
+    if(skip.has(lw) && /^(лид|лиды|лід|ліди|ліда|лида)$/.test(next)) return false;                         // «Марина лиды» — сотрудник
+    return true; };
+  const withSurname = (k: number) => { const nx = words[k + 1]; const between = nx ? t.slice(words[k].i + words[k].w.length, nx.i) : "";
+    return liCap(words[k].w) + (nx && /^\s+$/.test(between) && LI_SURNAME.test(nx.w) && !LI_NOT_NAME.test(nx.w) ? " " + nx.w : ""); };
+  // 1) «зовут Оля», «имя: Олег», «клиентка Ирина»
+  const mk = t.match(new RegExp(`(?:зовут|звати|имя|ім['’]я|клиент(?:ка)?|клієнт(?:ка)?|покупатель(?:ница)?|покупець)\\s*[:\\-–—]?\\s*(${LI_W}{2,20})`, "i"));
+  if(mk && (liIsName(mk[1]) || /^[А-ЯЁІЇЄҐA-Z]/.test(mk[1])) && !LI_NOT_NAME.test(mk[1])){ const k = words.findIndex((x) => x.i === ((mk.index as number) + mk[0].length - mk[1].length)); if(k >= 0 && ok(k)) return withSurname(k); }
+  // 2) первое известное имя с заглавной буквы (или в самом начале описания)
+  for(let k = 0; k < words.length; k++){ const w = words[k].w;
+    if(liIsName(w) && (/^[А-ЯЁІЇЄҐA-Z]/.test(w) || k === 0) && ok(k)) return withSurname(k); }
+  // 3) «Ярема 067…», «Ярема - +380…» — слово с заглавной в начале, сразу за ним телефон
+  const lead = t.match(new RegExp(`^(${LI_W}{2,20})(?:\\s+(${LI_W}{2,20}))?\\s*[,:;—–-]?\\s*\\+?\\(?\\d{3}`));
+  if(lead && /^[А-ЯЁІЇЄҐA-Z]/.test(lead[1]) && !LI_NOT_NAME.test(lead[1]) && ok(0)) return withSurname(0);
+  return "";
+}
+
 
 // Формат заметок: «телефон - имя - запрос - дата - риэлтор - что угодно» (дата и риэлтор могут меняться местами)
 const NOTE_SPLIT = /\s+[-–—]+\s+|\s*\|\s*|;|\t/;
@@ -196,9 +237,14 @@ function parseNotesLine(line: string, staff: Staff[]): Lead | null {
   if (!phone && !warnings.length) return null; // не похоже на строку из заметок
   let leadDate: string | null = null, noYear = false;
   parts.forEach((p, i) => { if (!used.has(i) && !leadDate) { const d = parseDate(p); if (d) { leadDate = d; noYear = NO_YEAR.test(p.trim()); used.add(i); } } });
-  // имя — первая свободная короткая часть из букв
-  let name = "", nameIdx = -1;
-  parts.forEach((p, i) => { if (nameIdx < 0 && !used.has(i) && NAME_RE.test(p) && p.split(/\s+/).length <= 3) { name = p; nameIdx = i; used.add(i); } });
+  // имя — первая свободная короткая часть из букв; площадка («Тикток Владимирович», «ОЛХ Адриана», «Эля лиды») — это источник
+  const staffFirst = staff.map((x) => String(x.full_name || "").toLowerCase().split(/\s+/)[0]).filter(Boolean);
+  let name = "", nameIdx = -1, source = "";
+  parts.forEach((p, i) => {
+    if (nameIdx >= 0 || used.has(i) || !NAME_RE.test(p) || p.split(/\s+/).length > 3) return;
+    if (SOURCE_RE.test(p) && !liNameFromText(p, staffFirst)) { if (!source) { source = p; used.add(i); } return; }
+    name = p; nameIdx = i; used.add(i);
+  });
   // риэлтор — среди частей после имени
   let realtor: Staff | null = null, realtorRaw = "";
   parts.forEach((p, i) => {
@@ -207,6 +253,8 @@ function parseNotesLine(line: string, staff: Staff[]): Lead | null {
     if (s) { realtor = s; realtorRaw = p; used.add(i); }
   });
   const free = parts.filter((_, i) => !used.has(i));
+  // имени нет отдельной ячейкой — ищем в описании: «Олег, ищет 2к», «зовут Оля»
+  if (!name) { name = liNameFromText(free.join(" · "), staffFirst); if (name) nameIdx = 0; }
   const request = free.shift() || "";
   // одно слово с заглавной буквы, не найденное среди сотрудников, — скорее всего фамилия риэлтора
   if (!realtor) {
@@ -227,13 +275,14 @@ function parseNotesLine(line: string, staff: Staff[]): Lead | null {
   ].filter(Boolean).join("\n");
   if (!name) warnings.push("Не найдено имя");
   return {
-    name, phone, source: "", notes, next_contact_at: null, warnings, stage, lead_date: leadDate, _noYear: noYear,
+    name, phone, source, notes, next_contact_at: null, warnings, stage, lead_date: leadDate, _noYear: noYear,
     manager_email: (realtor as Staff | null)?.email || "", manager_name: (realtor as Staff | null)?.full_name || "",
   };
 }
 
 function parseText(text: string, staff: Staff[] = []): Lead[] {
   const out: Lead[] = [];
+  const staffFirst = staff.map((x) => String(x.full_name || "").toLowerCase().split(/\s+/)[0]).filter(Boolean);
   const raw = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   // подзаголовок «Тик-ток» / «Инста» / «Телеграмм» задаёт источник для строк под ним
   const lines: string[] = [], lineSource: string[] = [];
@@ -244,9 +293,11 @@ function parseText(text: string, staff: Staff[] = []): Lead[] {
     lines.push(l); lineSource.push(current);
   }
   const withSource = (r: Lead, i: number) => { if (lineSource[i] && !r.source) r.source = lineSource[i]; return r; };
+  // Есть строка заголовков («Дата | Источник клиентов | Имя | Телефон») — разбираем по колонкам, а не как заметки
+  const hasHeader = lines.length > 0 && !/\d{6,}/.test(lines[0]) && (HEADER.name.test(lines[0]) || HEADER.phone.test(lines[0])) && splitCells(lines[0]).length >= 2;
   // Списки из заметок разбираем отдельным правилом
-  const notesRows = lines.map((l) => parseNotesLine(l, staff));
-  if (lines.length && notesRows.filter(Boolean).length >= Math.max(1, Math.ceil(lines.length * 0.6))) {
+  const notesRows = lines.map((l) => hasHeader ? null : parseNotesLine(l, staff));
+  if (!hasHeader && lines.length && notesRows.filter(Boolean).length >= Math.max(1, Math.ceil(lines.length * 0.6))) {
     lines.forEach((l, i) => {
       const r = notesRows[i] || parseText(l, [])[0];
       if (r) out.push(withSource(r, i));
@@ -256,16 +307,20 @@ function parseText(text: string, staff: Staff[] = []): Lead[] {
   }
   // Заголовок таблицы → порядок столбцов
   let cols: (keyof typeof HEADER | null)[] | null = null;
-  if (lines.length && !/\d{6,}/.test(lines[0]) && (HEADER.name.test(lines[0]) || HEADER.phone.test(lines[0]))) {
+  if (hasHeader) {
     lineSource.shift();
-    cols = lines.shift()!.split(SPLIT).map((h) => {
-      for (const k of Object.keys(HEADER) as (keyof typeof HEADER)[]) if (HEADER[k].test(h)) return k;
+    const taken = new Set<string>();
+    cols = splitCells(lines.shift()!).map((h) => {
+      for (const k of Object.keys(HEADER) as (keyof typeof HEADER)[]) if (HEADER[k].test(h)) {
+        if (k !== "notes" && taken.has(k)) return "notes"; // вторая колонка «Имя»/«Источник» — в заметку
+        taken.add(k); return k;
+      }
       return null;
     });
   }
   lines.forEach((rawLine, li) => {
     const line = stripOrdinal(rawLine);
-    const cells = line.split(SPLIT).map((c) => c.trim());
+    const cells = splitCells(line).map((c) => c.trim());
     const warnings: string[] = [];
     let phone = "", name = "", source = "";
     const rest: string[] = [];
@@ -293,6 +348,10 @@ function parseText(text: string, staff: Staff[] = []): Lead[] {
         if (!name && before && NAME_RE.test(before)) { name = before; rest.length = 0; if (after) rest.push(after); }
       }
     }
+    // в колонке «Имя» оказался источник («Тикток Владимирович», «Эля лиды») — переносим в источник
+    if (name && !source && SOURCE_RE.test(name) && !liNameFromText(name, staffFirst)) { source = name; name = ""; }
+    // имени нет — ищем в описании: «Олег, ищет 2к», «зовут Оля», «клиентка Ирина»
+    if (!name) name = liNameFromText(rest.join(" · "), staffFirst);
     if (!phone && !warnings.length) warnings.push("Не найден телефон");
     if (!name) warnings.push("Не найдено имя");
     out.push(withSource({ name, phone, source, notes: rest.join(" · "), next_contact_at: null, warnings }, li));
@@ -474,7 +533,7 @@ Deno.serve(async (req) => {
           else if (String(rawPhone).replace(/\D/g, "").length >= 9) phone = normPhone(rawPhone);
           else warnings.push(`Телефон не распознан («${rawPhone}»)`);
         } else warnings.push("Не найден телефон");
-        const name = String(r.name || "").trim();
+        const name = String(r.name || "").trim() || liNameFromText(String(r.notes || "").replace(/^[^:\n]{1,40}:\s*/gm, ""), staff.map((x) => String(x.full_name || "").toLowerCase().split(/\s+/)[0]));
         if (!name) warnings.push("Не найдено имя");
         let leadDate: string | null = null;
         const ld = String(r.lead_date || "").trim();
