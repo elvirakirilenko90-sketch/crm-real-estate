@@ -8057,7 +8057,7 @@ function liDateInText(text){ const m = String(text || "").match(LI_DATE_IN_TEXT)
 function liSourceOf(text){
   const t = liNorm(text); if(!t) return "";
   if(LI_OLX.test(t)) return "ОЛХ";                       // «Звонок с Олх», «от OLX», «о.л.х» — всегда ОЛХ
-  if(/руковод|керівн/.test(t) && /тик|tik|тт\b/.test(t)) return "Тик-Ток рабочий"; // «Руководство тик-ток»
+  if(/руковод|керівн|^рук\.?$/.test(t)) return "Тик-Ток рабочий"; // «Руководство», «Руководство Тик-ток», «Керівництво» — это рабочий Тик-Ток
   const exact = sources.find(s => liNorm(s) === t); if(exact) return exact;
   const personal = /личн|особ|мой|мій/.test(t);
   if(/тик|tik|тт\b/.test(t)) return personal ? "Тик-Ток личный" : "Тик-Ток рабочий";
@@ -8066,7 +8066,6 @@ function liSourceOf(text){
   if(/телег|telegr|\bтг\b|\btg\b/.test(t)) return "Телеграмм-канал рабочий";
   if(/повтор/.test(t)) return "Повторный клиент";
   if(/рекоменд/.test(t)) return /клиент|клієнт/.test(t) ? "Рекомендации клиентов" : "Рекомендации";
-  if(/руковод|керівн/.test(t)) return "Лид руководство";
   return "";
 }
 
