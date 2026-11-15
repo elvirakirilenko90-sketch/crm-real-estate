@@ -1,4 +1,5 @@
-// lead-import v13 — загрузка лидов списком, из таблицы Excel (колонки настроены менеджером) и из скриншотов переписки.
+// lead-import v14 — загрузка лидов списком, из таблицы Excel (колонки настроены менеджером) и из скриншотов переписки.
+// v14: сохранение больше не падает после разрешённого дубля (пустой ответ базы на 201); повторное сохранение не создаёт копий.
 // v13: имя — только «Имя Фамилия» (без ников, латинских дублей, отчества, приписок); источник не дублируется в заметку.
 // v12: «Руководство» / «Керівництво» (с Тик-ток или без) — источник «Тик-Ток рабочий».
 // v11: любая дата в строке (дд.мм.гггг) — дата лида; «олх» в любом написании где угодно — источник ОЛХ;
@@ -112,7 +113,9 @@ async function rest(path: string, init: RequestInit = {}) {
     headers: { apikey: SERVICE, authorization: `Bearer ${SERVICE}`, "content-type": "application/json", ...(init.headers || {}) },
   });
   if (!r.ok) throw new Error(`База: ${r.status} ${(await r.text()).slice(0, 300)}`);
-  return r.status === 204 ? null : r.json();
+  // 201 без тела (вставка без return=representation) — это успех, а не ошибка
+  const body = await r.text();
+  return body ? JSON.parse(body) : null;
 }
 
 // Пользователь CRM по токену входа
@@ -484,7 +487,7 @@ async function askAI(content: unknown[]): Promise<Lead[]> {
   });
 }
 
-type Known = { id: number; name: string; manager_name: string; manager_email: string; stage: string; created_at: string };
+type Known = { id: number; name: string; manager_name: string; manager_email: string; stage: string; created_at: string; same?: Set<string> };
 // Телефоны и ники, уже существующие в агентстве (номер мог оказаться и в name/source из-за старого импорта)
 async function knownPhones(agencyId: number | null): Promise<Map<string, Known>> {
   const filter = agencyId ? `&agency_id=eq.${agencyId}` : "";
@@ -494,7 +497,9 @@ async function knownPhones(agencyId: number | null): Promise<Map<string, Known>>
     const s = String(v || "");
     const k = looksPhone(s) || nickOf(s) ? contactKey(s) : "";
     // запоминаем самую первую карточку с этим номером
-    if (k && !m.has(k)) m.set(k, { id: row.id, name: row.name || "", manager_name: row.manager_name || "", manager_email: row.manager_email || "", stage: row.stage || "", created_at: row.created_at || "" });
+    if (k && !m.has(k)) m.set(k, { id: row.id, name: row.name || "", manager_name: row.manager_name || "", manager_email: row.manager_email || "", stage: row.stage || "", created_at: row.created_at || "", same: new Set() });
+    // все карточки с этим номером: «имя|менеджер» — чтобы повторное сохранение не создавало копии
+    if (k) m.get(k)!.same!.add(`${String(row.name || "").trim().toLowerCase()}|${String(row.manager_email || "").toLowerCase()}`);
   }
   return m;
 }
@@ -586,6 +591,11 @@ Deno.serve(async (req) => {
           // существующую карточку не трогаем
           if (isAdmin) {
             if (!x.allow_duplicate) continue;
+            // такая же карточка (тот же номер, имя и менеджер) уже есть — повторно не добавляем
+            const who = rowOwner(String(x.manager_email || ""));
+            const sig = `${(name || "Без имени").toLowerCase()}|${String(who.email || "").toLowerCase()}`;
+            if (orig.same?.has(sig)) continue;
+            orig.same?.add(sig);
             const [ins] = await rest("leads", { method: "POST", headers: { prefer: "return=representation" }, body: JSON.stringify(leadRow(x, phone, name)) });
             await rest("lead_duplicates", { method: "POST", body: JSON.stringify({ agency_id: agencyId, lead_id: ins.id, duplicate_of: orig.id, status: "added", uploaded_by: me.email, decided_by: me.email, decided_at: new Date().toISOString() }) });
             dupAdded++;
