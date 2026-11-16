@@ -9212,6 +9212,217 @@ function NbBranchFields({meta, setMeta, lang, districts}){
 const nbCleanMeta = m => { const o = {...(m || {})}; if(o.first_pct === "" || o.first_pct == null) delete o.first_pct; else o.first_pct = Number(o.first_pct);
   if(!o.months) delete o.months; else o.months = Number(o.months); if(!o.district) delete o.district; else o.district = String(o.district).trim(); if(!o.payment) delete o.payment; return o; };
 
+// ===== Наличие квартир и рассрочка по условиям ЖК =====
+// Квартиры раз в неделю собирает функция nb-sync из шахматок / прайсов на Google Drive (или из файла, который загрузил администратор).
+// Условия рассрочки ЖК (nb_sources.meta.plan) задаёт администратор — варианты: ПВ %, срок (или «до даты»), удорожание $/м² или %, % годовых.
+// Менеджер может сам вписать ПВ и количество месяцев — CRM пересчитает все квартиры.
+const nbPlanVariants = (meta) => { const p = meta?.plan || {};
+  if(Array.isArray(p.variants) && p.variants.length) return p.variants;
+  if(p.first_pct != null || p.months || p.until) return [p];
+  return meta?.first_pct != null || meta?.months ? [{first_pct:meta.first_pct, months:meta.months}] : []; };
+const nbMonthsUntil = (d) => { if(!d) return null; const t = new Date(d); if(isNaN(+t)) return null; const n = new Date();
+  return Math.max(1, (t.getFullYear() - n.getFullYear()) * 12 + (t.getMonth() - n.getMonth())); };
+// Расчёт одной квартиры: v — вариант условий; pct / months — то, что вписал менеджер (необязательно)
+function nbCalcUnit(u, plan, v, pct, months){
+  const area = Number(u.area) || 0;
+  const base = u.total_price != null ? Number(u.total_price) : (area && u.price_m2 ? area * Number(u.price_m2) : null);
+  if(base == null) return null;
+  const vv = v || {};
+  const price = base + area * (Number(vv.markup_m2) || 0) + base * (Number(vv.markup_pct) || 0) / 100;
+  const p = pct !== "" && pct != null ? Number(pct) : Number(vv.first_pct) || 0;
+  const m = months !== "" && months != null ? Number(months) : (nbMonthsUntil(vv.until) ?? (Number(vv.months) || 0));
+  const first = price * p / 100;
+  const disc = plan?.first_disc_pct && p >= (Number(plan.first_disc_from) || 0) ? first * Number(plan.first_disc_pct) / 100 : 0;
+  const rest = price - first; const r = (Number(vv.annual_rate) || 0) / 1200;
+  const monthly = m > 0 && rest > 0 ? (r > 0 ? rest * r / (1 - Math.pow(1 + r, -m)) : rest / m) : null;
+  return {base, price, pct:p, first:first - disc, disc, rest, months:m || null, monthly, full:base * (1 - (Number(plan?.full_disc_pct) || 0) / 100)};
+}
+const nbUsd = (n) => n == null || !isFinite(n) ? "—" : "$" + Math.round(n).toLocaleString("ru-RU").replace(/,/g, " ");
+const nbVariantLabel = (v, lang) => [v.first_pct != null && v.first_pct !== "" ? `${tr(lang,"ПВ")} ${v.first_pct}%` : null,
+  v.until ? `${tr(lang,"до")} ${new Date(v.until).toLocaleDateString("ru-RU", {month:"2-digit", year:"numeric"})}` : v.months ? `${v.months} ${tr(lang,"мес")}` : null,
+  Number(v.markup_m2) ? `+$${v.markup_m2}/м²` : null, Number(v.markup_pct) ? `+${v.markup_pct}%` : null, Number(v.annual_rate) ? `${v.annual_rate}% ${tr(lang,"годовых")}` : null].filter(Boolean).join(" · ") || tr(lang,"Без условий");
+const nbSyncLine = (sync, lang) => { if(!sync?.at) return null; const d = new Date(sync.at).toLocaleDateString("ru-RU", {day:"2-digit", month:"2-digit"});
+  return sync.ok ? [`🔄 ${d}`, sync.free != null && `${sync.free} ${tr(lang,"свободных")}`, sync.new ? `+${sync.new} ${tr(lang,"новых")}` : null, sync.sold ? `${sync.sold} ${tr(lang,"продано")}` : null, sync.changed ? `${sync.changed} ${tr(lang,"цен изменилось")}` : null].filter(Boolean).join(" · ") : `⚠ ${d}: ${sync.error}`; };
+const nbFileToB64 = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(file); });
+
+// Окно администратора: условия рассрочки ЖК + откуда брать наличие
+function NbPlanModal({s, lang, onClose, onSaved}){
+  const m0 = s.meta || {};
+  const [variants,setVariants] = useState(() => { const v = nbPlanVariants(m0); return v.length ? v.map(x => ({...x})) : [{first_pct:m0.first_pct ?? "", months:m0.months ?? ""}]; });
+  const [def,setDef] = useState(Number(m0.plan?.default_idx) || 0);
+  const [extra,setExtra] = useState({first_disc_from:m0.plan?.first_disc_from ?? "", first_disc_pct:m0.plan?.first_disc_pct ?? "", full_disc_pct:m0.plan?.full_disc_pct ?? "", note:m0.plan?.note || ""});
+  const [mode,setMode] = useState(m0.price_mode === "upload" ? "upload" : "auto");
+  const [files,setFiles] = useState((m0.price_files || []).map(f => f.id || f).join("\n"));
+  const [busy,setBusy] = useState(""); const [msg,setMsg] = useState(""); const [log,setLog] = useState([]);
+  useEffect(() => { supabase.from("nb_sync_log").select("created_at,trigger,file_name,ok,units_free,units_new,units_sold,price_changed,error").eq("source_id", s.id).order("id", {ascending:false}).limit(5).then(({data}) => setLog(data || [])); }, [s.id, busy]);
+  const setV = (i, patch) => setVariants(variants.map((v, k) => k === i ? {...v, ...patch} : v));
+  const numOr = (x) => x === "" || x == null ? undefined : Number(String(x).replace(",", "."));
+  const cleanPlan = () => ({variants:variants.map(v => Object.fromEntries(Object.entries({first_pct:numOr(v.first_pct), months:v.until ? undefined : numOr(v.months), until:v.until || undefined,
+      markup_m2:numOr(v.markup_m2), markup_pct:numOr(v.markup_pct), annual_rate:numOr(v.annual_rate)}).filter(([, x]) => x !== undefined && !Number.isNaN(x)))).filter(v => Object.keys(v).length),
+    default_idx:def, first_disc_from:numOr(extra.first_disc_from), first_disc_pct:numOr(extra.first_disc_pct), full_disc_pct:numOr(extra.full_disc_pct), note:extra.note.trim() || undefined});
+  const invoke = async (body) => { const {data, error} = await supabase.functions.invoke("nb-sync", {body}); return error ? {ok:false, error:error.message} : (data || {ok:false}); };
+  const save = async (after) => {
+    setBusy("save"); setMsg("");
+    const plan = JSON.parse(JSON.stringify(cleanPlan()));
+    const v0 = plan.variants[Math.min(def, plan.variants.length - 1)] || {};
+    const price_files = files.split(/\s+/).map(x => x.trim()).filter(Boolean).map(id => ({id}));
+    // ПВ и срок по умолчанию дублируем в старые поля — по ним работают фильтры и подписи на карточке
+    const meta = {...m0, plan, price_mode:mode === "upload" ? "upload" : undefined, price_files:price_files.length ? price_files : undefined,
+      first_pct:v0.first_pct ?? m0.first_pct, months:v0.months ?? (v0.until ? nbMonthsUntil(v0.until) : m0.months)};
+    Object.keys(meta).forEach(k => meta[k] === undefined && delete meta[k]);
+    const {error} = await supabase.from("nb_sources").update({meta}).eq("id", s.id);
+    if(error){ setBusy(""); setMsg("⚠ " + error.message); return; }
+    s.meta = meta;
+    const r = after === "sync" ? await invoke({action:"sync", source_id:s.id}) : await invoke({action:"recalc", source_id:s.id});
+    setBusy(""); setMsg(r.ok ? (after === "sync" ? "✓ " + (nbSyncLine(r.sync, lang) || tr(lang,"Обновлено")) : `✓ ${tr(lang,"Сохранено, рассрочка пересчитана")}: ${r.count ?? 0}`) : "⚠ " + r.error);
+    onSaved && onSaved();
+  };
+  const upload = async (file) => {
+    if(!file) return; setBusy("upload"); setMsg("");
+    try { const b64 = await nbFileToB64(file); const r = await invoke({action:"upload", source_id:s.id, name:file.name, b64});
+      setMsg(r.ok ? "✓ " + nbSyncLine(r.sync, lang) : "⚠ " + r.error); if(r.ok){ setMode("upload"); s.meta = {...(s.meta || {}), price_mode:"upload"}; onSaved && onSaved(); } }
+    catch(e){ setMsg("⚠ " + e.message); }
+    setBusy("");
+  };
+  const ex = {id:"x", area:50, total_price:50000};
+  return <Modal onClose={onClose}>
+    <div className="row"><h2>💳 {tr(lang,"Рассрочка и наличие")}</h2><button className="icon" onClick={onClose}>×</button></div>
+    <p className="muted" style={{marginTop:0}}>{s.title}</p>
+    <h3 style={{margin:"6px 0"}}>{tr(lang,"Варианты рассрочки")}</h3>
+    <p className="muted" style={{marginTop:0}}>{tr(lang,"Каждая строка — вариант от застройщика. Срок можно вписать в месяцах или датой «до сдачи» — тогда CRM каждую неделю сама уменьшает количество месяцев.")}</p>
+    {variants.map((v, i) => { const c = nbCalcUnit(ex, extra, v); return <div key={i} className="card" style={{padding:10, display:"grid", gap:8, marginBottom:8}}>
+      <div className="row" style={{gap:8, alignItems:"center"}}><label style={{display:"flex", gap:6, alignItems:"center"}}><input type="radio" checked={def === i} onChange={() => setDef(i)}/> <b>{tr(lang,"Вариант")} {i + 1}</b>{def === i && <small className="muted">· {tr(lang,"по умолчанию")}</small>}</label>
+        {variants.length > 1 && <button className="nbX" onClick={() => { setVariants(variants.filter((_, k) => k !== i)); if(def >= i && def > 0) setDef(def - 1); }}>×</button>}</div>
+      <div className="grid2" style={{gap:8}}>
+        <Field label={tr(lang,"Первый взнос, %")}><input className="input" inputMode="decimal" value={v.first_pct ?? ""} onChange={e => setV(i, {first_pct:e.target.value.replace(/[^\d.,]/g,"")})} placeholder="30"/></Field>
+        <Field label={tr(lang,"Срок, месяцев")}><input className="input" inputMode="numeric" value={v.until ? "" : (v.months ?? "")} disabled={!!v.until} onChange={e => setV(i, {months:e.target.value.replace(/\D/g,"")})} placeholder={v.until ? tr(lang,"по дате") : "24"}/></Field>
+        <Field label={tr(lang,"Или до даты (сдача дома)")}><input className="input" type="date" value={v.until || ""} onChange={e => setV(i, {until:e.target.value})}/></Field>
+        <Field label={tr(lang,"Удорожание, $ за м²")}><input className="input" inputMode="decimal" value={v.markup_m2 ?? ""} onChange={e => setV(i, {markup_m2:e.target.value.replace(/[^\d.,]/g,"")})} placeholder="0"/></Field>
+        <Field label={tr(lang,"Удорожание, % к цене")}><input className="input" inputMode="decimal" value={v.markup_pct ?? ""} onChange={e => setV(i, {markup_pct:e.target.value.replace(/[^\d.,]/g,"")})} placeholder="0"/></Field>
+        <Field label={tr(lang,"% годовых на остаток")}><input className="input" inputMode="decimal" value={v.annual_rate ?? ""} onChange={e => setV(i, {annual_rate:e.target.value.replace(/[^\d.,]/g,"")})} placeholder="0"/></Field>
+      </div>
+      {c && <small className="muted">{tr(lang,"Пример: квартира 50 м² за $50 000")} → {tr(lang,"цена")} {nbUsd(c.price)}, {tr(lang,"ПВ")} {nbUsd(c.first)}{c.monthly ? `, ${nbUsd(c.monthly)} × ${c.months} ${tr(lang,"мес")}` : ""}</small>}
+    </div>; })}
+    <Button variant="soft" onClick={() => setVariants([...variants, {first_pct:"", months:""}])}>＋ {tr(lang,"Вариант")}</Button>
+    <h3 style={{margin:"14px 0 6px"}}>{tr(lang,"Скидки и как считать")}</h3>
+    <div className="grid2" style={{gap:8}}>
+      <Field label={tr(lang,"При ПВ от, %")}><input className="input" inputMode="decimal" value={extra.first_disc_from} onChange={e => setExtra({...extra, first_disc_from:e.target.value})} placeholder="30"/></Field>
+      <Field label={tr(lang,"скидка на сумму ПВ, %")}><input className="input" inputMode="decimal" value={extra.first_disc_pct} onChange={e => setExtra({...extra, first_disc_pct:e.target.value})} placeholder="10"/></Field>
+      <Field label={tr(lang,"Скидка при 100% оплате, %")}><input className="input" inputMode="decimal" value={extra.full_disc_pct} onChange={e => setExtra({...extra, full_disc_pct:e.target.value})} placeholder="0"/></Field>
+    </div>
+    <Field label={tr(lang,"Как считать — подсказка менеджерам")}><textarea className="input" rows={3} value={extra.note} onChange={e => setExtra({...extra, note:e.target.value})} placeholder={tr(lang,"Например: удорожание считается от цены м² в шахматке; акции не суммируются")}/></Field>
+    <h3 style={{margin:"14px 0 6px"}}>{tr(lang,"Наличие квартир")}</h3>
+    <div className="feedSrcKinds">
+      <button type="button" className={cn(mode === "auto" && "on")} onClick={() => setMode("auto")}>🔄 {tr(lang,"Сам раз в неделю из Google Диска")}</button>
+      <button type="button" className={cn(mode === "upload" && "on")} onClick={() => setMode("upload")}>📤 {tr(lang,"Загружаю файлом")}</button>
+    </div>
+    {mode === "auto" && <Field label={tr(lang,"Файлы шахматки / прайса (ссылки, каждая с новой строки). Пусто — CRM найдёт сама")}><textarea className="input" rows={2} value={files} onChange={e => setFiles(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…"/></Field>}
+    <label className="btn soft full" style={{display:"flex", justifyContent:"center", cursor:"pointer", marginTop:8}}>📤 {busy === "upload" ? tr(lang,"Загружаем…") : tr(lang,"Загрузить шахматку / прайс (Excel)")}
+      <input type="file" accept=".xlsx,.xls,.csv,.ods" style={{display:"none"}} onChange={e => { upload(e.target.files?.[0]); e.target.value = ""; }}/></label>
+    {msg && <div className={cn("feedSrcCheck", msg.startsWith("⚠") ? "bad" : "ok")}>{msg}</div>}
+    <div className="feedSrcBtns" style={{marginTop:10}}>
+      <Button onClick={() => save("recalc")} disabled={!!busy}>{busy === "save" ? "…" : "✓ " + tr(lang,"Сохранить и пересчитать")}</Button>
+      {mode === "auto" && s.kind === "gdrive" && <Button variant="soft" onClick={() => save("sync")} disabled={!!busy}>🔄 {tr(lang,"Обновить наличие сейчас")}</Button>}
+    </div>
+    {log.length > 0 && <div style={{marginTop:12}}><small className="muted">{tr(lang,"Последние обновления")}:</small>
+      {log.map((l, i) => <div key={i} style={{fontSize:13, padding:"4px 0", borderTop:"1px solid var(--line,#333)"}}>{new Date(l.created_at).toLocaleString("ru-RU", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"})} · {l.ok ? `${l.units_free} ${tr(lang,"свободных")}${l.units_new ? ` · +${l.units_new}` : ""}${l.units_sold ? ` · ${tr(lang,"продано")} ${l.units_sold}` : ""}${l.price_changed ? ` · ${tr(lang,"цен")} ${l.price_changed}` : ""}` : "⚠ " + l.error}{l.file_name ? <small className="muted"> · {l.file_name}</small> : null}</div>)}</div>}
+  </Modal>;
+}
+
+// Блок «Наличие и рассрочка» в ЖК — для всех. ПВ и срок менеджер может вписать сам.
+function NbUnitsPanel({source, lang}){
+  const plan = source.meta?.plan || {};
+  const variants = nbPlanVariants(source.meta);
+  const [units,setUnits] = useState(null);
+  const [open,setOpen] = useState(true);
+  const [vi,setVi] = useState(Math.min(Number(plan.default_idx) || 0, Math.max(0, variants.length - 1)));
+  const [pct,setPct] = useState(""); const [months,setMonths] = useState("");
+  const [f,setF] = useState({rooms:"", budget:"", monthly:"", floorMin:"", floorMax:"", type:"apartment", q:""});
+  const [sort,setSort] = useState("price");
+  const [limit,setLimit] = useState(40);
+  const [note,setNote] = useState("");
+  useEffect(() => { let alive = true;
+    supabase.from("nb_units").select("id,unit_no,section,floor,rooms,area,price_m2,total_price,property_type,note,first_seen_at,price_history,last_seen_at").eq("nb_source_id", source.id).eq("status", "free").limit(2000)
+      .then(({data}) => { if(alive) setUnits(data || []); });
+    return () => { alive = false; }; }, [source.id]);
+  if(units == null || !units.length) return null;
+  const v = variants[vi] || {};
+  const week = Date.now() - 8 * 864e5;
+  const firstSeen = Math.min(...units.map(u => Date.parse(u.first_seen_at) || Date.now()));
+  const firstImport = firstSeen > week; // первая загрузка ЖК — все квартиры «новые», значок не показываем
+  const rows = units.map(u => ({u, c:nbCalcUnit(u, plan, v, pct, months)})).filter(({u, c}) => {
+    if(f.type && (u.property_type || "apartment") !== f.type) return false;
+    if(f.rooms !== "" && String(u.rooms ?? "") !== f.rooms) return false;
+    if(f.budget && !(c && (pct === "" && !v.first_pct ? c.price : c.first) <= Number(f.budget))) return false;
+    if(f.monthly && !(c?.monthly != null && c.monthly <= Number(f.monthly))) return false;
+    if(f.floorMin && !(u.floor >= Number(f.floorMin))) return false;
+    if(f.floorMax && !(u.floor <= Number(f.floorMax))) return false;
+    if(f.q && !`${u.unit_no} ${u.section || ""} ${u.note || ""}`.toLowerCase().includes(f.q.toLowerCase())) return false;
+    return true; }).sort((a, b) => sort === "monthly" ? (a.c?.monthly ?? 1e12) - (b.c?.monthly ?? 1e12) : sort === "area" ? (Number(a.u.area) || 0) - (Number(b.u.area) || 0) : (a.c?.price ?? 1e12) - (b.c?.price ?? 1e12));
+  const roomsList = [...new Set(units.map(u => u.rooms).filter(r => r != null))].sort((a, b) => a - b);
+  const hasCommercial = units.some(u => u.property_type === "commercial");
+  const updated = source.meta?.sync?.at ? new Date(source.meta.sync.at).toLocaleDateString("ru-RU", {day:"2-digit", month:"2-digit"}) : null;
+  const share = async ({u, c}) => {
+    const lines = [`${source.title}${u.section ? `, ${tr(lang,"секция")} ${u.section}` : ""}`, `№ ${u.unit_no}${u.floor != null ? ` · ${u.floor} ${tr(lang,"эт.")}` : ""}${u.rooms != null ? ` · ${u.rooms === 0 ? tr(lang,"студия") : u.rooms + " " + tr(lang,"комн.")}` : ""} · ${u.area} м²`,
+      `${tr(lang,"Цена")}: ${nbUsd(c?.base)}${u.price_m2 ? ` (${nbUsd(u.price_m2)}/м²)` : ""}`,
+      c && c.months ? `${tr(lang,"Рассрочка")}: ${tr(lang,"первый взнос")} ${c.pct}% — ${nbUsd(c.first)}, ${tr(lang,"далее")} ${nbUsd(c.monthly)} × ${c.months} ${tr(lang,"мес")}${c.price > c.base ? ` (${tr(lang,"итого")} ${nbUsd(c.price - c.disc)})` : ""}` : null,
+      plan.full_disc_pct ? `${tr(lang,"При 100% оплате")}: ${nbUsd(c?.full)}` : null].filter(Boolean).join("\n");
+    try { if(navigator.share){ await navigator.share({text:lines}); return; } await navigator.clipboard.writeText(lines); setNote(tr(lang,"Текст скопирован — вставьте клиенту в Viber / Telegram / WhatsApp")); setTimeout(() => setNote(""), 3000); } catch {}
+  };
+  return <div className="card nbCalc" style={{border:"1.5px solid #F5C518", marginBottom:12}}>
+    <button className="nbHelpHead" onClick={() => setOpen(!open)}>🏠 <b>{tr(lang,"Наличие и рассрочка")}</b> · {units.filter(u => (u.property_type || "apartment") === "apartment").length} {tr(lang,"свободных")}{updated ? ` · ${tr(lang,"обновлено")} ${updated}` : ""} <i>{open ? "▴" : "▾"}</i></button>
+    {open && <>
+      {plan.note && <div className="feedSrcCheck">💡 {plan.note}</div>}
+      {variants.length > 1 && <div className="nbChips">{variants.map((x, i) => <button key={i} className={cn(i === vi && "on")} onClick={() => { setVi(i); setPct(""); setMonths(""); }}>{nbVariantLabel(x, lang)}</button>)}</div>}
+      {variants.length === 1 && <small className="muted">{tr(lang,"Условия")}: {nbVariantLabel(v, lang)}</small>}
+      {!variants.length && <small className="muted">{tr(lang,"Условия рассрочки ещё не заданы — впишите ПВ и срок, CRM посчитает")}</small>}
+      <div className="nbCalcVars">
+        <label><small>{tr(lang,"Первый взнос, %")}</small><input className="input" inputMode="decimal" value={pct} onChange={e => setPct(e.target.value.replace(/[^\d.]/g,""))} placeholder={String(v.first_pct ?? "")}/></label>
+        <label><small>{tr(lang,"Срок, месяцев")}</small><input className="input" inputMode="numeric" value={months} onChange={e => setMonths(e.target.value.replace(/\D/g,""))} placeholder={String(nbMonthsUntil(v.until) ?? v.months ?? "")}/></label>
+        {roomsList.length > 0 && <label><small>{tr(lang,"Комнат")}</small><select className="input" value={f.rooms} onChange={e => setF({...f, rooms:e.target.value})}><option value="">{tr(lang,"Все")}</option>{roomsList.map(r => <option key={r} value={String(r)}>{r === 0 ? tr(lang,"Студия") : r}</option>)}</select></label>}
+        <label><small>{tr(lang,"Бюджет до, $")}</small><input className="input" inputMode="numeric" value={f.budget} onChange={e => setF({...f, budget:e.target.value.replace(/\D/g,"")})} placeholder={pct || v.first_pct ? tr(lang,"первый взнос") : tr(lang,"цена")}/></label>
+        <label><small>{tr(lang,"Платёж в месяц до, $")}</small><input className="input" inputMode="numeric" value={f.monthly} onChange={e => setF({...f, monthly:e.target.value.replace(/\D/g,"")})}/></label>
+        <label><small>{tr(lang,"Этаж от – до")}</small><span style={{display:"flex", gap:4}}><input className="input" inputMode="numeric" value={f.floorMin} onChange={e => setF({...f, floorMin:e.target.value.replace(/\D/g,"")})}/><input className="input" inputMode="numeric" value={f.floorMax} onChange={e => setF({...f, floorMax:e.target.value.replace(/\D/g,"")})}/></span></label>
+        <label><small>{tr(lang,"Сортировка")}</small><select className="input" value={sort} onChange={e => setSort(e.target.value)}><option value="price">{tr(lang,"Сначала дешевле")}</option><option value="monthly">{tr(lang,"Меньше платёж")}</option><option value="area">{tr(lang,"По площади")}</option></select></label>
+        {hasCommercial && <label><small>{tr(lang,"Тип")}</small><select className="input" value={f.type} onChange={e => setF({...f, type:e.target.value})}><option value="apartment">{tr(lang,"Квартиры")}</option><option value="commercial">{tr(lang,"Коммерция")}</option><option value="">{tr(lang,"Все")}</option></select></label>}
+        <label><small>{tr(lang,"Поиск")}</small><input className="input" value={f.q} onChange={e => setF({...f, q:e.target.value})} placeholder="№, секция"/></label>
+      </div>
+      <small className="muted">{tr(lang,"Найдено")}: {rows.length} {tr(lang,"из")} {units.length}</small>
+      {note && <div className="feedSrcCheck ok">{note}</div>}
+      <div className="nbUnits">{rows.slice(0, limit).map(({u, c}) => { const hist = u.price_history || []; const last = hist[hist.length - 1];
+        return <div key={u.id} className="nbUnit">
+          <div className="nbUnitHead"><b>№ {u.unit_no}</b><span style={{display:"flex", gap:4, flexWrap:"wrap"}}>
+            {!firstImport && u.first_seen_at && Date.parse(u.first_seen_at) > week && <span className="nbStatus">{tr(lang,"новая")}</span>}
+            {last && Date.parse(last.at) > week && <span className={cn("nbStatus", last.to > last.from && "busy")}>{last.to > last.from ? "↑" : "↓"} {nbUsd(last.from)}</span>}</span></div>
+          <div className="nbUnitFacts">{[u.section && `${tr(lang,"Секция")} ${u.section}`, u.floor != null && `${u.floor} ${tr(lang,"эт.")}`, u.rooms != null && (u.rooms === 0 ? tr(lang,"студия") : `${u.rooms} ${tr(lang,"комн.")}`), u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")}</div>
+          <div className="nbUnitCalc">
+            <div><small>{tr(lang,"Цена")}</small><b>{nbUsd(c?.base)}</b></div>
+            {c && c.price > c.base + 1 && <div><small>{tr(lang,"В рассрочку")}</small><b>{nbUsd(c.price)}</b></div>}
+            {c && c.pct > 0 && <div><small>{tr(lang,"Первый взнос")} {c.pct}%</small><b>{nbUsd(c.first)}</b></div>}
+            {c?.monthly != null && <div><small>{tr(lang,"В месяц")} × {c.months}</small><b>{nbUsd(c.monthly)}</b></div>}
+            {plan.full_disc_pct ? <div><small>100% −{plan.full_disc_pct}%</small><b>{nbUsd(c?.full)}</b></div> : null}
+          </div>
+          <button className="nbPriceBtn" onClick={() => share({u, c})}>📤 {tr(lang,"Отправить клиенту")}</button>
+        </div>; })}</div>
+      {rows.length > limit && <Button variant="soft" onClick={() => setLimit(limit + 60)}>{tr(lang,"Показать ещё")} ({rows.length - limit})</Button>}
+    </>}
+  </div>;
+}
+Object.assign(uiCalendar.uk, {"Рассрочка и наличие":"Розстрочка та наявність", "Варианты рассрочки":"Варіанти розстрочки", "Каждая строка — вариант от застройщика. Срок можно вписать в месяцах или датой «до сдачи» — тогда CRM каждую неделю сама уменьшает количество месяцев.":"Кожен рядок — варіант від забудовника. Термін можна вписати в місяцях або датою «до здачі» — тоді CRM щотижня сама зменшує кількість місяців.",
+  "Вариант":"Варіант", "по умолчанию":"за замовчуванням", "Или до даты (сдача дома)":"Або до дати (здача будинку)", "Удорожание, $ за м²":"Подорожчання, $ за м²", "Удорожание, % к цене":"Подорожчання, % до ціни", "% годовых на остаток":"% річних на залишок",
+  "Пример: квартира 50 м² за $50 000":"Приклад: квартира 50 м² за $50 000", "цена":"ціна", "Скидки и как считать":"Знижки і як рахувати", "При ПВ от, %":"При ПВ від, %", "скидка на сумму ПВ, %":"знижка на суму ПВ, %", "Скидка при 100% оплате, %":"Знижка при 100% оплаті, %",
+  "Как считать — подсказка менеджерам":"Як рахувати — підказка менеджерам", "Наличие квартир":"Наявність квартир", "Сам раз в неделю из Google Диска":"Сам раз на тиждень з Google Диска", "Загружаю файлом":"Завантажую файлом",
+  "Файлы шахматки / прайса (ссылки, каждая с новой строки). Пусто — CRM найдёт сама":"Файли шахматки / прайсу (посилання, кожне з нового рядка). Порожньо — CRM знайде сама", "Загрузить шахматку / прайс (Excel)":"Завантажити шахматку / прайс (Excel)", "Загружаем…":"Завантажуємо…",
+  "Сохранить и пересчитать":"Зберегти і перерахувати", "Обновить наличие сейчас":"Оновити наявність зараз", "Последние обновления":"Останні оновлення", "Сохранено, рассрочка пересчитана":"Збережено, розстрочку перераховано", "Обновлено":"Оновлено",
+  "Наличие и рассрочка":"Наявність і розстрочка", "свободных":"вільних", "новых":"нових", "продано":"продано", "цен изменилось":"цін змінилося", "цен":"цін", "обновлено":"оновлено", "Условия":"Умови", "Условия рассрочки ещё не заданы — впишите ПВ и срок, CRM посчитает":"Умови розстрочки ще не задані — впишіть ПВ і термін, CRM порахує",
+  "Бюджет до, $":"Бюджет до, $", "первый взнос":"перший внесок", "Платёж в месяц до, $":"Платіж на місяць до, $", "Этаж от – до":"Поверх від – до", "Меньше платёж":"Менший платіж", "По площади":"За площею", "Тип":"Тип", "Квартиры":"Квартири", "Коммерция":"Комерція",
+  "новая":"нова", "Цена":"Ціна", "В рассрочку":"У розстрочку", "В месяц":"На місяць", "Отправить клиенту":"Надіслати клієнту", "Показать ещё":"Показати ще", "секция":"секція", "студия":"студія", "Студия":"Студія", "далее":"далі", "итого":"разом", "При 100% оплате":"При 100% оплаті",
+  "годовых":"річних", "до":"до", "Без условий":"Без умов", "по дате":"за датою", "Рассрочка от, мес":"Розстрочка від, міс", "Первый взнос до, %":"Перший внесок до, %", "Например: удорожание считается от цены м² в шахматке; акции не суммируются":"Наприклад: подорожчання рахується від ціни м² у шахматці; акції не сумуються"});
+Object.assign(uiCalendar.en, {"Рассрочка и наличие":"Installments & availability", "Варианты рассрочки":"Installment options", "Вариант":"Option", "по умолчанию":"default", "Или до даты (сдача дома)":"Or until date (completion)", "Удорожание, $ за м²":"Markup, $ per m²", "Удорожание, % к цене":"Markup, % of price",
+  "% годовых на остаток":"Annual % on balance", "Скидки и как считать":"Discounts & how to calculate", "Наличие квартир":"Availability", "Сам раз в неделю из Google Диска":"Weekly from Google Drive", "Загружаю файлом":"I upload a file", "Загрузить шахматку / прайс (Excel)":"Upload price list (Excel)",
+  "Сохранить и пересчитать":"Save and recalculate", "Обновить наличие сейчас":"Update availability now", "Наличие и рассрочка":"Availability & installments", "свободных":"available", "обновлено":"updated", "В рассрочку":"With installments", "В месяц":"Monthly", "Отправить клиенту":"Send to client",
+  "Показать ещё":"Show more", "Рассрочка от, мес":"Installment from, months", "Первый взнос до, %":"Down payment up to, %"});
+
 // ===== Конструктор источника Новобудов (для любого агентства) =====
 // Администратор описывает, как устроен его Google Диск / сайт: инструкция для менеджеров, названия уровней папок,
 // типы файлов по ключевым словам, колонки прайса, свои переменные и формулы. CRM дальше работает по этому описанию.
@@ -9543,6 +9754,7 @@ function NewBuildsHub({currentProfile, role, lang}){
   const [fFirst,setFFirst] = useStorage("nb_f_first","");
   const [fMonths,setFMonths] = useStorage("nb_f_months","");
   const [params,setParams] = useState(null); // окно «Параметры ссылки»
+  const [planFor,setPlanFor] = useState(null); // окно «Рассрочка и наличие»
   const isApt = cat === "apartments";
   const catList = sources.filter(s => s.category === cat);
   const branchList = isApt ? catList.filter(s => !s.meta?.branch || s.meta.branch === branch) : catList;
@@ -9550,8 +9762,9 @@ function NewBuildsHub({currentProfile, role, lang}){
   const list = !isApt ? catList : branchList.filter(s => { const m = s.meta || {};
     if(fDistrict !== "Все" && String(m.district || "").trim() !== fDistrict) return false;
     if(branch === "done" && fPay !== "Все" && !(m.payment === fPay || m.payment === "both")) return false;
-    if(branch === "building" && fFirst && !(m.first_pct != null && Number(m.first_pct) <= Number(fFirst))) return false;
-    if(branch === "building" && fMonths && !(Number(m.months) >= Number(fMonths))) return false;
+    // ПВ и срок: подходит, если хоть один вариант рассрочки ЖК укладывается (срок «до даты» считается на сегодня)
+    if(branch === "building" && (fFirst || fMonths)){ const vs = nbPlanVariants(m);
+      if(!vs.some(v => (!fFirst || (v.first_pct != null && v.first_pct !== "" && Number(v.first_pct) <= Number(fFirst))) && (!fMonths || (nbMonthsUntil(v.until) ?? Number(v.months) ?? 0) >= Number(fMonths)))) return false; }
     return true; });
   const filtersOn = isApt && (fDistrict !== "Все" || (branch === "done" ? fPay !== "Все" : (fFirst || fMonths)));
   const counts = NB_CATS.reduce((m,c) => ({...m, [c.id]: sources.filter(s => s.category === c.id && s.active).length}), {});
@@ -9579,8 +9792,8 @@ function NewBuildsHub({currentProfile, role, lang}){
       <div className="grid2" style={{gap:8}}>
         <Field label={tr(lang,"Район")}><select className="input" value={fDistrict} onChange={e => setFDistrict(e.target.value)}><option value="Все">{tr(lang,"Все")}</option>{districtOpts.map(d => <option key={d} value={d}>{d}</option>)}</select></Field>
         {branch === "done" && <Field label={tr(lang,"Оплата")}><select className="input" value={fPay} onChange={e => setFPay(e.target.value)}><option value="Все">{tr(lang,"Все")}</option><option value="installment">{tr(lang,"Рассрочка")}</option><option value="full">{tr(lang,"100% оплата")}</option></select></Field>}
-        {branch === "building" && <Field label={tr(lang,"Первый взнос")}><select className="input" value={fFirst} onChange={e => setFFirst(e.target.value)}><option value="">{tr(lang,"Любой")}</option>{NB_FIRST_STEPS.map(n => <option key={n} value={n}>{n}%</option>)}</select></Field>}
-        {branch === "building" && <Field label={tr(lang,"Длительность рассрочки")}><select className="input" value={fMonths} onChange={e => setFMonths(e.target.value)}><option value="">{tr(lang,"Любая")}</option>{NB_MONTH_STEPS.map(n => <option key={n} value={n}>{n} {tr(lang,"мес")}</option>)}</select></Field>}
+        {branch === "building" && <Field label={tr(lang,"Первый взнос до, %")}><input className="input" inputMode="numeric" list="nbFirstSteps" value={fFirst} onChange={e => setFFirst(e.target.value.replace(/\D/g,""))} placeholder={tr(lang,"Любой")}/><datalist id="nbFirstSteps">{NB_FIRST_STEPS.map(n => <option key={n} value={n}/>)}</datalist></Field>}
+        {branch === "building" && <Field label={tr(lang,"Рассрочка от, мес")}><input className="input" inputMode="numeric" list="nbMonthSteps" value={fMonths} onChange={e => setFMonths(e.target.value.replace(/\D/g,""))} placeholder={tr(lang,"Любая")}/><datalist id="nbMonthSteps">{NB_MONTH_STEPS.map(n => <option key={n} value={n}/>)}</datalist></Field>}
       </div>
       {filtersOn && <div className="row" style={{gap:8}}><span className="muted">{tr(lang,"Найдено")}: {list.length} {tr(lang,"из")} {branchList.length}</span><button type="button" className="linkBtn" onClick={() => { setFDistrict("Все"); setFPay("Все"); setFFirst(""); setFMonths(""); }}>{tr(lang,"Сбросить фильтры")}</button></div>}
       {isAdmin && !adding && <Button onClick={() => setAdding(true)}>＋ {branch === "done" ? tr(lang,"Добавить ссылку на актуальный объект") : tr(lang,"Добавить ссылку на строящийся ЖК")}</Button>}
@@ -9605,10 +9818,11 @@ function NewBuildsHub({currentProfile, role, lang}){
       {isAdmin && <Button onClick={() => setAdding(true)}>＋ {tr(lang,"Подключить ссылку")}</Button>}
     </div>}
 
-    {list.length > 0 && <div className="nbGrid">{list.map(s => <NbSourceCard key={s.id} s={s} lang={lang} isAdmin={isAdmin} showMeta={isApt} onParams={() => setParams({s, meta:{branch, ...(s.meta || {})}})} onOpen={() => s.kind === "link" && !isAdmin ? window.open(s.url, "_blank", "noopener") : setOpen(s)} onChanged={load} onConfigure={() => setEditing(s)}/>)}</div>}
+    {list.length > 0 && <div className="nbGrid">{list.map(s => <NbSourceCard key={s.id} s={s} lang={lang} isAdmin={isAdmin} showMeta={isApt} onParams={() => setParams({s, meta:{branch, ...(s.meta || {})}})} onPlan={isApt ? () => setPlanFor(s) : null} onOpen={() => s.kind === "link" && !isAdmin && !s.meta?.sync?.free ? window.open(s.url, "_blank", "noopener") : setOpen(s)} onChanged={load} onConfigure={() => setEditing(s)}/>)}</div>}
 
     {isAdmin && !isApt && list.length > 0 && !adding && <Button variant="soft" onClick={() => setAdding(true)}>＋ {tr(lang,"Подключить ещё ссылку")}</Button>}
     {isAdmin && adding && <NbAddSource cat={cat} branch={isApt ? branch : null} districts={districtOpts} lang={lang} call={call} currentProfile={currentProfile} onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)}/>}
+    {planFor && <NbPlanModal s={planFor} lang={lang} onClose={() => { setPlanFor(null); load(); }} onSaved={() => {}}/>}
     {params && <Modal onClose={() => setParams(null)}>
       <div className="row"><h2>{tr(lang,"Параметры ссылки")}</h2><button className="icon" onClick={() => setParams(null)}>×</button></div>
       <p className="muted" style={{marginTop:0}}>{params.s.title}</p>
@@ -9620,7 +9834,7 @@ function NewBuildsHub({currentProfile, role, lang}){
   </div>;
 }
 
-function NbSourceCard({s, lang, isAdmin, onOpen, onChanged, onConfigure, showMeta=false, onParams}){
+function NbSourceCard({s, lang, isAdmin, onOpen, onChanged, onConfigure, showMeta=false, onParams, onPlan}){
   const k = NB_KINDS[s.kind] || NB_KINDS.link;
   const update = async (patch) => { const {error} = await supabase.from("nb_sources").update(patch).eq("id", s.id); if(error) alert(error.message); else onChanged(); };
   const rename = () => { const t = window.prompt(tr(lang,"Название, которое видят менеджеры"), s.title); if(t && t.trim() && t.trim() !== s.title) update({title:t.trim()}); };
@@ -9631,11 +9845,13 @@ function NbSourceCard({s, lang, isAdmin, onOpen, onChanged, onConfigure, showMet
       <section><b>{s.title}</b><small>{tr(lang,k.label)}{isAdmin && s.url ? <> · <span className="feedSrcUrl">{s.url}</span></> : null}</small>
         {isAdmin && s.last_error && <small className="feedSrcErr">⚠ {s.last_error}</small>}
         {showMeta && (() => { const chips = nbMetaChips(s.meta, lang); return chips.length ? <span style={{display:"flex", flexWrap:"wrap", gap:4, marginTop:4}}>{chips.map(c => <span key={c} style={{padding:"2px 8px", borderRadius:999, background:"#FEF9C3", color:"#713F12", fontSize:12, fontWeight:800}}>{c}</span>)}</span>
-          : isAdmin ? <span style={{fontSize:12, color:"#f59e0b", fontWeight:800, marginTop:4, display:"block"}}>⚙ {tr(lang,"Укажите район и условия — кнопка «Параметры»")}</span> : null; })()}</section>
+          : isAdmin ? <span style={{fontSize:12, color:"#f59e0b", fontWeight:800, marginTop:4, display:"block"}}>⚙ {tr(lang,"Укажите район и условия — кнопка «Параметры»")}</span> : null; })()}
+        {showMeta && s.meta?.sync && (s.meta.sync.ok || isAdmin) && <small className={s.meta.sync.ok ? "muted" : "feedSrcErr"}>{nbSyncLine(s.meta.sync, lang)}</small>}</section>
       <i>›</i>
     </button>
     {isAdmin && <div className="feedSrcActions nbCardActions">
       {showMeta && onParams && <button className="nbCfgBtn" onClick={onParams}>🏷 {tr(lang,"Параметры")}</button>}
+      {onPlan && <button className="nbCfgBtn" onClick={onPlan}>💳 {tr(lang,"Рассрочка и наличие")}</button>}
       {s.kind !== "link" && <button className="nbCfgBtn" onClick={onConfigure}>⚙ {s.meta?.config ? tr(lang,"Своя настройка") : tr(lang,"Настройка ссылки")}</button>}
       <label className="feedSrcToggle"><input type="checkbox" checked={!!s.active} onChange={e => update({active:e.target.checked})}/> {tr(lang,"Вкл.")}</label>
       <button onClick={rename} aria-label={tr(lang,"Переименовать")}>✎</button>
@@ -9724,6 +9940,7 @@ function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure}){
     </div>
     {config.instruction && <div className="card nbHelp"><button className="nbHelpHead" onClick={() => setShowHelp(!showHelp)}>📘 {tr(lang,"Инструкция")} <i>{showHelp ? "▴" : "▾"}</i></button>{showHelp && <p>{config.instruction}</p>}</div>}
     {isAdmin && !hasConfig && source.kind === "gdrive" && <div className="feedSrcCheck">💡 {tr(lang,"Раздел ещё не настроен — вернитесь назад и нажмите «Настроить раздел»: уровни папок, типы файлов, колонки прайса и формулы.")}</div>}
+    {path.length === 0 && source.category === "apartments" && <NbUnitsPanel source={source} lang={lang}/>}
     {(data?.type === "gdrive" || data?.type === "telegram") && <input className="input nbSearch" value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang,"Поиск по названию или тексту")}/>}
     {loading && <p className="muted">{tr(lang,"Загрузка…")}</p>}
     {data && !data.ok && <div className="feedSrcCheck bad">⚠ {data.error}</div>}
