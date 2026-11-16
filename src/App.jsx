@@ -9237,6 +9237,10 @@ function nbCalcUnit(u, plan, v, pct, months){
   const monthly = m > 0 && rest > 0 ? (r > 0 ? rest * r / (1 - Math.pow(1 + r, -m)) : rest / m) : null;
   return {base, price, pct:p, first:first - disc, disc, rest, months:m || null, monthly, full:base * (1 - (Number(plan?.full_disc_pct) || 0) / 100)};
 }
+// Срок варианта для фильтра: число месяцев или «до сдачи»
+const nbTermKey = (v) => v.until ? "until" : (v.months ? String(Number(v.months)) : "");
+// Подходит ли вариант под выбранные в фильтре ПВ и срок (готовые значения из условий администратора)
+const nbVariantFits = (v, first, term) => (!first || String(Number(v.first_pct)) === String(first)) && (!term || nbTermKey(v) === term);
 const nbUsd = (n) => n == null || !isFinite(n) ? "—" : "$" + Math.round(n).toLocaleString("ru-RU").replace(/,/g, " ");
 const nbVariantLabel = (v, lang) => [v.first_pct != null && v.first_pct !== "" ? `${tr(lang,"ПВ")} ${v.first_pct}%` : null,
   v.until ? `${tr(lang,"до")} ${new Date(v.until).toLocaleDateString("ru-RU", {month:"2-digit", year:"numeric"})}` : v.months ? `${v.months} ${tr(lang,"мес")}` : null,
@@ -9330,13 +9334,15 @@ function NbPlanModal({s, lang, onClose, onSaved}){
 }
 
 // Блок «Наличие и рассрочка» в ЖК — для всех. ПВ и срок менеджер может вписать сам.
-function NbUnitsPanel({source, lang}){
+function NbUnitsPanel({source, lang, prefer}){
   const plan = source.meta?.plan || {};
   const variants = nbPlanVariants(source.meta);
   const [units,setUnits] = useState(null);
   const [open,setOpen] = useState(true);
-  const [vi,setVi] = useState(Math.min(Number(plan.default_idx) || 0, Math.max(0, variants.length - 1)));
-  const [pct,setPct] = useState(""); const [months,setMonths] = useState("");
+  // Вариант: подходящий под фильтры раздела, иначе — вариант по умолчанию. Менеджер только выбирает, не вписывает.
+  const [vi,setVi] = useState(() => { const k = prefer && (prefer.first || prefer.term) ? variants.findIndex(v => nbVariantFits(v, prefer.first, prefer.term)) : -1;
+    return k >= 0 ? k : Math.min(Number(plan.default_idx) || 0, Math.max(0, variants.length - 1)); });
+  const pct = "", months = "";
   const [f,setF] = useState({rooms:"", budget:"", monthly:"", floorMin:"", floorMax:"", type:"apartment", q:""});
   const [sort,setSort] = useState("price");
   const [limit,setLimit] = useState(40);
@@ -9353,7 +9359,7 @@ function NbUnitsPanel({source, lang}){
   const rows = units.map(u => ({u, c:nbCalcUnit(u, plan, v, pct, months)})).filter(({u, c}) => {
     if(f.type && (u.property_type || "apartment") !== f.type) return false;
     if(f.rooms !== "" && String(u.rooms ?? "") !== f.rooms) return false;
-    if(f.budget && !(c && (pct === "" && !v.first_pct ? c.price : c.first) <= Number(f.budget))) return false;
+    if(f.budget && !(c && (!v.first_pct ? c.price : c.first) <= Number(f.budget))) return false;
     if(f.monthly && !(c?.monthly != null && c.monthly <= Number(f.monthly))) return false;
     if(f.floorMin && !(u.floor >= Number(f.floorMin))) return false;
     if(f.floorMax && !(u.floor <= Number(f.floorMax))) return false;
@@ -9373,14 +9379,12 @@ function NbUnitsPanel({source, lang}){
     <button className="nbHelpHead" onClick={() => setOpen(!open)}>🏠 <b>{tr(lang,"Наличие и рассрочка")}</b> · {units.filter(u => (u.property_type || "apartment") === "apartment").length} {tr(lang,"свободных")}{updated ? ` · ${tr(lang,"обновлено")} ${updated}` : ""} <i>{open ? "▴" : "▾"}</i></button>
     {open && <>
       {plan.note && <div className="feedSrcCheck">💡 {plan.note}</div>}
-      {variants.length > 1 && <div className="nbChips">{variants.map((x, i) => <button key={i} className={cn(i === vi && "on")} onClick={() => { setVi(i); setPct(""); setMonths(""); }}>{nbVariantLabel(x, lang)}</button>)}</div>}
+      {variants.length > 1 && <><small className="muted">{tr(lang,"Вариант рассрочки")}:</small><div className="nbChips">{variants.map((x, i) => <button key={i} className={cn(i === vi && "on")} onClick={() => setVi(i)}>{nbVariantLabel(x, lang)}</button>)}</div></>}
       {variants.length === 1 && <small className="muted">{tr(lang,"Условия")}: {nbVariantLabel(v, lang)}</small>}
-      {!variants.length && <small className="muted">{tr(lang,"Условия рассрочки ещё не заданы — впишите ПВ и срок, CRM посчитает")}</small>}
+      {!variants.length && <small className="muted">{tr(lang,"Администратор ещё не задал условия рассрочки — показаны цены без расчёта")}</small>}
       <div className="nbCalcVars">
-        <label><small>{tr(lang,"Первый взнос, %")}</small><input className="input" inputMode="decimal" value={pct} onChange={e => setPct(e.target.value.replace(/[^\d.]/g,""))} placeholder={String(v.first_pct ?? "")}/></label>
-        <label><small>{tr(lang,"Срок, месяцев")}</small><input className="input" inputMode="numeric" value={months} onChange={e => setMonths(e.target.value.replace(/\D/g,""))} placeholder={String(nbMonthsUntil(v.until) ?? v.months ?? "")}/></label>
         {roomsList.length > 0 && <label><small>{tr(lang,"Комнат")}</small><select className="input" value={f.rooms} onChange={e => setF({...f, rooms:e.target.value})}><option value="">{tr(lang,"Все")}</option>{roomsList.map(r => <option key={r} value={String(r)}>{r === 0 ? tr(lang,"Студия") : r}</option>)}</select></label>}
-        <label><small>{tr(lang,"Бюджет до, $")}</small><input className="input" inputMode="numeric" value={f.budget} onChange={e => setF({...f, budget:e.target.value.replace(/\D/g,"")})} placeholder={pct || v.first_pct ? tr(lang,"первый взнос") : tr(lang,"цена")}/></label>
+        <label><small>{tr(lang,"Бюджет до, $")}</small><input className="input" inputMode="numeric" value={f.budget} onChange={e => setF({...f, budget:e.target.value.replace(/\D/g,"")})} placeholder={v.first_pct ? tr(lang,"первый взнос") : tr(lang,"цена")}/></label>
         <label><small>{tr(lang,"Платёж в месяц до, $")}</small><input className="input" inputMode="numeric" value={f.monthly} onChange={e => setF({...f, monthly:e.target.value.replace(/\D/g,"")})}/></label>
         <label><small>{tr(lang,"Этаж от – до")}</small><span style={{display:"flex", gap:4}}><input className="input" inputMode="numeric" value={f.floorMin} onChange={e => setF({...f, floorMin:e.target.value.replace(/\D/g,"")})}/><input className="input" inputMode="numeric" value={f.floorMax} onChange={e => setF({...f, floorMax:e.target.value.replace(/\D/g,"")})}/></span></label>
         <label><small>{tr(lang,"Сортировка")}</small><select className="input" value={sort} onChange={e => setSort(e.target.value)}><option value="price">{tr(lang,"Сначала дешевле")}</option><option value="monthly">{tr(lang,"Меньше платёж")}</option><option value="area">{tr(lang,"По площади")}</option></select></label>
@@ -9423,6 +9427,8 @@ Object.assign(uiCalendar.en, {"Рассрочка и наличие":"Installmen
   "Сохранить и пересчитать":"Save and recalculate", "Обновить наличие сейчас":"Update availability now", "Наличие и рассрочка":"Availability & installments", "свободных":"available", "обновлено":"updated", "В рассрочку":"With installments", "В месяц":"Monthly", "Отправить клиенту":"Send to client",
   "Показать ещё":"Show more", "Рассрочка от, мес":"Installment from, months", "Первый взнос до, %":"Down payment up to, %"});
 
+Object.assign(uiCalendar.uk, {"Срок рассрочки":"Термін розстрочки", "До сдачи дома":"До здачі будинку", "Вариант рассрочки":"Варіант розстрочки", "Администратор ещё не задал условия рассрочки — показаны цены без расчёта":"Адміністратор ще не задав умови розстрочки — показано ціни без розрахунку", "Любой":"Будь-який"});
+Object.assign(uiCalendar.en, {"Срок рассрочки":"Installment term", "До сдачи дома":"Until completion", "Вариант рассрочки":"Installment option"});
 // ===== Конструктор источника Новобудов (для любого агентства) =====
 // Администратор описывает, как устроен его Google Диск / сайт: инструкция для менеджеров, названия уровней папок,
 // типы файлов по ключевым словам, колонки прайса, свои переменные и формулы. CRM дальше работает по этому описанию.
@@ -9762,10 +9768,17 @@ function NewBuildsHub({currentProfile, role, lang}){
   const list = !isApt ? catList : branchList.filter(s => { const m = s.meta || {};
     if(fDistrict !== "Все" && String(m.district || "").trim() !== fDistrict) return false;
     if(branch === "done" && fPay !== "Все" && !(m.payment === fPay || m.payment === "both")) return false;
-    // ПВ и срок: подходит, если хоть один вариант рассрочки ЖК укладывается (срок «до даты» считается на сегодня)
-    if(branch === "building" && (fFirst || fMonths)){ const vs = nbPlanVariants(m);
-      if(!vs.some(v => (!fFirst || (v.first_pct != null && v.first_pct !== "" && Number(v.first_pct) <= Number(fFirst))) && (!fMonths || (nbMonthsUntil(v.until) ?? Number(v.months) ?? 0) >= Number(fMonths)))) return false; }
+    // ПВ и срок: ЖК подходит, если у него есть вариант рассрочки ровно с такими условиями (их задаёт администратор)
+    if(branch === "building" && (fFirst || fMonths) && !nbPlanVariants(m).some(v => nbVariantFits(v, fFirst, fMonths))) return false;
     return true; });
+  // Готовые значения фильтров — из вариантов рассрочки, которые настроил администратор
+  const allVariants = branchList.flatMap(s => nbPlanVariants(s.meta));
+  const firstOpts = [...new Set(allVariants.map(v => v.first_pct).filter(x => x !== "" && x != null).map(Number))].sort((a, b) => a - b);
+  const termOpts = [...new Set(allVariants.map(nbTermKey).filter(Boolean))].sort((a, b) => a === "until" ? 1 : b === "until" ? -1 : Number(a) - Number(b));
+  // Сохранённое значение фильтра, которого нет среди вариантов (условия поменяли), сбрасываем — иначе список ЖК пустой
+  useEffect(() => { if(loading) return;
+    if(fFirst && !firstOpts.includes(Number(fFirst))) setFFirst("");
+    if(fMonths && !termOpts.includes(String(fMonths))) setFMonths(""); }, [loading, branch, firstOpts.join(), termOpts.join()]);
   const filtersOn = isApt && (fDistrict !== "Все" || (branch === "done" ? fPay !== "Все" : (fFirst || fMonths)));
   const counts = NB_CATS.reduce((m,c) => ({...m, [c.id]: sources.filter(s => s.category === c.id && s.active).length}), {});
 
@@ -9778,7 +9791,7 @@ function NewBuildsHub({currentProfile, role, lang}){
     return <div className="screen"><NbConfigEditor title={`${tr(lang,"Настройка ссылки")}: ${editing.title}`} initial={editing.meta?.config || catCfg[editing.category]} sources={sources} lang={lang} onClose={() => setEditing(null)} onSave={saveSrc} onReset={editing.meta?.config ? reset : null}/></div>;
   }
   if(open){ const src = sources.find(x => x.id === open.id) || open;
-    return <div className="screen"><NbBrowser source={src} catCfg={catCfg[src.category]} lang={lang} call={call} isAdmin={isAdmin} onConfigure={() => setEditing(src)} onBack={() => setOpen(null)}/></div>; }
+    return <div className="screen"><NbBrowser source={src} catCfg={catCfg[src.category]} lang={lang} call={call} isAdmin={isAdmin} prefer={{first:fFirst, term:fMonths}} onConfigure={() => setEditing(src)} onBack={() => setOpen(null)}/></div>; }
 
   return <div className="screen nbHub">
     <div className="nbTabs">{NB_CATS.map(c => <button key={c.id} className={cn("nbTab", cat === c.id && "on")} onClick={() => { setCat(c.id); setAdding(false); }}>
@@ -9792,8 +9805,8 @@ function NewBuildsHub({currentProfile, role, lang}){
       <div className="grid2" style={{gap:8}}>
         <Field label={tr(lang,"Район")}><select className="input" value={fDistrict} onChange={e => setFDistrict(e.target.value)}><option value="Все">{tr(lang,"Все")}</option>{districtOpts.map(d => <option key={d} value={d}>{d}</option>)}</select></Field>
         {branch === "done" && <Field label={tr(lang,"Оплата")}><select className="input" value={fPay} onChange={e => setFPay(e.target.value)}><option value="Все">{tr(lang,"Все")}</option><option value="installment">{tr(lang,"Рассрочка")}</option><option value="full">{tr(lang,"100% оплата")}</option></select></Field>}
-        {branch === "building" && <Field label={tr(lang,"Первый взнос до, %")}><input className="input" inputMode="numeric" list="nbFirstSteps" value={fFirst} onChange={e => setFFirst(e.target.value.replace(/\D/g,""))} placeholder={tr(lang,"Любой")}/><datalist id="nbFirstSteps">{NB_FIRST_STEPS.map(n => <option key={n} value={n}/>)}</datalist></Field>}
-        {branch === "building" && <Field label={tr(lang,"Рассрочка от, мес")}><input className="input" inputMode="numeric" list="nbMonthSteps" value={fMonths} onChange={e => setFMonths(e.target.value.replace(/\D/g,""))} placeholder={tr(lang,"Любая")}/><datalist id="nbMonthSteps">{NB_MONTH_STEPS.map(n => <option key={n} value={n}/>)}</datalist></Field>}
+        {branch === "building" && <Field label={tr(lang,"Первый взнос")}><select className="input" value={fFirst} onChange={e => setFFirst(e.target.value)}><option value="">{tr(lang,"Любой")}</option>{firstOpts.map(n => <option key={n} value={n}>{n}%</option>)}</select></Field>}
+        {branch === "building" && <Field label={tr(lang,"Срок рассрочки")}><select className="input" value={fMonths} onChange={e => setFMonths(e.target.value)}><option value="">{tr(lang,"Любой")}</option>{termOpts.map(t => <option key={t} value={t}>{t === "until" ? tr(lang,"До сдачи дома") : `${t} ${tr(lang,"мес")}`}</option>)}</select></Field>}
       </div>
       {filtersOn && <div className="row" style={{gap:8}}><span className="muted">{tr(lang,"Найдено")}: {list.length} {tr(lang,"из")} {branchList.length}</span><button type="button" className="linkBtn" onClick={() => { setFDistrict("Все"); setFPay("Все"); setFFirst(""); setFMonths(""); }}>{tr(lang,"Сбросить фильтры")}</button></div>}
       {isAdmin && !adding && <Button onClick={() => setAdding(true)}>＋ {branch === "done" ? tr(lang,"Добавить ссылку на актуальный объект") : tr(lang,"Добавить ссылку на строящийся ЖК")}</Button>}
@@ -9898,7 +9911,7 @@ function NbAddSource({cat, branch=null, districts=NB_DISTRICTS, lang, call, curr
   </div>;
 }
 
-function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure}){
+function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure, prefer}){
   const config = nbConfigOf(source, catCfg);
   const hasConfig = !!(source.meta?.config || catCfg);
   const [showHelp,setShowHelp] = useState(true);
@@ -9940,7 +9953,7 @@ function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure}){
     </div>
     {config.instruction && <div className="card nbHelp"><button className="nbHelpHead" onClick={() => setShowHelp(!showHelp)}>📘 {tr(lang,"Инструкция")} <i>{showHelp ? "▴" : "▾"}</i></button>{showHelp && <p>{config.instruction}</p>}</div>}
     {isAdmin && !hasConfig && source.kind === "gdrive" && <div className="feedSrcCheck">💡 {tr(lang,"Раздел ещё не настроен — вернитесь назад и нажмите «Настроить раздел»: уровни папок, типы файлов, колонки прайса и формулы.")}</div>}
-    {path.length === 0 && source.category === "apartments" && <NbUnitsPanel source={source} lang={lang}/>}
+    {path.length === 0 && source.category === "apartments" && <NbUnitsPanel source={source} lang={lang} prefer={prefer}/>}
     {(data?.type === "gdrive" || data?.type === "telegram") && <input className="input nbSearch" value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang,"Поиск по названию или тексту")}/>}
     {loading && <p className="muted">{tr(lang,"Загрузка…")}</p>}
     {data && !data.ok && <div className="feedSrcCheck bad">⚠ {data.error}</div>}
