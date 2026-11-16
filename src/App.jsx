@@ -9311,7 +9311,7 @@ function nbUnitToItem(u, source, v, lang){
   const adv = [firsts.length && `${L("Первый взнос от","Перший внесок від")} ${Math.min(...firsts)}%`, terms.length && `${L("Рассрочка до","Розстрочка до")} ${Math.max(...terms)} ${L("мес.","міс.")}`,
     vs.some(x => !Number(x.markup_m2) && !Number(x.markup_pct) && !Number(x.annual_rate) && (x.months || x.until)) && L("Есть вариант без удорожания","Є варіант без подорожчання"), L("Новостройка","Новобудова")].filter(Boolean);
   const photos = (source.meta?.media?.renders || []).filter(x => !x.off && x.url).map(x => x.url).slice(0, 10);
-  return {own:false, title:`${roomsTxt}, ${u.area} м²`, price:Math.round(c?.base ?? Number(u.total_price) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
+  return {own:false, title:`${roomsTxt}, ${u.area} м²`, price:Math.round((c?.base ?? Number(u.total_price)) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
     rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null, layout:nbLayoutFor(u, source.meta?.media),
     advantages:adv, condition:L("Новостройка","Новобудова"), property_type:L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
 }
