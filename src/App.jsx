@@ -9235,8 +9235,31 @@ function nbCalcUnit(u, plan, v, pct, months){
   const disc = plan?.first_disc_pct && p >= (Number(plan.first_disc_from) || 0) ? first * Number(plan.first_disc_pct) / 100 : 0;
   const rest = price - first; const r = (Number(vv.annual_rate) || 0) / 1200;
   const monthly = m > 0 && rest > 0 ? (r > 0 ? rest * r / (1 - Math.pow(1 + r, -m)) : rest / m) : null;
-  return {base, price, pct:p, first:first - disc, disc, rest, months:m || null, monthly, full:base * (1 - (Number(plan?.full_disc_pct) || 0) / 100)};
+  const std = {base, price, pct:p, first:first - disc, disc, rest, months:m || null, monthly, full:base * (1 - (Number(plan?.full_disc_pct) || 0) / 100)};
+  // Свои формулы ЖК (калькулятор застройщика): считаются поверх стандартных, пустая формула = стандартная
+  const F = plan?.formulas || {};
+  if(!NB_CALC_FORMULAS.some(f => String(F[f.key] || "").trim())) return std;
+  const vars = {площадь:area, цена_м2:Number(u.price_m2) || (area ? base / area : 0), цена:base, пв:p, срок:m, удорожание_м2:Number(vv.markup_m2) || 0,
+    удорожание_проц:Number(vv.markup_pct) || 0, ставка:Number(vv.annual_rate) || 0, скидка_пв:p >= (Number(plan?.first_disc_from) || 0) ? Number(plan?.first_disc_pct) || 0 : 0,
+    скидка_100:Number(plan?.full_disc_pct) || 0, этаж:Number(u.floor) || 0, комнат:Number(u.rooms) || 0};
+  (plan.params || []).forEach(x => { if(x.key) vars[String(x.key).toLowerCase()] = Number(x.value) || 0; });
+  const out = {};
+  for(const f of NB_CALC_FORMULAS){
+    const expr = String(F[f.key] || "").trim() || f.def;
+    let val = null; try { val = nbEval(expr, vars); if(!isFinite(val)) val = null; } catch { val = null; }
+    vars[f.key] = val ?? 0; out[f.key] = val;
+  }
+  return {...std, price:out.цена_итого ?? std.price, first:out.первый_взнос ?? std.first, rest:(out.цена_итого ?? std.price) - (out.первый_взнос ?? std.first),
+    monthly:m > 0 ? (out.в_месяц ?? std.monthly) : null, full:out.цена_100 ?? std.full, disc:0, custom:true};
 }
+// Формулы калькулятора ЖК. Переменные: площадь, цена_м2, цена (по прайсу), пв (%), срок (мес), удорожание_м2, удорожание_проц,
+// ставка (% годовых), скидка_пв (%), скидка_100 (%), этаж, комнат + свои параметры ЖК. Функции: if, round, min, max.
+const NB_CALC_FORMULAS = [
+  {key:"цена_итого", label:"Цена в рассрочку, $", def:"цена + площадь * удорожание_м2 + цена * удорожание_проц / 100"},
+  {key:"первый_взнос", label:"Первый взнос к оплате, $", def:"цена_итого * пв / 100 * (1 - скидка_пв / 100)"},
+  {key:"в_месяц", label:"Платёж в месяц, $", def:"if(ставка > 0, (цена_итого - цена_итого * пв / 100) * (ставка / 1200) / (1 - (1 + ставка / 1200) ^ (0 - срок)), (цена_итого - цена_итого * пв / 100) / срок)"},
+  {key:"цена_100", label:"Цена при 100% оплате, $", def:"цена * (1 - скидка_100 / 100)"},
+];
 // Срок варианта для фильтра: число месяцев или «до сдачи»
 const nbTermKey = (v) => v.until ? "until" : (v.months ? String(Number(v.months)) : "");
 // Подходит ли вариант под выбранные в фильтре ПВ и срок (готовые значения из условий администратора)
@@ -9255,6 +9278,9 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const [variants,setVariants] = useState(() => { const v = nbPlanVariants(m0); return v.length ? v.map(x => ({...x})) : [{first_pct:m0.first_pct ?? "", months:m0.months ?? ""}]; });
   const [def,setDef] = useState(Number(m0.plan?.default_idx) || 0);
   const [extra,setExtra] = useState({first_disc_from:m0.plan?.first_disc_from ?? "", first_disc_pct:m0.plan?.first_disc_pct ?? "", full_disc_pct:m0.plan?.full_disc_pct ?? "", note:m0.plan?.note || ""});
+  const [formulas,setFormulas] = useState(() => ({...(m0.plan?.formulas || {})}));
+  const [params,setParams] = useState(() => (m0.plan?.params || []).map(x => ({...x})));
+  const [showF,setShowF] = useState(!!(m0.plan?.formulas && Object.values(m0.plan.formulas).some(Boolean)));
   const [mode,setMode] = useState(m0.price_mode === "upload" ? "upload" : "auto");
   const [files,setFiles] = useState((m0.price_files || []).map(f => f.id || f).join("\n"));
   const [busy,setBusy] = useState(""); const [msg,setMsg] = useState(""); const [log,setLog] = useState([]);
@@ -9263,7 +9289,9 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const numOr = (x) => x === "" || x == null ? undefined : Number(String(x).replace(",", "."));
   const cleanPlan = () => ({variants:variants.map(v => Object.fromEntries(Object.entries({first_pct:numOr(v.first_pct), months:v.until ? undefined : numOr(v.months), until:v.until || undefined,
       markup_m2:numOr(v.markup_m2), markup_pct:numOr(v.markup_pct), annual_rate:numOr(v.annual_rate)}).filter(([, x]) => x !== undefined && !Number.isNaN(x)))).filter(v => Object.keys(v).length),
-    default_idx:def, first_disc_from:numOr(extra.first_disc_from), first_disc_pct:numOr(extra.first_disc_pct), full_disc_pct:numOr(extra.full_disc_pct), note:extra.note.trim() || undefined});
+    default_idx:def, first_disc_from:numOr(extra.first_disc_from), first_disc_pct:numOr(extra.first_disc_pct), full_disc_pct:numOr(extra.full_disc_pct), note:extra.note.trim() || undefined,
+    formulas:Object.fromEntries(Object.entries(formulas).map(([k, x]) => [k, String(x || "").trim()]).filter(([, x]) => x)),
+    params:params.filter(x => String(x.key || "").trim()).map(x => ({key:String(x.key).trim().toLowerCase().replace(/\s+/g, "_"), label:x.label || "", value:numOr(x.value) ?? 0}))});
   const invoke = async (body) => { const {data, error} = await supabase.functions.invoke("nb-sync", {body}); return error ? {ok:false, error:error.message} : (data || {ok:false}); };
   const save = async (after) => {
     setBusy("save"); setMsg("");
@@ -9315,6 +9343,29 @@ function NbPlanModal({s, lang, onClose, onSaved}){
       <Field label={tr(lang,"Скидка при 100% оплате, %")}><input className="input" inputMode="decimal" value={extra.full_disc_pct} onChange={e => setExtra({...extra, full_disc_pct:e.target.value})} placeholder="0"/></Field>
     </div>
     <Field label={tr(lang,"Как считать — подсказка менеджерам")}><textarea className="input" rows={3} value={extra.note} onChange={e => setExtra({...extra, note:e.target.value})} placeholder={tr(lang,"Например: удорожание считается от цены м² в шахматке; акции не суммируются")}/></Field>
+    <div className="card" style={{padding:10, marginTop:12, display:"grid", gap:8}}>
+      <button className="nbHelpHead" onClick={() => setShowF(!showF)}>🧮 <b>{tr(lang,"Формулы калькулятора ЖК")}</b>{Object.values(formulas).some(Boolean) ? ` · ${tr(lang,"свои")}` : ` · ${tr(lang,"стандартные")}`} <i>{showF ? "▴" : "▾"}</i></button>
+      {showF && (() => { const plan = {...cleanPlan()}; const v0 = plan.variants[Math.min(def, plan.variants.length - 1)] || {};
+        const c = nbCalcUnit({area:50, price_m2:1000, total_price:50000, floor:5, rooms:2}, plan, v0);
+        const testVars = {площадь:1, цена_м2:1, цена:1, пв:1, срок:1, удорожание_м2:1, удорожание_проц:1, ставка:1, скидка_пв:1, скидка_100:1, этаж:1, комнат:1};
+        params.forEach(x => { if(x.key) testVars[String(x.key).toLowerCase().replace(/\s+/g, "_")] = 1; });
+        return <>
+        <small className="muted">{tr(lang,"Здесь формула из калькулятора застройщика. Пустое поле — стандартный расчёт. Переменные")}: <code>площадь, цена_м2, цена, пв, срок, удорожание_м2, удорожание_проц, ставка, скидка_пв, скидка_100, этаж, комнат</code>{params.length ? <>, {params.filter(x => x.key).map(x => <code key={x.key}> {x.key}</code>)}</> : null}. {tr(lang,"Функции")}: if(), round(), min(), max().</small>
+        <b style={{fontSize:14}}>{tr(lang,"Параметры ЖК")}</b>
+        {params.map((x, i) => <div key={i} className="nbRow nbRowWide"><input className="input" value={x.label || ""} onChange={e => setParams(params.map((y, k) => k === i ? {...y, label:e.target.value} : y))} placeholder={tr(lang,"Название")}/>
+          <input className="input nbKey" value={x.key || ""} onChange={e => setParams(params.map((y, k) => k === i ? {...y, key:e.target.value} : y))} placeholder={tr(lang,"имя_в_формуле")}/>
+          <input className="input nbVal" inputMode="decimal" value={x.value ?? ""} onChange={e => setParams(params.map((y, k) => k === i ? {...y, value:e.target.value} : y))} placeholder="0"/>
+          <button className="nbX" onClick={() => setParams(params.filter((_, k) => k !== i))}>×</button></div>)}
+        <Button variant="soft" onClick={() => setParams([...params, {key:"", label:"", value:""}])}>＋ {tr(lang,"Параметр")}</Button>
+        {NB_CALC_FORMULAS.map((f, i) => { let er = null; const expr = String(formulas[f.key] || "").trim();
+          if(expr){ const tv = {...testVars}; NB_CALC_FORMULAS.slice(0, i).forEach(x => tv[x.key] = 1); try { nbEval(expr, tv); } catch(e){ er = e.message; } }
+          return <label key={f.key} style={{display:"grid", gap:4}}><small>{tr(lang,f.label)} <code>{f.key}</code></small>
+            <input className={cn("input nbExpr", er && "bad")} value={formulas[f.key] || ""} onChange={e => setFormulas({...formulas, [f.key]:e.target.value})} placeholder={f.def}/>
+            {er && <small className="feedSrcErr">⚠ {er}</small>}</label>; })}
+        {c && <small className="muted">{tr(lang,"Пример по варианту по умолчанию: 50 м² × $1 000")} → {tr(lang,"цена")} {nbUsd(c.price)}, {tr(lang,"ПВ")} {nbUsd(c.first)}{c.monthly != null ? `, ${nbUsd(c.monthly)} × ${c.months} ${tr(lang,"мес")}` : ""}, 100%: {nbUsd(c.full)}</small>}
+        {Object.values(formulas).some(Boolean) && <button className="linkBtn" onClick={() => setFormulas({})}>↺ {tr(lang,"Вернуть стандартные формулы")}</button>}
+      </>; })()}
+    </div>
     <h3 style={{margin:"14px 0 6px"}}>{tr(lang,"Наличие квартир")}</h3>
     <div className="feedSrcKinds">
       <button type="button" className={cn(mode === "auto" && "on")} onClick={() => setMode("auto")}>🔄 {tr(lang,"Сам раз в неделю из Google Диска")}</button>
@@ -9334,7 +9385,7 @@ function NbPlanModal({s, lang, onClose, onSaved}){
 }
 
 // Блок «Наличие и рассрочка» в ЖК — для всех. ПВ и срок менеджер может вписать сам.
-function NbUnitsPanel({source, lang, prefer}){
+function NbUnitsPanel({source, lang, prefer, isAdmin}){
   const plan = source.meta?.plan || {};
   const variants = nbPlanVariants(source.meta);
   const [units,setUnits] = useState(null);
@@ -9347,6 +9398,8 @@ function NbUnitsPanel({source, lang, prefer}){
   const [sort,setSort] = useState("price");
   const [limit,setLimit] = useState(40);
   const [note,setNote] = useState("");
+  const [editPlan,setEditPlan] = useState(false);
+  const [, setVer] = useState(0);
   useEffect(() => { let alive = true;
     supabase.from("nb_units").select("id,unit_no,section,floor,rooms,area,price_m2,total_price,property_type,note,first_seen_at,price_history,last_seen_at").eq("nb_source_id", source.id).eq("status", "free").limit(2000)
       .then(({data}) => { if(alive) setUnits(data || []); });
@@ -9377,7 +9430,9 @@ function NbUnitsPanel({source, lang, prefer}){
   };
   return <div className="card nbCalc" style={{border:"1.5px solid #F5C518", marginBottom:12}}>
     <button className="nbHelpHead" onClick={() => setOpen(!open)}>🏠 <b>{tr(lang,"Наличие и рассрочка")}</b> · {units.filter(u => (u.property_type || "apartment") === "apartment").length} {tr(lang,"свободных")}{updated ? ` · ${tr(lang,"обновлено")} ${updated}` : ""} <i>{open ? "▴" : "▾"}</i></button>
+    {editPlan && <NbPlanModal s={source} lang={lang} onClose={() => { setEditPlan(false); setVer(x => x + 1); }} onSaved={() => setVer(x => x + 1)}/>}
     {open && <>
+      {isAdmin && <Button variant="soft" onClick={() => setEditPlan(true)}>🧮 {tr(lang,"Калькулятор ЖК: условия и формулы")}</Button>}
       {plan.note && <div className="feedSrcCheck">💡 {plan.note}</div>}
       {variants.length > 1 && <><small className="muted">{tr(lang,"Вариант рассрочки")}:</small><div className="nbChips">{variants.map((x, i) => <button key={i} className={cn(i === vi && "on")} onClick={() => setVi(i)}>{nbVariantLabel(x, lang)}</button>)}</div></>}
       {variants.length === 1 && <small className="muted">{tr(lang,"Условия")}: {nbVariantLabel(v, lang)}</small>}
@@ -9428,6 +9483,10 @@ Object.assign(uiCalendar.en, {"Рассрочка и наличие":"Installmen
   "Показать ещё":"Show more", "Рассрочка от, мес":"Installment from, months", "Первый взнос до, %":"Down payment up to, %"});
 
 Object.assign(uiCalendar.uk, {"Срок рассрочки":"Термін розстрочки", "До сдачи дома":"До здачі будинку", "Вариант рассрочки":"Варіант розстрочки", "Администратор ещё не задал условия рассрочки — показаны цены без расчёта":"Адміністратор ще не задав умови розстрочки — показано ціни без розрахунку", "Любой":"Будь-який"});
+Object.assign(uiCalendar.uk, {"Формулы калькулятора ЖК":"Формули калькулятора ЖК", "свои":"власні", "стандартные":"стандартні", "Параметры ЖК":"Параметри ЖК", "Параметр":"Параметр", "Функции":"Функції",
+  "Здесь формула из калькулятора застройщика. Пустое поле — стандартный расчёт. Переменные":"Тут формула з калькулятора забудовника. Порожнє поле — стандартний розрахунок. Змінні",
+  "Цена в рассрочку, $":"Ціна в розстрочку, $", "Первый взнос к оплате, $":"Перший внесок до сплати, $", "Платёж в месяц, $":"Платіж на місяць, $", "Цена при 100% оплате, $":"Ціна при 100% оплаті, $",
+  "Пример по варианту по умолчанию: 50 м² × $1 000":"Приклад за варіантом за замовчуванням: 50 м² × $1 000", "Вернуть стандартные формулы":"Повернути стандартні формули", "Калькулятор ЖК: условия и формулы":"Калькулятор ЖК: умови та формули"});
 Object.assign(uiCalendar.en, {"Срок рассрочки":"Installment term", "До сдачи дома":"Until completion", "Вариант рассрочки":"Installment option"});
 // ===== Конструктор источника Новобудов (для любого агентства) =====
 // Администратор описывает, как устроен его Google Диск / сайт: инструкция для менеджеров, названия уровней папок,
@@ -9953,7 +10012,7 @@ function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure, pr
     </div>
     {config.instruction && <div className="card nbHelp"><button className="nbHelpHead" onClick={() => setShowHelp(!showHelp)}>📘 {tr(lang,"Инструкция")} <i>{showHelp ? "▴" : "▾"}</i></button>{showHelp && <p>{config.instruction}</p>}</div>}
     {isAdmin && !hasConfig && source.kind === "gdrive" && <div className="feedSrcCheck">💡 {tr(lang,"Раздел ещё не настроен — вернитесь назад и нажмите «Настроить раздел»: уровни папок, типы файлов, колонки прайса и формулы.")}</div>}
-    {path.length === 0 && source.category === "apartments" && <NbUnitsPanel source={source} lang={lang} prefer={prefer}/>}
+    {path.length === 0 && source.category === "apartments" && <NbUnitsPanel source={source} lang={lang} prefer={prefer} isAdmin={isAdmin}/>}
     {(data?.type === "gdrive" || data?.type === "telegram") && <input className="input nbSearch" value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang,"Поиск по названию или тексту")}/>}
     {loading && <p className="muted">{tr(lang,"Загрузка…")}</p>}
     {data && !data.ok && <div className="feedSrcCheck bad">⚠ {data.error}</div>}
