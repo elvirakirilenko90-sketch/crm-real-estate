@@ -1854,7 +1854,8 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
   const toItem = it => it.own && it.property_id ? {source:"crm", property_id:it.property_id, manager_comment:it.comment, data:edits(it), internal:internal(it)}
     : {source:"analytics", dedupe_key: it.source_url ? `url:${String(it.source_url).toLowerCase().replace(/[?#].*$/,"")}` : `nb:${it.title}:${it.rooms}:${it.area}:${it.floor}:${it.price}`, manager_comment:it.comment, check_status:"ok", checked_at:new Date().toISOString(),
        data:{title:it.editTitle.trim() || it.title, price:it.price, currency:it.currency||"USD", city:it.city, district:it.nb?null:it.district, complex_name:it.nb?it.title:it.complex_name, area:it.area, rooms:it.rooms, floor:it.floor, total_floors:it.total_floors,
-         description:it.editDesc, photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url}, internal:internal(it)};
+         description:it.editDesc, photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url,
+         ...(it.layout ? {layout:it.layout} : {}), ...(Array.isArray(it.advantages) && it.advantages.length ? {advantages:it.advantages} : {}), ...(it.condition ? {condition:it.condition} : {}), ...(it.property_type ? {property_type:it.property_type} : {})}, internal:internal(it)};
   const create = async () => {
     if(busy || !list.length) return; setBusy("create");
     if(!idem.current) idem.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -2262,9 +2263,14 @@ async function amBuildSelectionPdf({selection, items, currentProfile, agencyName
     const L = (ru, uk) => lang==="uk" ? uk : ru;
     await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:pubClean(d.title) || `${txt.property} ${i+1}`,
       photo:(d.photos||[])[0]||"", price:amMoney(d.price, d.currency), priceLabel:txt.price,
-      specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"],[L("ЖК","ЖК"), d.complex_name||"—"],[txt.type, d.property_type||"—"],[L("Состояние","Стан"), d.condition||"—"],[L("Сделка","Угода"), d.deal_type||"—"]],
+      specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"],...(d.complex_name ? [[L("ЖК","ЖК"), d.complex_name]] : []),[txt.type, d.property_type||"—"],[L("Состояние","Стан"), d.condition||"—"],[L("Сделка","Угода"), d.deal_type||"—"]],
       aboutTitle:txt.about, about:[pubClean(items[i].manager_comment), pubClean(d.description)].filter(Boolean).join("\n\n").slice(0,900), hint:pubClean(d.address)||"",
       noPhotoText:L("Фото уточняйте у менеджера","Фото уточнюйте в менеджера")});
+    // планировка — отдельной страницей (новостройки)
+    if(d.layout) await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:`${pubClean(d.title) || txt.property} — ${L("планировка","планування")}`,
+      photo:d.layout, price:amMoney(d.price, d.currency), priceLabel:txt.price,
+      specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"]],
+      aboutTitle:txt.about, about:"", hint:"", noPhotoText:""});
   }
   // контакты — только из подборки (снимок профиля назначенного менеджера), не того, кто нажал кнопку; пустые строки не выводятся
   const contactLine = [selection.manager_position, selection.manager_phone, selection.manager_telegram&&`Telegram: ${selection.manager_telegram}`, selection.manager_viber&&`Viber: ${selection.manager_viber}`, selection.manager_whatsapp&&`WhatsApp: ${selection.manager_whatsapp}`, selection.manager_email].filter(x=>String(x||"").trim()).join("  ·  ");
@@ -9272,6 +9278,60 @@ const nbSyncLine = (sync, lang) => { if(!sync?.at) return null; const d = new Da
   return sync.ok ? [`🔄 ${d}`, sync.free != null && `${sync.free} ${tr(lang,"свободных")}`, sync.new ? `+${sync.new} ${tr(lang,"новых")}` : null, sync.sold ? `${sync.sold} ${tr(lang,"продано")}` : null, sync.changed ? `${sync.changed} ${tr(lang,"цен изменилось")}` : null].filter(Boolean).join(" · ") : `⚠ ${d}: ${sync.error}`; };
 const nbFileToB64 = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(file); });
 
+// ===== Презентация квартир новостроек клиенту — без названия ЖК =====
+// Номер дома / секции квартиры: «2.10.1» → 2, «2-1/6/1» → 2-1, иначе поле «секция»
+const nbHouseOf = (u) => String(u.section || (String(u.unit_no || "").match(/^(\d+(?:-\d+)?)[./]/) || [])[1] || "").trim();
+// Планировка для квартиры: по номеру дома/секции; если планировка одна на ЖК — она
+// Дом/секция планировки: из настройки администратора, иначе из названия файла («Буд. 2 …», «5 Секция …», «A10-3 cекція»)
+const nbLayoutHouse = (x) => String(x.house || (String(x.name || "").match(/(?:буд(?:инок)?|дом|[сc]екц\S*|корпус)\.?\s*№?\s*(\d+)/i) || String(x.name || "").match(/(\d+)\s*[сc]екц/i) || [])[1] || "");
+const nbLayoutFor = (u, media) => { const L = (media?.layouts || []).filter(x => !x.off && x.url); if(!L.length) return null;
+  const h = nbHouseOf(u), h1 = h.split("-")[0];
+  let cands = L.filter(x => nbLayoutHouse(x) === h); if(!cands.length) cands = L.filter(x => nbLayoutHouse(x) === h1);
+  if(!cands.length) return L.length === 1 ? L[0].url : null;
+  // 1 этаж — планировка первого этажа, остальные — типового
+  const first = (x) => /(^|\D)1\s*(-?й|-?ий)?\s*(эт|пов)|перв/i.test(x.name || "");
+  const pick = (u.floor === 1 ? cands.find(first) : cands.find(x => /типов/i.test(x.name || "")) || cands.find(x => !first(x))) || cands[0];
+  return pick.url; };
+// Квартира → объект презентации. Названия ЖК, застройщика и адреса нет — только район, дом, этаж, площадь, расчёт рассрочки.
+function nbUnitToItem(u, source, v, lang){
+  const ua = lang !== "ru"; const L = (ru, uk) => ua ? uk : ru;
+  const plan = source.meta?.plan || {}; const vs = nbPlanVariants(source.meta);
+  const c = nbCalcUnit(u, plan, v);
+  const roomsTxt = u.rooms == null ? L("Квартира","Квартира") : u.rooms === 0 ? L("Студия","Студія") : `${u.rooms}-${L("комнатная квартира","кімнатна квартира")}`;
+  // в расчёт — выбранный вариант и варианты с тем же сроком (разный ПВ), не больше 6
+  const term = v ? nbTermKey(v) : "";
+  const same = vs.filter(x => term && nbTermKey(x) === term); const show = (same.length >= 2 ? same : vs).slice(0, 6);
+  const line = (x) => { const k = nbCalcUnit(u, plan, x); if(!k) return null;
+    return `• ${L("ПВ","ПВ")} ${k.pct}% — ${nbUsd(k.first)}${k.monthly != null ? `, ${L("далее","далі")} ${nbUsd(k.monthly)} × ${k.months} ${L("мес.","міс.")}` : ""}${k.price > k.base + 1 ? ` (${L("итого","разом")} ${nbUsd(k.price)})` : ""}`; };
+  const house = nbHouseOf(u);
+  const desc = [plan.client_text,
+    [house && `${L("Дом","Будинок")} ${house}`, u.floor != null && `${u.floor} ${L("этаж","поверх")}`, u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · "),
+    show.length ? `${L("Варианты оплаты","Варіанти оплати")}:\n• 100% — ${nbUsd(c?.full ?? c?.base)}\n${show.map(line).filter(Boolean).join("\n")}` : null].filter(Boolean).join("\n\n");
+  const firsts = vs.map(x => Number(x.first_pct)).filter(n => n > 0), terms = vs.map(x => nbMonthsUntil(x.until) ?? Number(x.months)).filter(n => n > 0);
+  const adv = [firsts.length && `${L("Первый взнос от","Перший внесок від")} ${Math.min(...firsts)}%`, terms.length && `${L("Рассрочка до","Розстрочка до")} ${Math.max(...terms)} ${L("мес.","міс.")}`,
+    vs.some(x => !Number(x.markup_m2) && !Number(x.markup_pct) && !Number(x.annual_rate) && (x.months || x.until)) && L("Есть вариант без удорожания","Є варіант без подорожчання"), L("Новостройка","Новобудова")].filter(Boolean);
+  const photos = (source.meta?.media?.renders || []).filter(x => !x.off && x.url).map(x => x.url).slice(0, 10);
+  return {own:false, title:`${roomsTxt}, ${u.area} м²`, price:Math.round(c?.base ?? Number(u.total_price) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
+    rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null, layout:nbLayoutFor(u, source.meta?.media),
+    advantages:adv, condition:L("Новостройка","Новобудова"), property_type:L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
+}
+// Выбор клиента для презентации (только клиенты, которых менеджер видит по правам)
+function NbPickClient({lang, onPick, onClose}){
+  const [q,setQ] = useState(""); const [list,setList] = useState([]); const [busy,setBusy] = useState(false);
+  useEffect(() => { let alive = true; const t = setTimeout(async () => { setBusy(true);
+    let req = supabase.from("leads").select("id,name,phone").order("id", {ascending:false}).limit(30);
+    const s = q.trim().replace(/[%,()*]/g, " ").trim(); const d = s.replace(/\D/g, "");
+    if(s) req = req.or(d.length >= 3 ? `name.ilike.%${s}%,phone.ilike.%${d}%` : `name.ilike.%${s}%`);
+    const {data} = await req; if(alive){ setList(data || []); setBusy(false); } }, 250); return () => { alive = false; clearTimeout(t); }; }, [q]);
+  return <Modal onClose={onClose}>
+    <div className="row"><h2>👤 {tr(lang,"Для какого клиента презентация?")}</h2><button className="icon" onClick={onClose}>×</button></div>
+    <input className="input" autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang,"Имя или телефон клиента")}/>
+    <p className="muted" style={{margin:"6px 0"}}>{tr(lang,"Презентация сохранится в карточке клиента. Название ЖК клиент не увидит.")}</p>
+    {busy && <p className="muted">{tr(lang,"Загрузка…")}</p>}
+    <div style={{display:"grid", gap:6, maxHeight:"50vh", overflow:"auto"}}>{list.map(l => <button key={l.id} className="nbFolder" onClick={() => onPick(l)}><span>👤</span><b>{l.name || "—"}</b><small className="muted">{l.phone || ""}</small><i>›</i></button>)}</div>
+  </Modal>;
+}
+
 // Окно администратора: условия рассрочки ЖК + откуда брать наличие
 function NbPlanModal({s, lang, onClose, onSaved}){
   const m0 = s.meta || {};
@@ -9282,6 +9342,8 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const [params,setParams] = useState(() => (m0.plan?.params || []).map(x => ({...x})));
   const [showF,setShowF] = useState(!!(m0.plan?.formulas && Object.values(m0.plan.formulas).some(Boolean)));
   const [mode,setMode] = useState(m0.price_mode === "upload" ? "upload" : "auto");
+  const [media,setMedia] = useState(() => ({renders:(m0.media?.renders || []).map(x => ({...x})), layouts:(m0.media?.layouts || []).map(x => ({...x}))}));
+  const [clientText,setClientText] = useState(m0.plan?.client_text || "");
   const [files,setFiles] = useState((m0.price_files || []).map(f => f.id || f).join("\n"));
   const [busy,setBusy] = useState(""); const [msg,setMsg] = useState(""); const [log,setLog] = useState([]);
   useEffect(() => { supabase.from("nb_sync_log").select("created_at,trigger,file_name,ok,units_free,units_new,units_sold,price_changed,error").eq("source_id", s.id).order("id", {ascending:false}).limit(5).then(({data}) => setLog(data || [])); }, [s.id, busy]);
@@ -9289,6 +9351,7 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const numOr = (x) => x === "" || x == null ? undefined : Number(String(x).replace(",", "."));
   const cleanPlan = () => ({variants:variants.map(v => Object.fromEntries(Object.entries({first_pct:numOr(v.first_pct), months:v.until ? undefined : numOr(v.months), until:v.until || undefined,
       markup_m2:numOr(v.markup_m2), markup_pct:numOr(v.markup_pct), annual_rate:numOr(v.annual_rate)}).filter(([, x]) => x !== undefined && !Number.isNaN(x)))).filter(v => Object.keys(v).length),
+    client_text:clientText.trim() || undefined,
     default_idx:def, first_disc_from:numOr(extra.first_disc_from), first_disc_pct:numOr(extra.first_disc_pct), full_disc_pct:numOr(extra.full_disc_pct), note:extra.note.trim() || undefined,
     formulas:Object.fromEntries(Object.entries(formulas).map(([k, x]) => [k, String(x || "").trim()]).filter(([, x]) => x)),
     params:params.filter(x => String(x.key || "").trim()).map(x => ({key:String(x.key).trim().toLowerCase().replace(/\s+/g, "_"), label:x.label || "", value:numOr(x.value) ?? 0}))});
@@ -9300,6 +9363,7 @@ function NbPlanModal({s, lang, onClose, onSaved}){
     const price_files = files.split(/\s+/).map(x => x.trim()).filter(Boolean).map(id => ({id}));
     // ПВ и срок по умолчанию дублируем в старые поля — по ним работают фильтры и подписи на карточке
     const meta = {...m0, plan, price_mode:mode === "upload" ? "upload" : undefined, price_files:price_files.length ? price_files : undefined,
+      media:(media.renders.length || media.layouts.length) ? {...(m0.media || {}), renders:media.renders, layouts:media.layouts} : m0.media,
       first_pct:v0.first_pct ?? m0.first_pct, months:v0.months ?? (v0.until ? nbMonthsUntil(v0.until) : m0.months)};
     Object.keys(meta).forEach(k => meta[k] === undefined && delete meta[k]);
     const {error} = await supabase.from("nb_sources").update({meta}).eq("id", s.id);
@@ -9366,6 +9430,25 @@ function NbPlanModal({s, lang, onClose, onSaved}){
         {Object.values(formulas).some(Boolean) && <button className="linkBtn" onClick={() => setFormulas({})}>↺ {tr(lang,"Вернуть стандартные формулы")}</button>}
       </>; })()}
     </div>
+    <div className="card" style={{padding:10, marginTop:12, display:"grid", gap:8}}>
+      <b>🖼 {tr(lang,"Для презентации клиенту")}</b>
+      <small className="muted">{tr(lang,"В презентацию попадают визуализации и планировка дома квартиры. Названия ЖК, застройщика и адреса там нет — проверьте, чтобы его не было и на картинках.")}</small>
+      <Field label={tr(lang,"Описание для клиента (без названия ЖК)")}><textarea className="input" rows={3} value={clientText} onChange={e => setClientText(e.target.value)} placeholder={tr(lang,"Например: Сучасний комплекс біля моря, закрита територія, підземний паркінг. Здача — 2028.")}/></Field>
+      {media.renders.length > 0 && <><small>{tr(lang,"Визуализации")} — {tr(lang,"нажмите, чтобы убрать / вернуть")}:</small>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))", gap:6}}>{media.renders.map((x, i) => <button key={x.id} type="button" onClick={() => setMedia({...media, renders:media.renders.map((y, k) => k === i ? {...y, off:!y.off} : y)})}
+          style={{position:"relative", padding:0, border:"2px solid " + (x.off ? "transparent" : "#F5C518"), borderRadius:10, overflow:"hidden", opacity:x.off ? .35 : 1, background:"none", cursor:"pointer"}}>
+          <img src={x.url} alt="" loading="lazy" style={{width:"100%", aspectRatio:"4/3", objectFit:"cover", display:"block"}}/>{!x.off && <span style={{position:"absolute", top:4, right:6, color:"#F5C518", fontWeight:900}}>✓</span>}</button>)}</div></>}
+      {media.layouts.length > 0 && <><small>{tr(lang,"Планировки — для какого дома / секции (номер как в шахматке)")}:</small>
+        {media.layouts.map((x, i) => <div key={x.id} style={{display:"flex", gap:8, alignItems:"center", opacity:x.off ? .4 : 1}}>
+          <a href={x.url} target="_blank" rel="noopener noreferrer"><img src={x.url} alt="" loading="lazy" style={{width:72, height:54, objectFit:"cover", borderRadius:8}}/></a>
+          <small style={{flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{x.name}</small>
+          <input className="input" style={{width:70}} value={x.house || ""} onChange={e => setMedia({...media, layouts:media.layouts.map((y, k) => k === i ? {...y, house:e.target.value.trim(), house_manual:true} : y)})} placeholder={tr(lang,"дом")}/>
+          <button className="nbX" title={tr(lang,"Не использовать")} onClick={() => setMedia({...media, layouts:media.layouts.map((y, k) => k === i ? {...y, off:!y.off} : y)})}>{x.off ? "↺" : "×"}</button></div>)}</>}
+      {!media.renders.length && !media.layouts.length && <small className="muted">{tr(lang,"Материалы ещё не собраны.")}</small>}
+      {s.kind === "gdrive" && <Button variant="soft" disabled={!!busy} onClick={async () => { setBusy("media"); setMsg(""); const r = await invoke({action:"media", source_id:s.id}); setBusy("");
+        if(!r.ok) return setMsg("⚠ " + r.error); setMedia({renders:r.media.renders || [], layouts:r.media.layouts || []}); s.meta = {...(s.meta || {}), media:r.media};
+        setMsg(`✓ ${tr(lang,"Визуализаций")}: ${r.media.renders.length}, ${tr(lang,"планировок")}: ${r.media.layouts.length}`); }}>{busy === "media" ? tr(lang,"Собираем…") : "🔄 " + tr(lang,"Собрать визуализации и планировки с Google Диска")}</Button>}
+    </div>
     <h3 style={{margin:"14px 0 6px"}}>{tr(lang,"Наличие квартир")}</h3>
     <div className="feedSrcKinds">
       <button type="button" className={cn(mode === "auto" && "on")} onClick={() => setMode("auto")}>🔄 {tr(lang,"Сам раз в неделю из Google Диска")}</button>
@@ -9385,7 +9468,7 @@ function NbPlanModal({s, lang, onClose, onSaved}){
 }
 
 // Блок «Наличие и рассрочка» в ЖК — для всех. ПВ и срок менеджер может вписать сам.
-function NbUnitsPanel({source, lang, prefer, isAdmin}){
+function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName}){
   const plan = source.meta?.plan || {};
   const variants = nbPlanVariants(source.meta);
   const [units,setUnits] = useState(null);
@@ -9399,6 +9482,9 @@ function NbUnitsPanel({source, lang, prefer, isAdmin}){
   const [limit,setLimit] = useState(40);
   const [note,setNote] = useState("");
   const [editPlan,setEditPlan] = useState(false);
+  const [picked,setPicked] = useState([]);       // квартиры для презентации
+  const [pickClient,setPickClient] = useState(false);
+  const [composer,setComposer] = useState(null); // {lead, items}
   const [, setVer] = useState(0);
   useEffect(() => { let alive = true;
     supabase.from("nb_units").select("id,unit_no,section,floor,rooms,area,price_m2,total_price,property_type,note,first_seen_at,price_history,last_seen_at").eq("nb_source_id", source.id).eq("status", "free").limit(2000)
@@ -9461,10 +9547,19 @@ function NbUnitsPanel({source, lang, prefer, isAdmin}){
             {c?.monthly != null && <div><small>{tr(lang,"В месяц")} × {c.months}</small><b>{nbUsd(c.monthly)}</b></div>}
             {plan.full_disc_pct ? <div><small>100% −{plan.full_disc_pct}%</small><b>{nbUsd(c?.full)}</b></div> : null}
           </div>
-          <button className="nbPriceBtn" onClick={() => share({u, c})}>📤 {tr(lang,"Отправить клиенту")}</button>
+          <div style={{display:"flex", gap:6}}>
+            <button className="nbPriceBtn" style={{flex:1}} onClick={() => share({u, c})}>📤 {tr(lang,"Текст")}</button>
+            <button className="nbPriceBtn" style={{flex:1, ...(picked.some(x => x.id === u.id) ? {background:"#F5C518", color:"#0B0B0C"} : {})}} onClick={() => setPicked(p => p.some(x => x.id === u.id) ? p.filter(x => x.id !== u.id) : [...p, u])}>{picked.some(x => x.id === u.id) ? "✓ " + tr(lang,"В презентации") : "＋ " + tr(lang,"В презентацию")}</button>
+          </div>
         </div>; })}</div>
       {rows.length > limit && <Button variant="soft" onClick={() => setLimit(limit + 60)}>{tr(lang,"Показать ещё")} ({rows.length - limit})</Button>}
+      {picked.length > 0 && <div style={{position:"sticky", bottom:8, zIndex:5, display:"flex", gap:8, padding:8, borderRadius:14, background:"var(--card,#18181B)", border:"1.5px solid #F5C518", boxShadow:"0 6px 20px rgba(0,0,0,.25)"}}>
+        <Button className="full" onClick={() => setPickClient(true)}>📨 {tr(lang,"Презентация клиенту")} · {picked.length}</Button>
+        <Button variant="soft" onClick={() => setPicked([])}>×</Button></div>}
     </>}
+    {pickClient && <NbPickClient lang={lang} onClose={() => setPickClient(false)} onPick={(l) => { setPickClient(false); setComposer({lead:l, items:picked.map(u => nbUnitToItem(u, source, v, lang))}); }}/>}
+    {composer && <PresentationComposer lead={composer.lead} leadDbId={composer.lead.id} items={composer.items} properties={[]} currentProfile={currentProfile} agencyName={agencyName} lang={lang}
+      onClose={() => setComposer(null)} onDone={() => setPicked([])}/>}
   </div>;
 }
 Object.assign(uiCalendar.uk, {"Рассрочка и наличие":"Розстрочка та наявність", "Варианты рассрочки":"Варіанти розстрочки", "Каждая строка — вариант от застройщика. Срок можно вписать в месяцах или датой «до сдачи» — тогда CRM каждую неделю сама уменьшает количество месяцев.":"Кожен рядок — варіант від забудовника. Термін можна вписати в місяцях або датою «до здачі» — тоді CRM щотижня сама зменшує кількість місяців.",
@@ -9487,6 +9582,12 @@ Object.assign(uiCalendar.uk, {"Формулы калькулятора ЖК":"Ф
   "Здесь формула из калькулятора застройщика. Пустое поле — стандартный расчёт. Переменные":"Тут формула з калькулятора забудовника. Порожнє поле — стандартний розрахунок. Змінні",
   "Цена в рассрочку, $":"Ціна в розстрочку, $", "Первый взнос к оплате, $":"Перший внесок до сплати, $", "Платёж в месяц, $":"Платіж на місяць, $", "Цена при 100% оплате, $":"Ціна при 100% оплаті, $",
   "Пример по варианту по умолчанию: 50 м² × $1 000":"Приклад за варіантом за замовчуванням: 50 м² × $1 000", "Вернуть стандартные формулы":"Повернути стандартні формули", "Калькулятор ЖК: условия и формулы":"Калькулятор ЖК: умови та формули"});
+Object.assign(uiCalendar.uk, {"Для презентации клиенту":"Для презентації клієнту", "Описание для клиента (без названия ЖК)":"Опис для клієнта (без назви ЖК)", "Визуализации":"Візуалізації", "нажмите, чтобы убрать / вернуть":"натисніть, щоб прибрати / повернути",
+  "Планировки — для какого дома / секции (номер как в шахматке)":"Планування — для якого будинку / секції (номер як у шахматці)", "дом":"буд.", "Не использовать":"Не використовувати", "Материалы ещё не собраны.":"Матеріали ще не зібрані.",
+  "Собрать визуализации и планировки с Google Диска":"Зібрати візуалізації та планування з Google Диска", "Собираем…":"Збираємо…", "Визуализаций":"Візуалізацій", "планировок":"планувань",
+  "В презентацию попадают визуализации и планировка дома квартиры. Названия ЖК, застройщика и адреса там нет — проверьте, чтобы его не было и на картинках.":"У презентацію потрапляють візуалізації та планування будинку квартири. Назви ЖК, забудовника й адреси там немає — перевірте, щоб її не було й на картинках.",
+  "Текст":"Текст", "В презентацию":"У презентацію", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
+  "Презентация сохранится в карточке клиента. Название ЖК клиент не увидит.":"Презентація збережеться в картці клієнта. Назву ЖК клієнт не побачить."});
 Object.assign(uiCalendar.en, {"Срок рассрочки":"Installment term", "До сдачи дома":"Until completion", "Вариант рассрочки":"Installment option"});
 // ===== Конструктор источника Новобудов (для любого агентства) =====
 // Администратор описывает, как устроен его Google Диск / сайт: инструкция для менеджеров, названия уровней папок,
@@ -9784,7 +9885,7 @@ function NbPriceTable({source, file, config, crumbs, lang, call, onClose}){
   </div>;
 }
 
-function NewBuildsHub({currentProfile, role, lang}){
+function NewBuildsHub({currentProfile, role, lang, agencyName=""}){
   const isAdmin = role === "Администратор директор" || role === "Администратор тех отдел";
   const [cat,setCat] = useStorage("nb_cat","apartments");
   const [sources,setSources] = useState([]);
@@ -9850,7 +9951,7 @@ function NewBuildsHub({currentProfile, role, lang}){
     return <div className="screen"><NbConfigEditor title={`${tr(lang,"Настройка ссылки")}: ${editing.title}`} initial={editing.meta?.config || catCfg[editing.category]} sources={sources} lang={lang} onClose={() => setEditing(null)} onSave={saveSrc} onReset={editing.meta?.config ? reset : null}/></div>;
   }
   if(open){ const src = sources.find(x => x.id === open.id) || open;
-    return <div className="screen"><NbBrowser source={src} catCfg={catCfg[src.category]} lang={lang} call={call} isAdmin={isAdmin} prefer={{first:fFirst, term:fMonths}} onConfigure={() => setEditing(src)} onBack={() => setOpen(null)}/></div>; }
+    return <div className="screen"><NbBrowser source={src} catCfg={catCfg[src.category]} lang={lang} call={call} isAdmin={isAdmin} prefer={{first:fFirst, term:fMonths}} currentProfile={currentProfile} agencyName={agencyName} onConfigure={() => setEditing(src)} onBack={() => setOpen(null)}/></div>; }
 
   return <div className="screen nbHub">
     <div className="nbTabs">{NB_CATS.map(c => <button key={c.id} className={cn("nbTab", cat === c.id && "on")} onClick={() => { setCat(c.id); setAdding(false); }}>
@@ -9970,7 +10071,7 @@ function NbAddSource({cat, branch=null, districts=NB_DISTRICTS, lang, call, curr
   </div>;
 }
 
-function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure, prefer}){
+function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure, prefer, currentProfile, agencyName}){
   const config = nbConfigOf(source, catCfg);
   const hasConfig = !!(source.meta?.config || catCfg);
   const [showHelp,setShowHelp] = useState(true);
@@ -10012,7 +10113,7 @@ function NbBrowser({source, catCfg, lang, call, onBack, isAdmin, onConfigure, pr
     </div>
     {config.instruction && <div className="card nbHelp"><button className="nbHelpHead" onClick={() => setShowHelp(!showHelp)}>📘 {tr(lang,"Инструкция")} <i>{showHelp ? "▴" : "▾"}</i></button>{showHelp && <p>{config.instruction}</p>}</div>}
     {isAdmin && !hasConfig && source.kind === "gdrive" && <div className="feedSrcCheck">💡 {tr(lang,"Раздел ещё не настроен — вернитесь назад и нажмите «Настроить раздел»: уровни папок, типы файлов, колонки прайса и формулы.")}</div>}
-    {path.length === 0 && source.category === "apartments" && <NbUnitsPanel source={source} lang={lang} prefer={prefer} isAdmin={isAdmin}/>}
+    {path.length === 0 && source.category === "apartments" && <NbUnitsPanel source={source} lang={lang} prefer={prefer} isAdmin={isAdmin} currentProfile={currentProfile} agencyName={agencyName}/>}
     {(data?.type === "gdrive" || data?.type === "telegram") && <input className="input nbSearch" value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang,"Поиск по названию или тексту")}/>}
     {loading && <p className="muted">{tr(lang,"Загрузка…")}</p>}
     {data && !data.ok && <div className="feedSrcCheck bad">⚠ {data.error}</div>}
@@ -11628,7 +11729,7 @@ export default function App(){
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role} lang={lang}/>} 
         {page==="access"&&role==="Администратор тех отдел"&&<Access agencies={agencies} setAgencies={setAgencies} users={users} setUsers={setUsers}/>} 
         {/* Новобудови временно пустой раздел; компонент NewBuilds и данные ЖК сохранены, вернуть: <NewBuilds role={role} leads={visibleLeads} currentProfile={currentProfile}/> */}
-        {page==="newbuilds"&&<NewBuildsHub currentProfile={currentProfile} role={role} lang={lang}/>}
+        {page==="newbuilds"&&<NewBuildsHub currentProfile={currentProfile} role={role} lang={lang} agencyName={agencyName}/>}
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
         <Bottom page={page} setPage={setPage} lang={lang}/>
         {currentProfile?.email&&<FirstTouchWatcher currentProfile={currentProfile} leads={leads} onOpenLead={openLeadById} lang={lang}/>}

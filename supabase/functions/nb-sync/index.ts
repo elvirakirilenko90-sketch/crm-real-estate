@@ -13,7 +13,9 @@
 //   full_disc_pct — скидка при 100% оплате; note — как считать (текст для менеджеров)
 // Ничего не удаляем: квартира, которой больше нет в прайсе, получает статус «sold» и дату.
 //
-// Действия: sync {source_id} · upload {source_id, name, b64} · recalc {source_id}
+// Визуализации и планировки из папки ЖК копируются в хранилище CRM — для презентаций без названия ЖК.
+//
+// Действия: sync {source_id} · upload {source_id, name, b64} · recalc {source_id} · media {source_id}
 // По расписанию: заголовок x-cron-secret, за вызов — один ЖК (дольше всех не обновлявшийся).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
@@ -231,16 +233,60 @@ async function driveFolder(id: string) {
   const r = await fetch(`https://drive.google.com/embeddedfolderview?id=${id}`, { headers: UA, redirect: "follow" });
   const html = await r.text();
   if (!r.ok || /accounts\.google\.com\/(ServiceLogin|v3\/signin)/.test(r.url + html.slice(0, 3000))) throw new Error("Папка закрыта — нужен доступ «Все, у кого есть ссылка».");
-  const folders: { id: string; name: string }[] = []; const files: { id: string; name: string; gsheet: boolean }[] = [];
+  const folders: { id: string; name: string }[] = []; const files: { id: string; name: string; gsheet: boolean }[] = []; const other: { id: string; name: string }[] = [];
   for (const block of html.split(/<div class="flip-entry"/).slice(1)) {
     const fid = (block.match(/id="entry-([A-Za-z0-9_-]+)"/) || [])[1];
     const href = decode((block.match(/<a href="([^"]+)"/) || [])[1] || "");
     const name = decode(((block.match(/<div class="flip-entry-title">([\s\S]*?)<\/div>/) || [])[1] || "").replace(/<[^>]+>/g, "")).trim();
     if (!fid || !name) continue;
     if (/\/folders\//.test(href)) folders.push({ id: fid, name });
-    else if (/docs\.google\.com\/spreadsheets/.test(href) || /\.(xlsx?|csv|ods)$/i.test(name)) files.push({ id: fid, name, gsheet: /docs\.google\.com\/spreadsheets/.test(href) });
+    else if (/docs\.google\.com\/spreadsheets/.test(href) || /\.(xlsx?|csv|ods)["'\s]*$/i.test(name)) files.push({ id: fid, name, gsheet: /docs\.google\.com\/spreadsheets/.test(href) });
+    else other.push({ id: fid, name });
   }
-  return { folders, files };
+  return { folders, files, other };
+}
+
+// ---------- материалы для презентации: визуализации и планировки ----------
+// Берём картинки из папок ЖК: «Візуалізації / Фото / Рендери» и файлы со словом «план».
+// Копируем в хранилище CRM (presentations/nb/<ЖК>/…), чтобы в презентации не было ссылок на Диск застройщика.
+const IMG = /\.(jpe?g|png|webp)$/i, PDF = /\.pdf$/i;
+const isLayout = (n: string, path: string) => /план(ув|ир)|layout|планы/i.test(n + " " + path) && !/генплан|план\s*забуд|ситуац/i.test(n);
+const houseOf = (s: string) => (s.match(/(?:буд(?:инок)?|дом|секц\w*|корпус)\.?\s*№?\s*(\d+)/i) || [])[1] || null;
+async function collectMedia(src: any) {
+  const old = src.meta?.media || {}; const known = new Map<string, any>([...(old.renders || []), ...(old.layouts || [])].map((x: any) => [x.id, x]));
+  const renders: any[] = [], layouts: any[] = [];
+  let level: { id: string; path: string }[] = [{ id: src.handle, path: "" }]; let budget = 30;
+  for (let d = 0; d < 4 && level.length && budget > 0; d++) {
+    const next: { id: string; path: string }[] = [];
+    for (const f of level.slice(0, budget)) {
+      budget--;
+      let r: any; try { r = await driveFolder(f.id); } catch { continue; }
+      for (const x of r.other) {
+        if (!IMG.test(x.name) && !PDF.test(x.name)) continue;
+        if (isLayout(x.name, f.path)) layouts.push({ id: x.id, name: x.name, house: houseOf(x.name) || houseOf(f.path), pdf: PDF.test(x.name) });
+        else if (IMG.test(x.name) && (/фото|photo|візуал|визуал|рендер|render|генплан/i.test(f.path + " " + x.name) || d === 0)) renders.push({ id: x.id, name: x.name });
+      }
+      r.folders.filter((x: any) => !/паркін|паркин|документ|договор|догов|хід|ход\s*буд/i.test(x.name) && !/^\s*(відео|видео|video)\s*$/i.test(x.name)).forEach((x: any) => next.push({ id: x.id, path: `${f.path} / ${x.name}` }));
+    }
+    level = next;
+  }
+  // копируем новые картинки (превью Google 1600px) в хранилище; уже скопированные не трогаем
+  const copy = async (x: any) => {
+    const k = known.get(x.id); if (k?.url) return { ...x, url: k.url, off: k.off, house: k.house_manual ? k.house : x.house, house_manual: k.house_manual };
+    try {
+      const r = await fetch(`https://drive.google.com/thumbnail?id=${x.id}&sz=w1600`, { headers: UA, redirect: "follow" });
+      const type = r.headers.get("content-type") || "";
+      if (!r.ok || !type.startsWith("image/")) return null;
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const path = `nb/${src.id}/${x.id}.${type.includes("png") ? "png" : "jpg"}`;
+      const up = await fetch(`${SUPABASE_URL}/storage/v1/object/presentations/${path}`, { method: "POST", headers: { Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": type, "x-upsert": "true", "cache-control": "31536000" }, body: buf });
+      if (!up.ok) return null;
+      return { ...x, url: `${SUPABASE_URL}/storage/v1/object/public/presentations/${path}` };
+    } catch { return null; }
+  };
+  const R = (await Promise.all(renders.slice(0, 14).map(copy))).filter(Boolean);
+  const L = (await Promise.all(layouts.slice(0, 24).map(copy))).filter(Boolean);
+  return { renders: R, layouts: L, at: new Date().toISOString() };
 }
 const SKIP = /довер|догов|заяв|анкет|акт\b|рахун|счет/i;
 function score(name: string) {
@@ -269,7 +315,7 @@ async function download(f: { id: string; gsheet: boolean }) {
   return new Uint8Array(await r.arrayBuffer());
 }
 // Метка файла без дат и «копия»: «Шахматка А10 (23.04.26).xlsx» → «шахматкаа10»
-const fileTag = (n: string) => String(n || "").toLowerCase().replace(/\.(xlsx?|csv|ods)$/, "").replace(/\d{1,2}[.\-]\d{1,2}[.\-]\d{2,4}/g, "")
+const fileTag = (n: string) => String(n || "").toLowerCase().replace(/\.(xlsx?|csv|ods)["'\s]*$/, "").replace(/\d{1,2}[.\-]\d{1,2}[.\-]\d{2,4}/g, "")
   .replace(/копия|копія|copy|\(\d+\)|\bот\b|\bвід\b/g, "").replace(/[^a-zа-яіїєґ0-9]+/g, "").slice(0, 40) || "f";
 const fileIdOf = (s: string) => (String(s || "").match(/(?:\/d\/|[?&]id=)([A-Za-z0-9_-]{20,})/) || [])[1] || (/^[A-Za-z0-9_-]{20,}$/.test(s) ? s : null);
 
@@ -288,12 +334,14 @@ async function store(src: any, units: Unit[] | null, fileName: string | null, tr
       if (o && u.total != null && o.total_price != null && Number(o.total_price) !== u.total) { hist = [...hist, { at: now, from: Number(o.total_price), to: u.total }].slice(-20); nChanged++; }
       if (!o && u.free) nNew++;
       if (o && o.status === "free" && !u.free) nSold++;
-      return { agency_id: src.agency_id, nb_source_id: src.id, unit_key: u.key, unit_no: u.no, complex_name: src.title, section: u.section, floor: u.floor, rooms: u.rooms,
+      const row: any = { agency_id: src.agency_id, nb_source_id: src.id, unit_key: u.key, unit_no: u.no, complex_name: src.title, section: u.section, floor: u.floor, rooms: u.rooms,
         area: u.area, price_m2: u.pm2, total_price: u.total, currency: "USD", property_type: u.type, note: u.note, status: u.free ? "free" : "sold",
-        sold_at: u.free ? null : (o?.status === "sold" ? undefined : now), calc: c, price_history: hist, first_payment_pct: c?.first_pct ?? null, first_payment_amount: c?.first ?? null,
+        calc: c, price_history: hist, first_payment_pct: c?.first_pct ?? null, first_payment_amount: c?.first ?? null,
         installment_months: c?.months ?? null, monthly_payment: c?.monthly ?? null, has_price_increase: hasMarkup(plan),
         last_seen_at: now, sheet_file: fileName, source: trigger === "upload" ? "Файл" : "Google Drive", source_url: src.url || null, district: src.meta?.district || null, updated_at: now };
-    }).map((r) => { if (r.sold_at === undefined) delete (r as any).sold_at; return r; });
+      if (u.free) row.sold_at = null; else if (o?.status !== "sold") row.sold_at = now;
+      return row;
+    });
     for (let i = 0; i < rows.length; i += 300) {
       const { error } = await db.from("nb_units").upsert(rows.slice(i, i + 300), { onConflict: "nb_source_id,unit_key" });
       if (error) throw new Error(error.message);
@@ -305,7 +353,11 @@ async function store(src: any, units: Unit[] | null, fileName: string | null, tr
   }
   const free = units ? units.filter((u) => u.free).length : null;
   const sync = { at: now, ok: !err, file: fileName, free, new: nNew, sold: nSold, changed: nChanged, error: err, trigger };
-  await db.from("nb_sources").update({ meta: { ...(src.meta || {}), sync } }).eq("id", src.id);
+  // визуализации и планировки для презентаций (не мешаем основному обновлению, если не получилось)
+  let media = src.meta?.media;
+  if (src.kind === "gdrive") { try { media = await collectMedia(src); } catch { /* оставляем прежние */ } }
+  const { data: fresh } = await db.from("nb_sources").select("meta").eq("id", src.id).maybeSingle(); // условия могли поменять, пока шло обновление
+  await db.from("nb_sources").update({ meta: { ...(fresh?.meta || src.meta || {}), sync, ...(media ? { media } : {}), ...(src.meta?.price_mode ? { price_mode: src.meta.price_mode } : {}) } }).eq("id", src.id);
   await db.from("nb_sync_log").insert({ agency_id: src.agency_id, source_id: src.id, trigger, file_name: fileName, ok: !err, units_free: free, units_new: nNew, units_sold: nSold, price_changed: nChanged, error: err, created_by_email: email });
   return sync;
 }
@@ -365,6 +417,13 @@ Deno.serve(async (req) => {
       const wb = readWb(await download(f));
       return json({ ok: true, files: files.map((x) => `${x.s} ${x.name} ${x.id}`), file: f.name, sheets: wb.SheetNames.slice(0, 15).map((n: string) => ({ n, rows: sheetRows(wb, n).slice(Number(body.from) || 0, (Number(body.from) || 0) + (Number(body.count) || 40)).map((r) => r.slice(0, 26).join(" ¦ ")) })).slice(0, Number(body.sheets) || 2) });
     }
+    if (body.media && body.source_id) { // только собрать визуализации и планировки
+      const src = (srcs || []).find((x: any) => x.id === Number(body.source_id)); if (!src) return json({ ok: false });
+      const media = await collectMedia(src);
+      const { data: fresh } = await db.from("nb_sources").select("meta").eq("id", src.id).maybeSingle();
+      await db.from("nb_sources").update({ meta: { ...(fresh?.meta || {}), media } }).eq("id", src.id);
+      return json({ ok: true, renders: media.renders.length, layouts: media.layouts.map((x: any) => `${x.house || "?"} ${x.name}`) });
+    }
     const week = Date.now() - 6 * 864e5;
     const due = (srcs || []).filter((x: any) => body.source_id ? x.id === Number(body.source_id) : !(x.meta?.sync?.at && Date.parse(x.meta.sync.at) > week))
       .sort((a: any, b: any) => (Date.parse(a.meta?.sync?.at || 0) || 0) - (Date.parse(b.meta?.sync?.at || 0) || 0));
@@ -392,6 +451,14 @@ Deno.serve(async (req) => {
       src.meta = { ...(src.meta || {}), price_mode: body.keep_drive ? src.meta?.price_mode : "upload" };
       const sync = await store(src, units, String(body.name || "Файл"), "upload", email, null);
       return json({ ok: true, sync });
+    }
+    if (action === "media") {
+      const src = await own(Number(body.source_id)); if (!src) return json({ ok: false, error: "ЖК не найден" });
+      if (src.kind !== "gdrive") return json({ ok: false, error: "Материалы собираются из папки Google Drive" });
+      const media = await collectMedia(src);
+      const { data: fresh } = await db.from("nb_sources").select("meta").eq("id", src.id).maybeSingle();
+      await db.from("nb_sources").update({ meta: { ...(fresh?.meta || {}), media } }).eq("id", src.id);
+      return json({ ok: true, media });
     }
     if (action === "recalc") {
       const src = await own(Number(body.source_id)); if (!src) return json({ ok: false, error: "ЖК не найден" });
