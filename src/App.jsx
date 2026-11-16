@@ -9468,6 +9468,17 @@ function NbPlanModal({s, lang, onClose, onSaved}){
 }
 
 // Блок «Наличие и рассрочка» в ЖК — для всех. ПВ и срок менеджер может вписать сам.
+// Комнатность, если застройщик не указал её в шахматке: по ближайшей квартире того же ЖК с известной комнатностью (±3 м²), иначе по площади.
+function nbRoomsFill(units){
+  const known = units.filter(u => u.rooms != null && Number(u.area));
+  return units.map(u => {
+    const a = Number(u.area); if(u.rooms != null || !a) return u;
+    let best = null, d = 1e9; for(const k of known){ const dd = Math.abs(Number(k.area) - a); if(dd < d){ d = dd; best = k; } }
+    const r = best && d <= 3 ? best.rooms : a < 30 ? 0 : a < 50 ? 1 : a < 72 ? 2 : a < 105 ? 3 : 4;
+    return {...u, rooms:r, rooms_est:true};
+  });
+}
+const NB_AREA_RANGES = [[0,35,"до 35 м²"],[35,45,"35–45 м²"],[45,60,"45–60 м²"],[60,80,"60–80 м²"],[80,100,"80–100 м²"],[100,1e9,"от 100 м²"]];
 function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName}){
   const plan = source.meta?.plan || {};
   const variants = nbPlanVariants(source.meta);
@@ -9477,7 +9488,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const [vi,setVi] = useState(() => { const k = prefer && (prefer.first || prefer.term) ? variants.findIndex(v => nbVariantFits(v, prefer.first, prefer.term)) : -1;
     return k >= 0 ? k : Math.min(Number(plan.default_idx) || 0, Math.max(0, variants.length - 1)); });
   const pct = "", months = "";
-  const [f,setF] = useState({rooms:"", budget:"", monthly:"", floorMin:"", floorMax:"", type:"apartment", q:""});
+  const [f,setF] = useState({rooms:"", area:"", budget:"", monthly:"", floorMin:"", floorMax:"", type:"apartment", q:""});
   const [sort,setSort] = useState("price");
   const [limit,setLimit] = useState(40);
   const [note,setNote] = useState("");
@@ -9488,7 +9499,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const [, setVer] = useState(0);
   useEffect(() => { let alive = true;
     supabase.from("nb_units").select("id,unit_no,section,floor,rooms,area,price_m2,total_price,property_type,note,first_seen_at,price_history,last_seen_at").eq("nb_source_id", source.id).eq("status", "free").limit(2000)
-      .then(({data}) => { if(alive) setUnits(data || []); });
+      .then(({data}) => { if(alive) setUnits(nbRoomsFill(data || [])); });
     return () => { alive = false; }; }, [source.id]);
   if(units == null || !units.length) return null;
   const v = variants[vi] || {};
@@ -9497,14 +9508,17 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const firstImport = firstSeen > week; // первая загрузка ЖК — все квартиры «новые», значок не показываем
   const rows = units.map(u => ({u, c:nbCalcUnit(u, plan, v, pct, months)})).filter(({u, c}) => {
     if(f.type && (u.property_type || "apartment") !== f.type) return false;
-    if(f.rooms !== "" && String(u.rooms ?? "") !== f.rooms) return false;
+    if(f.rooms !== "" && (f.rooms === "4" ? !(u.rooms >= 4) : String(u.rooms ?? "") !== f.rooms)) return false;
+    if(f.area !== "" && (() => { const [lo, hi] = NB_AREA_RANGES[Number(f.area)]; const a = Number(u.area); return !(a >= lo && a < hi); })()) return false;
     if(f.budget && !(c && (!v.first_pct ? c.price : c.first) <= Number(f.budget))) return false;
     if(f.monthly && !(c?.monthly != null && c.monthly <= Number(f.monthly))) return false;
     if(f.floorMin && !(u.floor >= Number(f.floorMin))) return false;
     if(f.floorMax && !(u.floor <= Number(f.floorMax))) return false;
     if(f.q && !`${u.unit_no} ${u.section || ""} ${u.note || ""}`.toLowerCase().includes(f.q.toLowerCase())) return false;
     return true; }).sort((a, b) => sort === "monthly" ? (a.c?.monthly ?? 1e12) - (b.c?.monthly ?? 1e12) : sort === "area" ? (Number(a.u.area) || 0) - (Number(b.u.area) || 0) : (a.c?.price ?? 1e12) - (b.c?.price ?? 1e12));
-  const roomsList = [...new Set(units.map(u => u.rooms).filter(r => r != null))].sort((a, b) => a - b);
+  const apts = units.filter(u => (u.property_type || "apartment") === "apartment");
+  const roomsList = [0, 1, 2, 3, 4].map(r => [r, apts.filter(u => r === 4 ? u.rooms >= 4 : u.rooms === r).length]);
+  const areaList = NB_AREA_RANGES.map(([lo, hi, label], i) => [i, label, apts.filter(u => Number(u.area) >= lo && Number(u.area) < hi).length]).filter(x => x[2]);
   const hasCommercial = units.some(u => u.property_type === "commercial");
   const updated = source.meta?.sync?.at ? new Date(source.meta.sync.at).toLocaleDateString("ru-RU", {day:"2-digit", month:"2-digit"}) : null;
   const share = async ({u, c}) => {
@@ -9524,7 +9538,8 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
       {variants.length === 1 && <small className="muted">{tr(lang,"Условия")}: {nbVariantLabel(v, lang)}</small>}
       {!variants.length && <small className="muted">{tr(lang,"Администратор ещё не задал условия рассрочки — показаны цены без расчёта")}</small>}
       <div className="nbCalcVars">
-        {roomsList.length > 0 && <label><small>{tr(lang,"Комнат")}</small><select className="input" value={f.rooms} onChange={e => setF({...f, rooms:e.target.value})}><option value="">{tr(lang,"Все")}</option>{roomsList.map(r => <option key={r} value={String(r)}>{r === 0 ? tr(lang,"Студия") : r}</option>)}</select></label>}
+        <label><small>{tr(lang,"Комнат")}</small><select className="input" value={f.rooms} onChange={e => setF({...f, rooms:e.target.value})}><option value="">{tr(lang,"Все")}</option>{roomsList.map(([r, n]) => <option key={r} value={String(r)} disabled={!n}>{r === 0 ? tr(lang,"Студия") : r === 4 ? "4+" : r} ({n})</option>)}</select></label>
+        <label><small>{tr(lang,"Площадь")}</small><select className="input" value={f.area} onChange={e => setF({...f, area:e.target.value})}><option value="">{tr(lang,"Любая")}</option>{areaList.map(([i, label, n]) => <option key={i} value={String(i)}>{label} ({n})</option>)}</select></label>
         <label><small>{tr(lang,"Бюджет до, $")}</small><input className="input" inputMode="numeric" value={f.budget} onChange={e => setF({...f, budget:e.target.value.replace(/\D/g,"")})} placeholder={v.first_pct ? tr(lang,"первый взнос") : tr(lang,"цена")}/></label>
         <label><small>{tr(lang,"Платёж в месяц до, $")}</small><input className="input" inputMode="numeric" value={f.monthly} onChange={e => setF({...f, monthly:e.target.value.replace(/\D/g,"")})}/></label>
         <label><small>{tr(lang,"Этаж от – до")}</small><span style={{display:"flex", gap:4}}><input className="input" inputMode="numeric" value={f.floorMin} onChange={e => setF({...f, floorMin:e.target.value.replace(/\D/g,"")})}/><input className="input" inputMode="numeric" value={f.floorMax} onChange={e => setF({...f, floorMax:e.target.value.replace(/\D/g,"")})}/></span></label>
@@ -9562,7 +9577,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
       onClose={() => setComposer(null)} onDone={() => setPicked([])}/>}
   </div>;
 }
-Object.assign(uiCalendar.uk, {"Рассрочка и наличие":"Розстрочка та наявність", "Варианты рассрочки":"Варіанти розстрочки", "Каждая строка — вариант от застройщика. Срок можно вписать в месяцах или датой «до сдачи» — тогда CRM каждую неделю сама уменьшает количество месяцев.":"Кожен рядок — варіант від забудовника. Термін можна вписати в місяцях або датою «до здачі» — тоді CRM щотижня сама зменшує кількість місяців.",
+Object.assign(uiCalendar.uk, {"Любая":"Будь-яка", "Рассрочка и наличие":"Розстрочка та наявність", "Варианты рассрочки":"Варіанти розстрочки", "Каждая строка — вариант от застройщика. Срок можно вписать в месяцах или датой «до сдачи» — тогда CRM каждую неделю сама уменьшает количество месяцев.":"Кожен рядок — варіант від забудовника. Термін можна вписати в місяцях або датою «до здачі» — тоді CRM щотижня сама зменшує кількість місяців.",
   "Вариант":"Варіант", "по умолчанию":"за замовчуванням", "Или до даты (сдача дома)":"Або до дати (здача будинку)", "Удорожание, $ за м²":"Подорожчання, $ за м²", "Удорожание, % к цене":"Подорожчання, % до ціни", "% годовых на остаток":"% річних на залишок",
   "Пример: квартира 50 м² за $50 000":"Приклад: квартира 50 м² за $50 000", "цена":"ціна", "Скидки и как считать":"Знижки і як рахувати", "При ПВ от, %":"При ПВ від, %", "скидка на сумму ПВ, %":"знижка на суму ПВ, %", "Скидка при 100% оплате, %":"Знижка при 100% оплаті, %",
   "Как считать — подсказка менеджерам":"Як рахувати — підказка менеджерам", "Наличие квартир":"Наявність квартир", "Сам раз в неделю из Google Диска":"Сам раз на тиждень з Google Диска", "Загружаю файлом":"Завантажую файлом",
@@ -9572,7 +9587,7 @@ Object.assign(uiCalendar.uk, {"Рассрочка и наличие":"Розст
   "Бюджет до, $":"Бюджет до, $", "первый взнос":"перший внесок", "Платёж в месяц до, $":"Платіж на місяць до, $", "Этаж от – до":"Поверх від – до", "Меньше платёж":"Менший платіж", "По площади":"За площею", "Тип":"Тип", "Квартиры":"Квартири", "Коммерция":"Комерція",
   "новая":"нова", "Цена":"Ціна", "В рассрочку":"У розстрочку", "В месяц":"На місяць", "Отправить клиенту":"Надіслати клієнту", "Показать ещё":"Показати ще", "секция":"секція", "студия":"студія", "Студия":"Студія", "далее":"далі", "итого":"разом", "При 100% оплате":"При 100% оплаті",
   "годовых":"річних", "до":"до", "Без условий":"Без умов", "по дате":"за датою", "Рассрочка от, мес":"Розстрочка від, міс", "Первый взнос до, %":"Перший внесок до, %", "Например: удорожание считается от цены м² в шахматке; акции не суммируются":"Наприклад: подорожчання рахується від ціни м² у шахматці; акції не сумуються"});
-Object.assign(uiCalendar.en, {"Рассрочка и наличие":"Installments & availability", "Варианты рассрочки":"Installment options", "Вариант":"Option", "по умолчанию":"default", "Или до даты (сдача дома)":"Or until date (completion)", "Удорожание, $ за м²":"Markup, $ per m²", "Удорожание, % к цене":"Markup, % of price",
+Object.assign(uiCalendar.en, {"Любая":"Any", "Рассрочка и наличие":"Installments & availability", "Варианты рассрочки":"Installment options", "Вариант":"Option", "по умолчанию":"default", "Или до даты (сдача дома)":"Or until date (completion)", "Удорожание, $ за м²":"Markup, $ per m²", "Удорожание, % к цене":"Markup, % of price",
   "% годовых на остаток":"Annual % on balance", "Скидки и как считать":"Discounts & how to calculate", "Наличие квартир":"Availability", "Сам раз в неделю из Google Диска":"Weekly from Google Drive", "Загружаю файлом":"I upload a file", "Загрузить шахматку / прайс (Excel)":"Upload price list (Excel)",
   "Сохранить и пересчитать":"Save and recalculate", "Обновить наличие сейчас":"Update availability now", "Наличие и рассрочка":"Availability & installments", "свободных":"available", "обновлено":"updated", "В рассрочку":"With installments", "В месяц":"Monthly", "Отправить клиенту":"Send to client",
   "Показать ещё":"Show more", "Рассрочка от, мес":"Installment from, months", "Первый взнос до, %":"Down payment up to, %"});
