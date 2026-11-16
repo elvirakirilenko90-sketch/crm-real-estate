@@ -58,15 +58,53 @@ function roomsOf(t: string): number | null {
 const typeOf = (t: string) => /коммерц|комерц|нежил|нежитл|офис|офіс|паркинг|паркінг|кладов|комор/i.test(t) ? "commercial" : "apartment";
 const BUSY = /продан|sold|брон|резерв|reserved|аванс|зайнят|занят|инвест|інвест|не\s*прода/i;
 
+// ---------- цвета ячеек: статус по легенде шахматки («Свободно / Бронь / Аванс / Продано») ----------
+// Многие застройщики отмечают бронь и продажу заливкой ячейки. Ищем на листе легенду, запоминаем цвет каждого статуса,
+// затем у каждой квартиры смотрим цвет её номера / цены. Если легенды нет — статус определяется по тексту и цене, как раньше.
+type St = (r: number, c: number) => "free" | "busy" | null;
+const LEG_FREE = /^(свободн|вільн|в\s*продаж|в\s*наявн|наявн|доступн|продается|продається)/i;
+const LEG_BUSY = /^(бронь|броня|заброн|резерв|аванс|продан|продаж$|продажа$|100\s*%|инвест|інвест|не\s*прода|оформл|договор|догов|внесено)/i;
+function fillOf(cell: any): string | null {
+  const s = cell?.s; if (!s) return null;
+  const f = s.fgColor || s.bgColor; if (!f) return null;
+  if (s.patternType && s.patternType === "none") return null;
+  // цвета темы 0/1 без оттенка — это обычный белый фон и чёрный, не статус
+  if (!f.rgb && f.theme != null && Number(f.theme) <= 1 && !f.tint) return null;
+  const key = f.rgb ? String(f.rgb).slice(-6).toUpperCase() : f.theme != null ? `T${f.theme}:${Math.round((f.tint || 0) * 100)}` : null;
+  return key && key !== "FFFFFF" && key !== "000000" ? key : null;
+}
+function colorTools(ws: any): { st: St; legend: Record<string, string> } {
+  const ref = ws?.["!ref"]; if (!ref) return { st: () => null, legend: {} };
+  const rg = XLSX.utils.decode_range(ref);
+  const at = (r: number, c: number) => { const R = r + rg.s.r, C = c + rg.s.c; return ws["!data"]?.[R]?.[C] ?? (Array.isArray(ws) ? ws[R]?.[C] : undefined) ?? ws[XLSX.utils.encode_cell({ r: R, c: C })]; };
+  const votes: Record<string, { free: number; busy: number }> = {};
+  const H = Math.min(rg.e.r - rg.s.r + 1, 1500), W = Math.min(rg.e.c - rg.s.c + 1, 60);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const cell = at(r, c); const t = String(cell?.w ?? cell?.v ?? "").trim(); if (!t || t.length > 30) continue;
+    const kind = LEG_FREE.test(t) ? "free" : LEG_BUSY.test(t) ? "busy" : null; if (!kind) continue;
+    // цвет у самой подписи или у соседней ячейки-образца
+    const col = fillOf(cell) || fillOf(at(r, c - 1)) || fillOf(at(r, c + 1)); if (!col) continue;
+    (votes[col] ||= { free: 0, busy: 0 })[kind]++;
+  }
+  const legend: Record<string, string> = {};
+  for (const [k, v] of Object.entries(votes)) { if (v.free > v.busy * 2) legend[k] = "free"; else if (v.busy > v.free * 2) legend[k] = "busy"; }
+  const st: St = (r, c) => { if (!Object.keys(legend).length) return null; const col = fillOf(at(r, c)); return col && legend[col] ? legend[col] as any : null; };
+  return { st, legend };
+}
+// Итоговый статус квартиры: цвет по легенде главнее текста; свободной считаем только квартиру с ценой
+const decide = (textFree: boolean, hasPrice: boolean, colors: ("free" | "busy" | null)[]) => {
+  const c = colors.find((x) => x); if (c === "busy") return false; if (c === "free") return hasPrice; return textFree;
+};
+
 // ---------- формат 1: шахматка ----------
 const L_NO = /^(№\s*(квартир|кв|прим)|номер\s*(квартир|кв)|№$)/i;
 const L_AREA = /^(площ|s\s*,?\s*м|метраж)/i;
 const L_PM2 = /(цена|ціна|вартість|стоим).*(м2|м²|кв\.?\s*м|1\s*м)|^\$\s*\/\s*м/i;
-const L_TOTAL = /(общая|загальна|итог|повна|полная)|^(стоим|вартість|цена|ціна)\.?$/i;
-const L_NOTE = /^(примеч|примітк|тип|комнат|кімнат)/i;
+const L_TOTAL = /(общая|загальна|итог|повна|полная|заг\.)|^(стоим|вартість|цена|ціна)\.?$/i;
+const L_NOTE = /^(примеч|примітк|прим\.|тип|комнат|кімнат)/i;
 const L_ROW = /^(этаж|поверх|стояк|секц|свободно|бронь|резерв|аванс|продан|продаж)/i;
-function parseChess(rows: string[][]): Unit[] {
-  const out: Unit[] = []; const seen = new Set<string>();
+function parseChess(rows: string[][], st: St = () => null): Unit[] & { textMarked?: number } {
+  const out: Unit[] & { textMarked?: number } = []; const seen = new Set<string>(); let textMarked = 0;
   const cell = (r: number, c: number) => String(rows[r]?.[c] ?? "").trim();
   for (let r = 0; r < rows.length; r++) {
     for (let lc = 0; lc < (rows[r] || []).length; lc++) {
@@ -100,6 +138,9 @@ function parseChess(rows: string[][]): Unit[] {
         const area = at.area != null ? num(cell(at.area, c)) : null;
         const pm2 = at.pm2 != null ? num(cell(at.pm2, c)) : null;
         let total = at.total != null ? num(cell(at.total, c)) : null;
+        // статус текстом прямо в ячейке цены («Продана», «РЕЗЕРВ») — застройщик ведёт статусы текстом
+        const tTxt = at.total != null ? cell(at.total, c) : "", pTxt = at.pm2 != null ? cell(at.pm2, c) : "";
+        if ((tTxt && num(tTxt) == null && BUSY.test(tTxt)) || (pTxt && num(pTxt) == null && BUSY.test(pTxt))) textMarked++;
         if ((total == null || total < 1000) && area && pm2) total = Math.round(area * pm2);
         const note = at.note != null ? cell(at.note, c) || null : null;
         if (area == null && total == null && pm2 == null && !note) continue;
@@ -107,17 +148,18 @@ function parseChess(rows: string[][]): Unit[] {
         const fl = floor ?? (no.match(/(\d+)\.(\d+)\.(\d+)$/) ? Number(no.match(/(\d+)\.(\d+)\.(\d+)$/)![2]) : null);
         const key = `${sec || ""}|${no}`;
         if (seen.has(key)) continue; seen.add(key);
-        const free = !!(total || pm2) && !BUSY.test(note || "");
+        const free = decide(!!(total || pm2) && !BUSY.test(note || ""), !!(total || pm2), [st(r, c), at.total != null ? st(at.total, c) : null, at.pm2 != null ? st(at.pm2, c) : null, at.area != null ? st(at.area, c) : null]);
         out.push({ key, no, section: sec, floor: fl, rooms: roomsOf(note || ""), area, pm2, total, note, type: typeOf(note || no), free });
       }
     }
   }
+  out.textMarked = textMarked;
   return out;
 }
 
 // ---------- формат 3: шахматка без подписей (номер вида «2-1/6/1», ниже площадь, статус, цена, цена м²) ----------
 const CODE = /^\d+(?:-\d+)?\/\d+\/\d+$/;
-function parseCodes(rows: string[][]): Unit[] {
+function parseCodes(rows: string[][], st: St = () => null): Unit[] {
   const out: Unit[] = []; const seen = new Set<string>();
   const cell = (r: number, c: number) => String(rows[r]?.[c] ?? "").trim();
   for (let r = 0; r < rows.length; r++) {
@@ -138,7 +180,7 @@ function parseCodes(rows: string[][]): Unit[] {
       }
       if (total == null && area && pm2) total = Math.round(area * pm2);
       const key = `${sec}|${no}`; if (seen.has(key)) continue; seen.add(key);
-      out.push({ key, no, section: sec, floor: Number(fl), rooms: null, area, pm2, total: total || null, note: status || null, type: "apartment", free: !!(total && total >= 5000) && !BUSY.test(status) });
+      out.push({ key, no, section: sec, floor: Number(fl), rooms: null, area, pm2, total: total || null, note: status || null, type: "apartment", free: decide(!!(total && total >= 5000) && !BUSY.test(status), !!(total && total >= 5000), [st(r, c), st(r + 1, c), st(r + 3, c)]) });
     }
   }
   return out;
@@ -156,7 +198,7 @@ const G: Record<string, RegExp> = {
   status: /статус|status|налич|наявн|бронь|продан/i,
   note: /примеч|примітк|тип|комментар|коментар/i,
 };
-function parseTable(rows: string[][]): Unit[] {
+function parseTable(rows: string[][], st: St = () => null): Unit[] {
   let h = 0, best = -1;
   rows.slice(0, 20).forEach((r, i) => { const s = r.filter((c) => Object.values(G).some((g) => g.test(c))).length; if (s > best) { best = s; h = i; } });
   if (best < 2) return [];
@@ -167,7 +209,8 @@ function parseTable(rows: string[][]): Unit[] {
   }
   if (idx.area < 0 && idx.total < 0) return [];
   const out: Unit[] = []; const seen = new Set<string>();
-  for (const r of rows.slice(h + 1)) {
+  for (let ri = h + 1; ri < rows.length; ri++) {
+    const r = rows[ri];
     const g = (k: string) => idx[k] >= 0 ? String(r[idx[k]] ?? "").trim() : "";
     const area = num(g("area")), pm2 = num(g("pm2")); let total = num(g("total"));
     if ((total == null || total < 1000) && area && pm2) total = Math.round(area * pm2);
@@ -177,24 +220,35 @@ function parseTable(rows: string[][]): Unit[] {
     const key = `${g("section")}|${no || `${g("floor")}-${area}`}`;
     if (seen.has(key)) continue; seen.add(key);
     out.push({ key, no: no || "—", section: g("section") || null, floor: int(g("floor")), rooms: int(g("rooms")) ?? roomsOf(no + " " + (note || "")), area, pm2, total, note,
-      type: typeOf(`${no} ${note || ""}`), free: !!total && !BUSY.test(status) });
+      type: typeOf(`${no} ${note || ""}`), free: decide(!!total && !BUSY.test(status), !!total, [idx.no >= 0 ? st(ri, idx.no) : null, idx.total >= 0 ? st(ri, idx.total) : null, idx.area >= 0 ? st(ri, idx.area) : null, st(ri, 0)]) });
   }
   return out;
 }
 
 // Читаем экономно: у функции 2 секунды процессора — без формул, стилей и с ограничением строк
-const readWb = (buf: Uint8Array) => XLSX.read(buf, { type: "array", dense: true, cellDates: false, cellFormula: false, cellHTML: false, cellNF: false, cellStyles: false, sheetRows: 1500 });
+const readWb = (buf: Uint8Array, styles = false) => XLSX.read(buf, { type: "array", dense: true, cellDates: false, cellFormula: false, cellHTML: false, cellNF: false, cellStyles: styles, sheetRows: 1500 });
 function sheetRows(wb: any, name: string): string[][] {
   return (XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: "", blankrows: true }) as unknown[][])
     .slice(0, 1500).map((row) => row.slice(0, 60).map((c) => String(c ?? "").trim()));
 }
-function parseWorkbook(buf: Uint8Array): Unit[] {
-  const wb = readWb(buf);
+// Чтение заливки дорогое: на один вызов функции ~1,2 с процессора на стили, дальше файлы читаются без цветов (по тексту)
+let styleBudget = 1200;
+function parseWorkbook(buf: Uint8Array, info?: any[]): Unit[] {
+  // стили (заливка) нужны для статуса по цвету; если файл с ними не читается — читаем без них
+  const t0 = performance.now(); const useStyles = styleBudget > 0;
+  let wb: any; try { wb = readWb(buf, useStyles); } catch { wb = readWb(buf, false); }
+  if (useStyles) styleBudget -= performance.now() - t0;
   const all: Unit[] = []; const seen = new Set<string>();
   for (const name of wb.SheetNames.slice(0, 15)) {
     const rows = sheetRows(wb, name);
-    const best = [parseChess(rows), parseCodes(rows), parseTable(rows)].sort((x, y) => y.length - x.length)[0];
-    for (const u of best) { const k = `${u.key}`; if (!seen.has(k)) { seen.add(k); all.push(u); } }
+    let tools: { st: St; legend: Record<string, string> } = { st: () => null, legend: {} };
+    try { tools = colorTools(wb.Sheets[name]); } catch { /* без цветов */ }
+    // если статусы написаны текстом в ячейках квартир — верим тексту, цвета на этом листе не используем
+    let chess = parseChess(rows, tools.st); let byText = false;
+    if ((chess.textMarked || 0) >= 3) { chess = parseChess(rows); byText = true; }
+    const best = [chess, parseCodes(rows, tools.st), parseTable(rows, tools.st)].sort((x, y) => y.length - x.length)[0];
+    info?.push({ sheet: name, styles: useStyles, byText, legend: tools.legend, units: best.length, free: best.filter((u) => u.free).length });
+    for (const u of best) { if (!seen.has(u.key)) { seen.add(u.key); all.push(u); } }
   }
   return all;
 }
@@ -292,6 +346,7 @@ const SKIP = /довер|догов|заяв|анкет|акт\b|рахун|сч
 function score(name: string) {
   const n = name.toLowerCase(); if (SKIP.test(n)) return -1;
   if (/паркін|паркин|parking|комор|кладов/.test(n)) return 0;
+  if (/калькул|расчет|розрах/.test(n)) return 1; // калькулятор — не шахматка, даже если в названии «секция»
   return (/шахм|шахів/.test(n) ? 6 : 0) + (/прайс|price|наличи|наявн/.test(n) ? 5 : 0) + (/^буд(инок)?\.?\s*\d|^будинок|^дом\s*\d|секц/.test(n) ? 4 : 0)
     + (/список|квартир|сво?бодн|вільн/.test(n) ? 3 : 0) + (/калькул|расчет|розрах/.test(n) ? 1 : 0) + (/акці|акци/.test(n) ? -2 : 0);
 }
@@ -383,7 +438,7 @@ async function syncSource(src: any, trigger: string, email: string | null) {
     if (!files.length) return store(src, null, null, trigger, email, "В папке не найдено таблиц с прайсом / шахматкой. Укажите файл в «Условия и прайс».");
     // Шахматки бывают разбиты на файлы (по секциям / домам) — берём все сильные файлы и объединяем
     const strong = files.filter((f: any) => f.s >= 4);
-    const pick = pinned.length ? files.slice(0, 6) : strong.length ? strong.slice(0, 6) : files.slice(0, 2);
+    const pick = pinned.length ? files.slice(0, 8) : strong.length ? strong.slice(0, 8) : files.slice(0, 2);
     const seenName = new Set<string>(); let lastErr = ""; const all: Unit[] = []; const used: string[] = [];
     for (const f of pick) {
       const tag = fileTag(f.name); if (seenName.has(tag)) continue; seenName.add(tag);
@@ -400,6 +455,7 @@ async function syncSource(src: any, trigger: string, email: string | null) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  styleBudget = 1200;
   let body: any = {}; try { body = await req.json(); } catch { body = {}; }
   const action = String(body.action || "sync");
 
@@ -416,6 +472,12 @@ Deno.serve(async (req) => {
       if (!f) return json({ ok: false, files });
       const wb = readWb(await download(f));
       return json({ ok: true, files: files.map((x) => `${x.s} ${x.name} ${x.id}`), file: f.name, sheets: wb.SheetNames.slice(0, 15).map((n: string) => ({ n, rows: sheetRows(wb, n).slice(Number(body.from) || 0, (Number(body.from) || 0) + (Number(body.count) || 40)).map((r) => r.slice(0, 26).join(" ¦ ")) })).slice(0, Number(body.sheets) || 2) });
+    }
+    if (body.colors && body.source_id) { // проверка: статусы по цвету легенды, по каждому файлу и листу
+      const src = (srcs || []).find((x: any) => x.id === Number(body.source_id)); if (!src) return json({ ok: false });
+      const files = (await findPriceFiles(src.handle)).filter((f) => f.s >= 4).slice(0, 6); const out: any[] = [];
+      for (const f of files) { const info: any[] = []; try { const u = parseWorkbook(await download(f), info); out.push({ file: f.name, units: u.length, free: u.filter((x) => x.free).length, sheets: info }); } catch (e) { out.push({ file: f.name, error: (e as Error).message }); } }
+      return json({ ok: true, out });
     }
     if (body.media && body.source_id) { // только собрать визуализации и планировки
       const src = (srcs || []).find((x: any) => x.id === Number(body.source_id)); if (!src) return json({ ok: false });
