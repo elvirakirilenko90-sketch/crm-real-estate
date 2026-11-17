@@ -66,6 +66,14 @@ function planBox(src, {textRects = [], pdf = false} = {}){
   if(!best) return null;
   return {x0:best.x0 * k, y0:best.y0 * k, x1:(best.x1 + 1) * k, y1:(best.y1 + 1) * k};
 }
+// Доля белых точек в кольце шириной 6 px вокруг прямоугольника
+function ringWhite(d, w, h, x0, y0, x1, y1, r = 8){
+  let n = 0, wh = 0;
+  const chk = (x, y) => { if(x < 0 || y < 0 || x >= w || y >= h) return; n++; const i = (y * w + x) * 4; if(Math.min(d[i], d[i + 1], d[i + 2]) > 235) wh++; };
+  for(let x = x0 - r; x <= x1 + r; x += 2) for(const y of [y0 - r, y0 - r + 3, y1 + r, y1 + r - 3]) chk(x, y);
+  for(let y = y0 - r; y <= y1 + r; y += 2) for(const x of [x0 - r, x0 - r + 3, x1 + r, x1 + r - 3]) chk(x, y);
+  return n ? wh / n : 0;
+}
 // Табличка «2K | 31,56 / тип | 63,50» на картинке: прямоугольная рамка из тонких линий на белом фоне — закрашиваем
 function eraseLabelBoxes(ctx, w, h){
   const img = ctx.getImageData(0, 0, w, h), d = img.data, dark = (x, y) => x >= 0 && y >= 0 && x < w && y < h && Math.max(d[(y * w + x) * 4], d[(y * w + x) * 4 + 1], d[(y * w + x) * 4 + 2]) < 110;
@@ -80,7 +88,8 @@ function eraseLabelBoxes(ctx, w, h){
   ctx.fillStyle = "#fff"; let erased = 0;
   for(const a of lines) for(const b of lines){
     if(b.y - a.y < 20 || b.y - a.y > 0.3 * h || Math.abs(a.x0 - b.x0) > 4 || Math.abs(a.x1 - b.x1) > 4) continue;
-    if(side(a.x0, a.y, b.y) >= 0.8 && side(a.x1 - 1, a.y, b.y) >= 0.8){ ctx.fillRect(a.x0 - 4, a.y - 4, a.x1 - a.x0 + 8, b.y - a.y + 8); erased++; }
+    // табличка стоит на белом фоне: вокруг рамки почти всё белое (у шкафов и столешниц вокруг заливка и стены)
+    if(side(a.x0, a.y, b.y) >= 0.8 && side(a.x1 - 1, a.y, b.y) >= 0.8 && ringWhite(d, w, h, a.x0, a.y, a.x1, b.y) >= 0.85){ ctx.fillRect(a.x0 - 4, a.y - 4, a.x1 - a.x0 + 8, b.y - a.y + 8); erased++; }
   }
   return erased;
 }
@@ -90,7 +99,9 @@ function cropClean(src, box, {erase = [], labels = false} = {}){
   const x0 = Math.max(0, Math.floor(box.x0 - pad)), y0 = Math.max(0, Math.floor(box.y0 - pad)), x1 = Math.min(W, Math.ceil(box.x1 + pad)), y1 = Math.min(H, Math.ceil(box.y1 + pad));
   const w = x1 - x0, h = y1 - y0, c = canvasOf(w, h), x = c.getContext("2d", {willReadFrequently:true});
   x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(src, x0, y0, w, h, 0, 0, w, h);
-  x.fillStyle = "#fff"; for(const r of erase) x.fillRect(r.x - x0, r.y - y0, r.w, r.h);
+  { const pre = x.getImageData(0, 0, w, h).data; x.fillStyle = "#fff";
+    for(const r of erase){ const rx = Math.round(r.x - x0), ry = Math.round(r.y - y0);
+      if(r.force || ringWhite(pre, w, h, rx, ry, rx + Math.round(r.w), ry + Math.round(r.h), 6) >= 0.85) x.fillRect(rx, ry, r.w, r.h); } }
   if(labels) eraseLabelBoxes(x, w, h);
   const img = x.getImageData(0, 0, w, h), d = img.data;
   // серые плашки (237,239,235) — закрашиваем их прямоугольник целиком вместе с текстом
@@ -125,10 +136,12 @@ async function fromPdf(buf){
     floor: num((text.match(/(\d{1,2})\s*(?:поверх|этаж)/i) || [])[1]),
     no: num((text.match(/К\s*№\s*(\d+)/) || text.match(/(?:кв\.?|квартира)\s*№\s*(\d+)/i) || [])[1]),
   };
-  return {canvas:cropClean(c, box), info};
+  // текст вне чертежа (шапка «4 поверх», подписи плашек), попавший в рамку, — закрашиваем
+  const outside = textRects.filter(t => { const cx = t.x + t.w / 2, cy = t.y + t.h / 2; return cx < box.x0 || cx > box.x1 || cy < box.y0 || cy > box.y1; }).map(t => ({...t, force:true}));
+  return {canvas:cropClean(c, box, {erase:outside}), info};
 }
 
-async function fromImage(blob, name){
+async function fromImage(blob, name, known = []){
   const bmp = await createImageBitmap(blob); const c = canvasOf(bmp.width, bmp.height); c.getContext("2d").drawImage(bmp, 0, 0);
   const box = planBox(c); if(!box) throw new Error("не нашли чертёж на картинке");
   let area = areaInName(name), erase = [];
@@ -140,16 +153,18 @@ async function fromImage(blob, name){
     const ocr = await loadOcr(); const {data} = await ocr.recognize(oc);
     const val = (t) => { const m = String(t).replace(/\s/g, "").match(/(\d{2,3})[,.](\d{2})$/); if(!m) return null; let v = Number(`${m[1]}.${m[2]}`); if(v > 200 && m[1].length === 3) v = Number(`${m[1].slice(1)}.${m[2]}`); return v >= 15 && v <= 200 ? v : null; };
     const nums = (data.words || []).map(wd => ({v:val(wd.text), b:{x0:wd.bbox.x0 / up, y0:wd.bbox.y0 / up, x1:wd.bbox.x1 / up, y1:wd.bbox.y1 / up}})).filter(x => x.v);
-    const top = nums.sort((a, b) => b.v - a.v)[0];
-    if(top){ if(!area) area = top.v; const bw = top.b.x1 - top.b.x0, bh = top.b.y1 - top.b.y0;
+    // сначала число, которое совпадает с площадью квартиры этой секции из шахматки (±0,6%), иначе самое большое
+    const match = known.length ? nums.map(x => ({x, d:Math.min(...known.map(a => Math.abs(a - x.v) / a))})).filter(z => z.d <= .006).sort((a, b) => a.d - b.d)[0]?.x : null;
+    const top = match || nums.sort((a, b) => b.v - a.v)[0];
+    if(top){ if(!area) area = match ? match.v : (known.length ? null : top.v); const bw = top.b.x1 - top.b.x0, bh = top.b.y1 - top.b.y0;
       erase.push({x:top.b.x0 - bw * 1.1, y:top.b.y0 - bh * 2.4, w:bw * 2.3, h:bh * 3.6}); }
   }catch(e){ /* без распознавания — площадь только из имени файла */ }
   return {canvas:cropClean(c, box, {erase, labels:true}), info:{area}};
 }
 
 // Обработать новые файлы ЖК. call(action, body, {raw}) — запрос к nb-unit-plans (с входом администратора или ключом задания).
-export async function processUnitPlans({sourceId, call, onProgress = () => {}, limit = 60}){
-  const scan = await call("scan", {source_id:sourceId});
+export async function processUnitPlans({sourceId, call, onProgress = () => {}, limit = 60, force = false}){
+  const scan = await call("scan", {source_id:sourceId, ...(force ? {force:true} : {})});
   if(!scan?.ok) throw new Error(scan?.error || "не удалось проверить Диск");
   const list = (scan.pending || []).slice(0, limit); const done = [], failed = [];
   for(let i = 0; i < list.length; i++){
@@ -159,7 +174,7 @@ export async function processUnitPlans({sourceId, call, onProgress = () => {}, l
       if(!res.ok) throw new Error("файл не скачался");
       const blob = await res.blob(); if(/json/.test(blob.type)) throw new Error((await blob.text()).slice(0, 120));
       const isPdf = /pdf/i.test(blob.type) || /\.pdf$/i.test(f.name);
-      const {canvas, info} = isPdf ? await fromPdf(await blob.arrayBuffer()) : await fromImage(blob, f.name);
+      const {canvas, info} = isPdf ? await fromPdf(await blob.arrayBuffer()) : await fromImage(blob, f.name, scan.areas?.[f.section] || []);
       const png = canvas.toDataURL("image/png").split(",")[1];
       const meta = {name:f.name, section:f.section, modified:f.modified, stoyak:num((f.name.match(/стояк\s*(\d+)/i) || [])[1]),
         rooms:info.rooms ?? roomsOf(f.path) ?? roomsOf(f.name), area:info.area ?? areaInName(f.name), floor:info.floor, no:info.no, floors:floorsInName(f.name)};

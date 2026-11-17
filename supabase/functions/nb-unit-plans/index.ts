@@ -145,7 +145,11 @@ Deno.serve(async (req) => {
       await patchPlans(src.id, (up) => ({ ...up, known: files.map((f) => f.id), roots: roots.map((r) => ({ id: r.id, section: r.section, path: r.path.join(" / ") })), scanned_at: new Date().toISOString(),
         // удалённые с Диска планировки убираем из списка
         items: (up.items || []).filter((x: any) => files.some((f) => f.id === x.file_id)) }));
-      return json({ ok: true, roots: roots.length, files: files.length, pending, errors: [...errors, ...e2].slice(0, 5) });
+      // площади квартир по секциям — чтобы распознанное с картинки число сверить с шахматкой
+      const { data: us } = await db.from("nb_units").select("unit_no,section,area").eq("nb_source_id", src.id).limit(5000);
+      const areas: Record<string, number[]> = {};
+      for (const u of us || []) { const sec = String(u.section || (String(u.unit_no || "").match(/^(\d+)\./) || [])[1] || ""); const a = Number(u.area); if (sec && a) (areas[sec] ||= []).includes(a) || areas[sec].push(a); }
+      return json({ ok: true, roots: roots.length, files: files.length, pending, areas, errors: [...errors, ...e2].slice(0, 5) });
     }
 
     if (action === "file") {

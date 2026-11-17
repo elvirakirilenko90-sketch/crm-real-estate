@@ -5,7 +5,7 @@ import { processUnitPlans } from "./nbUnitPlans.js";
 
 const FN = `${import.meta.env.VITE_SUPABASE_URL || "https://stvinrjyfuskqddcxzjv.supabase.co"}/functions/v1/nb-unit-plans`;
 
-export default function NbPlansJob({ sourceId, job, dry }) {
+export default function NbPlansJob({ sourceId, job, dry, force }) {
   const [log, setLog] = useState([]); const [prev, setPrev] = useState([]); const [state, setState] = useState("…");
   useEffect(() => {
     const call = async (action, body, { raw } = {}) => {
@@ -13,7 +13,7 @@ export default function NbPlansJob({ sourceId, job, dry }) {
       const r = await fetch(FN, { method: "POST", headers: { "Content-Type": "application/json", "x-job-token": job }, body: JSON.stringify({ ...body, action }) });
       return raw ? r : r.json();
     };
-    processUnitPlans({ sourceId: Number(sourceId), call, onProgress: (p) => setState(p.done ? "готово" : `${p.i + 1} / ${p.total}: ${p.name}`) })
+    processUnitPlans({ sourceId: Number(sourceId), call, force, onProgress: (p) => setState(p.done ? "готово" : `${p.i + 1} / ${p.total}: ${p.name}`) })
       .then(r => { setLog(r.failed.map(f => `⚠ ${f.name}: ${f.error}`)); setState(`готово: ${r.done.length} из ${r.pending}`); window.__nbplans = r; })
       .catch(e => setState("ошибка: " + e.message));
   }, []);

@@ -11,4 +11,4 @@ const selToken = qs.get("sel");
 // служебная обработка поквартирных планировок по разовому ключу: /?nbplans=<id ЖК>&job=<ключ>
 const nbJob = qs.get("nbplans") && qs.get("job");
 createRoot(document.getElementById("root")).render(selToken ? <PublicSelection token={selToken} />
-  : nbJob ? <NbPlansJob sourceId={qs.get("nbplans")} job={qs.get("job")} dry={qs.get("dry") === "1"} /> : <App />);
+  : nbJob ? <NbPlansJob sourceId={qs.get("nbplans")} job={qs.get("job")} dry={qs.get("dry") === "1"} force={qs.get("force") === "1"} /> : <App />);
