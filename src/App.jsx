@@ -9404,6 +9404,20 @@ const nbFlatPlanFor = (u, meta) => {
   if(!f || !near(f)) return null;
   return {img:H.img, d:f.d, box:f.box, w:H.w || 0, h:H.h || 0};
 };
+// Сайты с отдельной картинкой планировки у каждой квартиры (Акварель-10: meta.site_plans.cards).
+// Порядок: точный номер («6.8.5») → та же секция и тот же номер на этаже с той же площадью (±1,5%)
+// → та же секция и ближайшая площадь (±1,5%). Иначе — без планировки с сайта.
+const nbCardPlanFor = (u, meta) => {
+  const cards = meta?.site_plans?.cards || []; if(!cards.length) return null;
+  const no = String(u.unit_no || "").trim(), a = Number(u.area) || 0;
+  const exact = cards.find(c => c.no && c.no === no); if(exact?.img) return exact.img;
+  const sec = String(u.section || (no.match(/^(\d+)\./) || [])[1] || "").trim(); if(!sec || !a) return null;
+  const near = (c) => c.area && Math.abs(c.area - a) / a <= .015;
+  const pos = Number((no.match(/^\d+\.\d+\.(\d+)$/) || [])[1]) || 0;
+  const inSec = cards.filter(c => String(c.section) === sec && c.img && near(c));
+  const best = (pos && inSec.find(c => c.pos === pos)) || inSec.sort((x, y) => Math.abs(x.area - a) - Math.abs(y.area - a))[0];
+  return best?.img || null;
+};
 // Строки таблицы оплаты — только варианты, которые выбрал менеджер
 function nbPaymentFor(u, plan, vs, withFull){
   const rows = vs.map(x => { const k = nbCalcUnit(u, plan, x); if(!k) return null;
@@ -9432,7 +9446,7 @@ function nbUnitToItem(u, source, vs, lang, {full=false}={}){
   return {own:false, nbUnit:true, nb_unit_id:u.id, title:`${roomsTxt}, ${u.area} м²`, price:Math.round((c?.base ?? Number(u.total_price)) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
     rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null,
     // есть планировка квартиры с сайта — план этажа целиком не нужен (он показывается с выделенной квартирой)
-    layout:flat_plan ? null : nbLayoutFor(u, source.meta?.media), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
+    layout:flat_plan ? null : (nbCardPlanFor(u, source.meta) || nbLayoutFor(u, source.meta?.media)), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
     advantages:adv, condition:L("Новостройка","Новобудова"), property_type:L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
 }
 // Выбор клиента для презентации (только клиенты, которых менеджер видит по правам)
