@@ -21,7 +21,7 @@ export function PaymentTable({ p }) {
   const rows = (p?.rows || []).filter(Boolean);
   if (!rows.length && p?.full == null) return null;
   const cell = { padding: "12px 14px", borderBottom: `1px solid ${Y.line}`, fontVariantNumeric: "tabular-nums" };
-  const big = { fontSize: rows.length >= 3 ? 16 : rows.length === 2 ? 18 : 22, fontWeight: 900, color: Y.ink, lineHeight: 1.15, whiteSpace: "nowrap" };
+  const big = { fontSize: rows.length >= 3 ? 19 : rows.length === 2 ? 18 : 22, fontWeight: 900, color: Y.ink, lineHeight: 1.15, whiteSpace: "nowrap" };
   const small = { display: "block", fontSize: 12, fontWeight: 700, color: Y.deep, marginTop: 2 };
   const params = [
     ["Перший внесок", r => <><span style={big}>{usd(r.first)}</span>{r.pct ? <span style={small}>{r.pct}% від вартості</span> : null}</>],
@@ -35,9 +35,9 @@ export function PaymentTable({ p }) {
       <b style={{ fontSize: 19 }}>{rows.length > 1 ? "Варіанти оплати" : rows.length ? "Умови оплати" : "Оплата"}</b>
     </div>
     {rows.length > 0 && <div style={{ borderRadius: 18, overflow: "hidden", border: `1.5px solid ${Y.line}`, boxShadow: "0 8px 24px rgba(212,160,23,.18)" }}>
-      {rows.length <= 3 ? <table style={{ width: "100%", borderCollapse: "collapse", background: Y.row, tableLayout: "fixed" }}>
+      {rows.length <= 2 ? <table style={{ width: "100%", borderCollapse: "collapse", background: Y.row, tableLayout: "fixed" }}>
         {rows.length > 1 && <thead><tr style={{ background: Y.head }}>
-          <th style={{ ...cell, width: rows.length === 3 ? "26%" : "34%", borderBottom: 0 }} />
+          <th style={{ ...cell, width: "34%", borderBottom: 0 }} />
           {rows.map((r, i) => <th key={i} style={{ ...cell, borderBottom: 0, textAlign: "left", color: Y.ink }}>
             <span style={{ display: "block", fontSize: 11, fontWeight: 900, letterSpacing: 1, opacity: .7 }}>ВАРІАНТ {i + 1}</span>
             <span style={{ fontSize: 14, fontWeight: 900 }}>{varName(r)}</span></th>)}
@@ -47,15 +47,14 @@ export function PaymentTable({ p }) {
           {rows.map((r, i) => <td key={i} style={{ ...cell, borderLeft: `1px solid ${Y.line}` }}>{f(r)}</td>)}
         </tr>)}</tbody>
       </table>
-      : <table style={{ width: "100%", borderCollapse: "collapse", background: Y.row }}>
-        <thead><tr style={{ background: Y.head, color: Y.ink, textAlign: "left", fontSize: 12 }}>
-          {["Варіант", "Перший внесок", "Щомісяця", "Разом"].map(h => <th key={h} style={{ ...cell, borderBottom: 0, fontWeight: 900 }}>{h}</th>)}</tr></thead>
-        <tbody>{rows.map((r, i) => <tr key={i} style={{ background: i % 2 ? Y.row2 : Y.row }}>
-          <td style={{ ...cell, fontWeight: 900, fontSize: 14 }}>{varName(r)}</td>
-          <td style={cell}><b style={{ fontSize: 16 }}>{usd(r.first)}</b></td>
-          <td style={cell}><b style={{ fontSize: 16 }}>{r.monthly != null ? usd(r.monthly) : "—"}</b>{r.monthly != null && <span style={small}>× {r.months} міс.</span>}</td>
-          <td style={cell}><b style={{ fontSize: 16 }}>{usd(r.total)}</b></td></tr>)}</tbody>
-      </table>}
+      // 3 и больше вариантов — карточкой на каждый вариант, чтобы цифры не теснились на телефоне
+      : rows.map((r, i) => <div key={i} style={{ background: i % 2 ? Y.row2 : Y.row, borderTop: i ? `2px solid ${Y.line}` : 0 }}>
+        <div style={{ background: Y.head, padding: "9px 14px", display: "flex", gap: 10, alignItems: "baseline", color: Y.ink }}>
+          <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, opacity: .7 }}>ВАРІАНТ {i + 1}</span><b style={{ fontSize: 15 }}>{varName(r)}</b></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+          {params.filter(([label]) => label !== "Термін розстрочки").map(([label, f], k) => <div key={label} style={{ padding: "10px 14px", borderTop: k > 1 ? `1px solid ${Y.line}` : 0, borderLeft: k % 2 ? `1px solid ${Y.line}` : 0 }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 800, color: Y.deep, marginBottom: 2 }}>{label}</span>{f(r)}</div>)}
+        </div></div>)}
     </div>}
     {p.full != null && <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 16, background: "#111", color: "#fff" }}>
       <span style={{ fontWeight: 800 }}>Повна оплата 100%{p.full_disc ? <span style={{ display: "block", color: Y.head, fontSize: 12 }}>знижка {p.full_disc}%</span> : null}</span>
