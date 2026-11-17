@@ -1852,10 +1852,10 @@ function PresentationComposer({lead, leadDbId, items, currentProfile, agencyName
   const edits = it => ({...(it.editTitle.trim() && it.editTitle !== it._origTitle ? {title:it.editTitle.trim()} : {}), ...(it.editDesc !== it._origDesc ? {description:it.editDesc} : {})});
   const internal = it => ({name:it._contact || null, phone:it._phone || null, note:it._note || null, source_name:it.own ? null : (amSourceName(it) || null)});
   const toItem = it => it.own && it.property_id ? {source:"crm", property_id:it.property_id, manager_comment:it.comment, data:edits(it), internal:internal(it)}
-    : {source:"analytics", dedupe_key: it.source_url ? `url:${String(it.source_url).toLowerCase().replace(/[?#].*$/,"")}` : `nb:${it.title}:${it.rooms}:${it.area}:${it.floor}:${it.price}`, manager_comment:it.comment, check_status:"ok", checked_at:new Date().toISOString(),
+    : {source:"analytics", dedupe_key: it.source_url ? `url:${String(it.source_url).toLowerCase().replace(/[?#].*$/,"")}` : `nb:${it.nb_unit_id ? it.nb_unit_id + ":" : ""}${it.title}:${it.rooms}:${it.area}:${it.floor}:${it.price}`, manager_comment:it.comment, check_status:"ok", checked_at:new Date().toISOString(),
        data:{title:it.editTitle.trim() || it.title, price:it.price, currency:it.currency||"USD", city:it.city, district:it.nb?null:it.district, complex_name:it.nb?it.title:it.complex_name, area:it.area, rooms:it.rooms, floor:it.floor, total_floors:it.total_floors,
          description:it.editDesc, photos:(it.photo_urls||[it.main_photo_url]).filter(Boolean).slice(0,12), link:it.source_url,
-         ...(it.layout ? {layout:it.layout} : {}), ...(Array.isArray(it.advantages) && it.advantages.length ? {advantages:it.advantages} : {}), ...(it.condition ? {condition:it.condition} : {}), ...(it.property_type ? {property_type:it.property_type} : {})}, internal:internal(it)};
+         ...(it.layout ? {layout:it.layout} : {}), ...(it.payment ? {payment:it.payment} : {}), ...(it.flat_plan ? {flat_plan:it.flat_plan} : {}), ...(Array.isArray(it.advantages) && it.advantages.length ? {advantages:it.advantages} : {}), ...(it.condition ? {condition:it.condition} : {}), ...(it.property_type ? {property_type:it.property_type} : {})}, internal:internal(it)};
   const create = async () => {
     if(busy || !list.length) return; setBusy("create");
     if(!idem.current) idem.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -2266,8 +2266,11 @@ async function amBuildSelectionPdf({selection, items, currentProfile, agencyName
       specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"],...(d.complex_name ? [[L("ЖК","ЖК"), d.complex_name]] : []),[txt.type, d.property_type||"—"],[L("Состояние","Стан"), d.condition||"—"],[L("Сделка","Угода"), d.deal_type||"—"]],
       aboutTitle:txt.about, about:[pubClean(items[i].manager_comment), pubClean(d.description)].filter(Boolean).join("\n\n").slice(0,900), hint:pubClean(d.address)||"",
       noPhotoText:L("Фото уточняйте у менеджера","Фото уточнюйте в менеджера")});
+    // новостройки: планировка квартиры + таблица оплаты (только выбранные менеджером варианты)
+    if(d.payment || d.flat_plan) await presNbPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property,
+      title:`${pubClean(d.title) || txt.property} — ${d.payment ? L("планировка и оплата","планування та оплата") : L("планировка","планування")}`, payment:d.payment || null, flatPlan:d.flat_plan || null, layout:d.layout || null});
     // планировка — отдельной страницей (новостройки)
-    if(d.layout) await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:`${pubClean(d.title) || txt.property} — ${L("планировка","планування")}`,
+    else if(d.layout) await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:`${pubClean(d.title) || txt.property} — ${L("планировка","планування")}`,
       photo:d.layout, price:amMoney(d.price, d.currency), priceLabel:txt.price,
       specs:[[txt.area, d.area?`${d.area} м²`:"—"],[L("Комнаты","Кімнати"), d.rooms||"—"],[txt.floor, d.floor?`${d.floor}${d.total_floors?` / ${d.total_floors}`:""}`:"—"],[txt.district, [d.city,d.district].filter(Boolean).join(", ")||"—"]],
       aboutTitle:txt.about, about:"", hint:"", noPhotoText:""});
@@ -4613,6 +4616,101 @@ async function presObjectPage(pages,{pal,agencyName,lang,index,total,label,title
     y=presText(ctx,about,PRES_M,y,PRES_IN,lineH,maxLines);
   }
   if(hint){ctx.fillStyle=pal.accentInk;ctx.font=`800 17px ${PRES_SANS}`;presSpaced(ctx,String(hint).toUpperCase(),PRES_M,footerTop-6,1.6);}
+  presPush(pages,c,.93);
+}
+// ===== Новобудови в PDF: планировка квартиры (вырез из плана этажа) + жёлтая таблица оплаты =====
+const presImgCache=new Map();
+function presLoadImg(url){
+  if(!url) return Promise.resolve(null);
+  if(!presImgCache.has(url)) presImgCache.set(url,new Promise(r=>{const img=new Image();img.crossOrigin="anonymous";img.onload=()=>r(img);img.onerror=()=>r(null);img.src=url;}));
+  return presImgCache.get(url);
+}
+// mode "flat" — квартира по контуру; "floor" — весь этаж с выделенной квартирой
+async function presFlatPlan(ctx,fp,x,y,w,h,mode="flat"){
+  const img=await presLoadImg(fp?.img); if(!img||!fp?.d) return false;
+  const W=fp.w||img.naturalWidth, H=fp.h||img.naturalHeight; const [bx,by,bw,bh]=fp.box||[0,0,W,H];
+  const pad=mode==="flat"?Math.max(bw,bh)*.05:0;
+  const vx=mode==="flat"?bx-pad:0, vy=mode==="flat"?by-pad:0, vw=mode==="flat"?bw+pad*2:W, vh=mode==="flat"?bh+pad*2:H;
+  const sc=Math.min(w/vw,h/vh), ox=x+(w-vw*sc)/2, oy=y+(h-vh*sc)/2;
+  let P; try{P=new Path2D(fp.d);}catch{return false;}
+  ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.translate(ox,oy);ctx.scale(sc,sc);ctx.translate(-vx,-vy);
+  if(mode==="flat"){ctx.save();ctx.clip(P);ctx.drawImage(img,0,0,W,H);ctx.restore();ctx.lineWidth=Math.max(bw,bh)*.012;}
+  else{ctx.drawImage(img,0,0,W,H);ctx.fillStyle="rgba(245,197,24,.38)";ctx.fill(P);ctx.lineWidth=W*.006;}
+  ctx.strokeStyle="#F5C518";ctx.lineJoin="round";ctx.stroke(P);ctx.restore();return true;
+}
+const PRES_Y={head:"#F5C518",ink:"#1A1405",row:"#FFF7D1",row2:"#FFFBEA",line:"#EED37A",deep:"#7A5A00"};
+// Жёлтая таблица оплаты. Возвращает y под таблицей.
+function presPaymentTable(ctx,{payment,lang,x,y,w}){
+  const L=(ru,uk)=>lang==="uk"?uk:ru, usd=v=>v==null?"—":"$"+Math.round(Number(v)).toLocaleString("ru-RU").replace(/,/g," ");
+  const term=r=>r.until?`${L("до","до")} ${String(r.until).slice(5,7)}.${String(r.until).slice(0,4)}`:r.months?`${r.months} ${L("мес.","міс.")}`:"—";
+  const vname=r=>[r.pct?`${L("ПВ","ПВ")} ${r.pct}%`:null,(r.months||r.until)?term(r):null,r.rate?`${r.rate}% ${L("годовых","річних")}`:null].filter(Boolean).join(" · ")||L("Рассрочка","Розстрочка");
+  const rows=(payment?.rows||[]).slice(0,6);
+  ctx.fillStyle=PRES_Y.head;presRound(ctx,x,y,58,58,16);ctx.fill();ctx.fillStyle=PRES_Y.ink;ctx.font=`800 30px ${PRES_SANS}`;ctx.textAlign="center";ctx.fillText("$",x+29,y+40);ctx.textAlign="left";
+  ctx.fillStyle="#141414";ctx.font=`700 36px ${PRES_SERIF}`;ctx.fillText(rows.length>1?L("Варианты оплаты","Варіанти оплати"):rows.length?L("Условия оплаты","Умови оплати"):L("Оплата","Оплата"),x+78,y+42);
+  y+=86;
+  if(rows.length){
+    ctx.save();ctx.shadowColor="rgba(212,160,23,.28)";ctx.shadowBlur=30;ctx.shadowOffsetY=10;ctx.fillStyle=PRES_Y.row;
+    if(rows.length<=3){
+      const params=[[L("Первый взнос","Перший внесок"),r=>[usd(r.first),r.pct?`${r.pct}% ${L("от стоимости","від вартості")}`:""]],[L("Платёж в месяц","Щомісячний платіж"),r=>r.monthly!=null?[usd(r.monthly),`× ${r.months} ${L("мес.","міс.")}`]:["—",""]],[L("Срок рассрочки","Термін розстрочки"),r=>[term(r),""]],[L("Общая стоимость","Загальна вартість"),r=>[usd(r.total),""]]];
+      const headH=rows.length>1?96:0,rowH=rows.length===1?112:104,H=headH+params.length*rowH;
+      presRound(ctx,x,y,w,H,26);ctx.fill();ctx.restore();
+      ctx.save();presRound(ctx,x,y,w,H,26);ctx.clip();
+      const labW=rows.length===1?Math.round(w*.46):rows.length===2?340:300,colW=(w-labW)/rows.length;
+      if(headH){ctx.fillStyle=PRES_Y.head;ctx.fillRect(x,y,w,headH);
+        rows.forEach((r,i)=>{const cx=x+labW+i*colW+24;ctx.fillStyle="rgba(26,20,5,.6)";ctx.font=`800 15px ${PRES_SANS}`;presSpaced(ctx,`${L("ВАРИАНТ","ВАРІАНТ")} ${i+1}`,cx,y+36,1.6);
+          ctx.fillStyle=PRES_Y.ink;presFit(ctx,vname(r),800,PRES_SANS,24,16,colW-40,1);ctx.fillText(vname(r),cx,y+70);});}
+      params.forEach(([lab,f],k)=>{const ry=y+headH+k*rowH;ctx.fillStyle=k%2?PRES_Y.row2:PRES_Y.row;ctx.fillRect(x,ry,w,rowH);
+        if(k){ctx.fillStyle=PRES_Y.line;ctx.fillRect(x,ry,w,2);}
+        ctx.fillStyle=PRES_Y.deep;ctx.font=`800 22px ${PRES_SANS}`;presText(ctx,lab,x+28,ry+rowH/2+8,labW-40,26,2);
+        rows.forEach((r,i)=>{const cx=x+labW+i*colW;ctx.fillStyle=PRES_Y.line;ctx.fillRect(cx,ry,2,rowH);const [big,small]=f(r);
+          ctx.fillStyle=PRES_Y.ink;presFit(ctx,big,800,PRES_SANS,rows.length===1?44:rows.length===2?38:32,22,colW-44,1);ctx.fillText(big,cx+24,ry+(small?rowH/2+4:rowH/2+14));
+          if(small){ctx.fillStyle=PRES_Y.deep;ctx.font=`700 18px ${PRES_SANS}`;ctx.fillText(small,cx+24,ry+rowH/2+34);}});});
+      ctx.restore();y+=H+22;
+    }else{
+      const cols=[[L("Вариант","Варіант"),.34],[L("Первый взнос","Перший внесок"),.22],[L("В месяц","Щомісяця"),.22],[L("Итого","Разом"),.22]],headH=70,rowH=84,H=headH+rows.length*rowH;
+      presRound(ctx,x,y,w,H,26);ctx.fill();ctx.restore();ctx.save();presRound(ctx,x,y,w,H,26);ctx.clip();
+      ctx.fillStyle=PRES_Y.head;ctx.fillRect(x,y,w,headH);let cx=x;ctx.font=`800 20px ${PRES_SANS}`;ctx.fillStyle=PRES_Y.ink;cols.forEach(([t,f])=>{ctx.fillText(t,cx+22,y+44);cx+=w*f;});
+      rows.forEach((r,k)=>{const ry=y+headH+k*rowH;ctx.fillStyle=k%2?PRES_Y.row2:PRES_Y.row;ctx.fillRect(x,ry,w,rowH);if(k){ctx.fillStyle=PRES_Y.line;ctx.fillRect(x,ry,w,2);}
+        const vals=[vname(r),usd(r.first),r.monthly!=null?`${usd(r.monthly)} × ${r.months}`:"—",usd(r.total)];let cx2=x;
+        vals.forEach((v,i)=>{ctx.fillStyle=PRES_Y.ink;presFit(ctx,v,800,PRES_SANS,i?28:22,16,w*cols[i][1]-34,1);ctx.fillText(v,cx2+22,ry+rowH/2+10);cx2+=w*cols[i][1];});});
+      ctx.restore();y+=H+22;
+    }
+  }
+  if(payment?.full!=null){ctx.fillStyle="#111214";presRound(ctx,x,y,w,96,22);ctx.fill();
+    ctx.fillStyle="#FFFFFF";ctx.font=`800 26px ${PRES_SANS}`;ctx.fillText(L("Полная оплата 100%","Повна оплата 100%"),x+30,y+(payment.full_disc?44:58));
+    if(payment.full_disc){ctx.fillStyle=PRES_Y.head;ctx.font=`700 19px ${PRES_SANS}`;ctx.fillText(`${L("скидка","знижка")} ${payment.full_disc}%`,x+30,y+74);}
+    ctx.fillStyle=PRES_Y.head;ctx.font=`800 40px ${PRES_SANS}`;ctx.textAlign="right";ctx.fillText(usd(payment.full),x+w-30,y+62);ctx.textAlign="left";y+=118;}
+  return y;
+}
+async function presNbPage(pages,{pal,agencyName,lang,index,total,label,title,payment,flatPlan,layout}){
+  await presEnsureFonts();
+  const L=(ru,uk)=>lang==="uk"?uk:ru;
+  const {c,ctx}=presCanvas(pal.paper);
+  presChrome(ctx,pal,{agencyName,label:total>1?`${label} ${String(index+1).padStart(2,"0")} / ${String(total).padStart(2,"0")}`:label,lang});
+  ctx.fillStyle=pal.ink;presFit(ctx,title,700,PRES_SERIF,40,28,PRES_IN,2);const ts=parseInt(ctx.font)||36;
+  let y=presText(ctx,title,PRES_M,168,PRES_IN,Math.round(ts*1.2),2)+18;
+  const hasPlan=!!(flatPlan||layout), rowsN=(payment?.rows||[]).length;
+  const tableH=payment?(86+(rowsN?(rowsN<=3?(rowsN>1?96:0)+4*(rowsN===1?112:104):70+rowsN*84)+22:0)+(payment.full!=null?118:0)):0;
+  if(hasPlan){
+    const planH=Math.max(420,Math.min(900,PRES_H-150-y-tableH-30));
+    ctx.save();ctx.shadowColor="rgba(0,0,0,.08)";ctx.shadowBlur=30;ctx.shadowOffsetY=8;ctx.fillStyle="#FFFFFF";presRound(ctx,PRES_M,y,PRES_IN,planH,28);ctx.fill();ctx.restore();
+    ctx.strokeStyle=pal.line;ctx.lineWidth=2;presRound(ctx,PRES_M,y,PRES_IN,planH,28);ctx.stroke();
+    ctx.fillStyle=pal.accentInk;ctx.font=`800 17px ${PRES_SANS}`;presSpaced(ctx,L("ПЛАНИРОВКА КВАРТИРЫ","ПЛАНУВАННЯ КВАРТИРИ"),PRES_M+30,y+44,2);
+    let ok=false;
+    if(flatPlan){
+      const insetW=flatPlan?Math.min(300,PRES_IN*.28):0;
+      ok=await presFlatPlan(ctx,flatPlan,PRES_M+30,y+64,PRES_IN-60-insetW-20,planH-94,"flat");
+      // миниатюра этажа с выделенной квартирой
+      const ix=PRES_M+PRES_IN-30-insetW, iy=y+planH-30-insetW;
+      ctx.fillStyle=pal.soft;presRound(ctx,ix-10,iy-44,insetW+20,insetW+54,20);ctx.fill();
+      ctx.fillStyle=pal.muted;ctx.font=`800 14px ${PRES_SANS}`;presSpaced(ctx,L("НА ЭТАЖЕ","НА ПОВЕРСІ"),ix+4,iy-16,1.6);
+      await presFlatPlan(ctx,flatPlan,ix,iy,insetW,insetW,"floor");
+    }
+    if(!ok&&layout){ok=await drawRemoteImage(ctx,layout,PRES_M+30,y+64,PRES_IN-60,planH-94,"contain");}
+    if(!ok){ctx.fillStyle=pal.muted;ctx.font=`600 24px ${PRES_SANS}`;ctx.textAlign="center";ctx.fillText(L("Планировку уточняйте у менеджера","Планування уточнюйте в менеджера"),PRES_W/2,y+planH/2);ctx.textAlign="left";}
+    y+=planH+34;
+  }
+  if(payment) presPaymentTable(ctx,{payment,lang,x:PRES_M,y,w:PRES_IN});
   presPush(pages,c,.93);
 }
 async function presContactPage(pages,{pal,brand,contactTitle,manager,contactLine,thanks}){
@@ -9292,31 +9390,53 @@ const nbLayoutFor = (u, media) => { const L = (media?.layouts || []).filter(x =>
   const first = (x) => /(^|\D)1\s*(-?й|-?ий)?\s*(эт|пов)|перв/i.test(x.name || "");
   const pick = (u.floor === 1 ? cands.find(first) : cands.find(x => /типов/i.test(x.name || "")) || cands.find(x => !first(x))) || cands[0];
   return pick.url; };
-// Квартира → объект презентации. Названия ЖК, застройщика и адреса нет — только район, дом, этаж, площадь, расчёт рассрочки.
-function nbUnitToItem(u, source, v, lang){
+// Планировка конкретной квартиры с сайта застройщика (nb_sources.meta.site_plans, функция nb-site-plans):
+// дом — из номера квартиры, контур — по номеру квартиры на этаже («1.5.3» → дом 1, 3-я на этаже); если площадь контура
+// не совпадает с площадью квартиры (±15%) — берём контур дома с ближайшей площадью.
+const nbFlatPlanFor = (u, meta) => {
+  const houses = meta?.site_plans?.houses || []; if(!houses.length) return null;
+  const h = nbHouseOf(u); const H = houses.find(x => String(x.house) === h) || houses.find(x => String(x.house) === h.split("-")[0]);
+  if(!H?.img || !H.flats?.length) return null;
+  const a = Number(u.area) || 0, pos = Number((String(u.unit_no || "").match(/[./](\d+)\s*$/) || [])[1]) || 0;
+  const near = (f) => !a || !f?.area || Math.abs(f.area - a) / a <= .15;
+  let f = pos ? H.flats[pos - 1] : null;
+  if(!f || !near(f)) f = a ? [...H.flats].filter(x => x.area).sort((x, y) => Math.abs(x.area - a) - Math.abs(y.area - a))[0] : null;
+  if(!f || !near(f)) return null;
+  return {img:H.img, d:f.d, box:f.box, w:H.w || 0, h:H.h || 0};
+};
+// Строки таблицы оплаты — только варианты, которые выбрал менеджер
+function nbPaymentFor(u, plan, vs, withFull){
+  const rows = vs.map(x => { const k = nbCalcUnit(u, plan, x); if(!k) return null;
+    return {pct:k.pct || 0, first:Math.round(k.first), months:k.months || null, monthly:k.monthly != null ? Math.round(k.monthly) : null, total:Math.round(k.price - (k.disc || 0)),
+      rate:Number(x.annual_rate) || null, until:x.until ? String(x.until).slice(0, 10) : null}; }).filter(Boolean).slice(0, 6);
+  const c = nbCalcUnit(u, plan, {});
+  const full = withFull && c ? Math.round(c.full ?? c.base) : null;
+  return rows.length || full != null ? {rows, ...(full != null ? {full, full_disc:Number(plan.full_disc_pct) || null} : {})} : null;
+}
+// Квартира → объект презентации. Названия ЖК, застройщика и адреса нет — только район, дом, этаж, площадь
+// и расчёт рассрочки ТОЛЬКО по вариантам, которые выбрал менеджер (vs), таблицей.
+function nbUnitToItem(u, source, vs, lang, {full=false}={}){
   const ua = lang !== "ru"; const L = (ru, uk) => ua ? uk : ru;
-  const plan = source.meta?.plan || {}; const vs = nbPlanVariants(source.meta);
-  const c = nbCalcUnit(u, plan, v);
+  const plan = source.meta?.plan || {}; vs = (Array.isArray(vs) ? vs : [vs]).filter(Boolean);
+  const c = nbCalcUnit(u, plan, {});
   const roomsTxt = u.rooms == null ? L("Квартира","Квартира") : u.rooms === 0 ? L("Студия","Студія") : `${u.rooms}-${L("комнатная квартира","кімнатна квартира")}`;
-  // в расчёт — выбранный вариант и варианты с тем же сроком (разный ПВ), не больше 6
-  const term = v ? nbTermKey(v) : "";
-  const same = vs.filter(x => term && nbTermKey(x) === term); const show = (same.length >= 2 ? same : vs).slice(0, 6);
-  const line = (x) => { const k = nbCalcUnit(u, plan, x); if(!k) return null;
-    return `• ${L("ПВ","ПВ")} ${k.pct}% — ${nbUsd(k.first)}${k.monthly != null ? `, ${L("далее","далі")} ${nbUsd(k.monthly)} × ${k.months} ${L("мес.","міс.")}` : ""}${k.price > k.base + 1 ? ` (${L("итого","разом")} ${nbUsd(k.price)})` : ""}`; };
   const house = nbHouseOf(u);
   const desc = [plan.client_text,
-    [house && `${L("Дом","Будинок")} ${house}`, u.floor != null && `${u.floor} ${L("этаж","поверх")}`, u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · "),
-    show.length ? `${L("Варианты оплаты","Варіанти оплати")}:\n• 100% — ${nbUsd(c?.full ?? c?.base)}\n${show.map(line).filter(Boolean).join("\n")}` : null].filter(Boolean).join("\n\n");
-  const firsts = vs.map(x => Number(x.first_pct)).filter(n => n > 0), terms = vs.map(x => nbMonthsUntil(x.until) ?? Number(x.months)).filter(n => n > 0);
-  const adv = [firsts.length && `${L("Первый взнос от","Перший внесок від")} ${Math.min(...firsts)}%`, terms.length && `${L("Рассрочка до","Розстрочка до")} ${Math.max(...terms)} ${L("мес.","міс.")}`,
-    vs.some(x => !Number(x.markup_m2) && !Number(x.markup_pct) && !Number(x.annual_rate) && (x.months || x.until)) && L("Есть вариант без удорожания","Є варіант без подорожчання"), L("Новостройка","Новобудова")].filter(Boolean);
+    [house && `${L("Дом","Будинок")} ${house}`, u.floor != null && `${u.floor} ${L("этаж","поверх")}`, u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")].filter(Boolean).join("\n\n");
+  // преимущества — только по выбранным вариантам, чтобы не обещать клиенту условий, которых нет в расчёте
+  const firsts = [...new Set(vs.map(x => Number(x.first_pct)).filter(n => n > 0))], terms = [...new Set(vs.map(x => nbMonthsUntil(x.until) ?? Number(x.months)).filter(n => n > 0))];
+  const adv = [firsts.length && `${L("Первый взнос","Перший внесок")} ${firsts.length > 1 ? L("от ","від ") : ""}${Math.min(...firsts)}%`, terms.length && `${L("Рассрочка","Розстрочка")} ${terms.length > 1 ? L("до ","до ") : ""}${Math.max(...terms)} ${L("мес.","міс.")}`,
+    vs.some(x => !Number(x.markup_m2) && !Number(x.markup_pct) && !Number(x.annual_rate) && (x.months || x.until)) && L("Без удорожания","Без подорожчання"), L("Новостройка","Новобудова")].filter(Boolean);
   const photos = (source.meta?.media?.renders || []).filter(x => !x.off && x.url).map(x => x.url).slice(0, 10);
-  return {own:false, title:`${roomsTxt}, ${u.area} м²`, price:Math.round((c?.base ?? Number(u.total_price)) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
-    rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null, layout:nbLayoutFor(u, source.meta?.media),
+  const flat_plan = nbFlatPlanFor(u, source.meta);
+  return {own:false, nbUnit:true, nb_unit_id:u.id, title:`${roomsTxt}, ${u.area} м²`, price:Math.round((c?.base ?? Number(u.total_price)) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
+    rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null,
+    // есть планировка квартиры с сайта — план этажа целиком не нужен (он показывается с выделенной квартирой)
+    layout:flat_plan ? null : nbLayoutFor(u, source.meta?.media), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
     advantages:adv, condition:L("Новостройка","Новобудова"), property_type:L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
 }
 // Выбор клиента для презентации (только клиенты, которых менеджер видит по правам)
-function NbPickClient({lang, onPick, onClose}){
+function NbPickClient({lang, onPick, onClose, extra=null}){
   const [q,setQ] = useState(""); const [list,setList] = useState([]); const [busy,setBusy] = useState(false);
   useEffect(() => { let alive = true; const t = setTimeout(async () => { setBusy(true);
     let req = supabase.from("leads").select("id,name,phone").order("id", {ascending:false}).limit(30);
@@ -9325,6 +9445,7 @@ function NbPickClient({lang, onPick, onClose}){
     const {data} = await req; if(alive){ setList(data || []); setBusy(false); } }, 250); return () => { alive = false; clearTimeout(t); }; }, [q]);
   return <Modal onClose={onClose}>
     <div className="row"><h2>👤 {tr(lang,"Для какого клиента презентация?")}</h2><button className="icon" onClick={onClose}>×</button></div>
+    {extra}
     <input className="input" autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang,"Имя или телефон клиента")}/>
     <p className="muted" style={{margin:"6px 0"}}>{tr(lang,"Презентация сохранится в карточке клиента. Название ЖК клиент не увидит.")}</p>
     {busy && <p className="muted">{tr(lang,"Загрузка…")}</p>}
@@ -9344,6 +9465,7 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const [mode,setMode] = useState(m0.price_mode === "upload" ? "upload" : "auto");
   const [media,setMedia] = useState(() => ({renders:(m0.media?.renders || []).map(x => ({...x})), layouts:(m0.media?.layouts || []).map(x => ({...x}))}));
   const [clientText,setClientText] = useState(m0.plan?.client_text || "");
+  const [siteUrl,setSiteUrl] = useState(m0.site_plans?.url || "");
   const [files,setFiles] = useState((m0.price_files || []).map(f => f.id || f).join("\n"));
   const [busy,setBusy] = useState(""); const [msg,setMsg] = useState(""); const [log,setLog] = useState([]);
   useEffect(() => { supabase.from("nb_sync_log").select("created_at,trigger,file_name,ok,units_free,units_new,units_sold,price_changed,error").eq("source_id", s.id).order("id", {ascending:false}).limit(5).then(({data}) => setLog(data || [])); }, [s.id, busy]);
@@ -9448,6 +9570,20 @@ function NbPlanModal({s, lang, onClose, onSaved}){
       {s.kind === "gdrive" && <Button variant="soft" disabled={!!busy} onClick={async () => { setBusy("media"); setMsg(""); const r = await invoke({action:"media", source_id:s.id}); setBusy("");
         if(!r.ok) return setMsg("⚠ " + r.error); setMedia({renders:r.media.renders || [], layouts:r.media.layouts || []}); s.meta = {...(s.meta || {}), media:r.media};
         setMsg(`✓ ${tr(lang,"Визуализаций")}: ${r.media.renders.length}, ${tr(lang,"планировок")}: ${r.media.layouts.length}`); }}>{busy === "media" ? tr(lang,"Собираем…") : "🔄 " + tr(lang,"Собрать визуализации и планировки с Google Диска")}</Button>}
+      <div style={{display:"grid", gap:6, marginTop:10, paddingTop:10, borderTop:"1px solid var(--line,#333)"}}>
+        <small><b>🏠 {tr(lang,"Планировки квартир с сайта застройщика")}</b></small>
+        <small className="muted">{tr(lang,"Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.")}</small>
+        <div style={{display:"flex", gap:6}}>
+          <input className="input" style={{flex:1}} value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder={tr(lang,"Ссылка на страницу с планировками")}/>
+          <Button variant="soft" disabled={!!busy || !/^https:\/\//.test(siteUrl.trim())} onClick={async () => { setBusy("site"); setMsg("");
+            const {data, error} = await supabase.functions.invoke("nb-site-plans", {body:{source_id:s.id, url:siteUrl.trim()}}); setBusy("");
+            const r = error ? {ok:false, error:error.message} : (data || {ok:false});
+            if(!r.ok) return setMsg("⚠ " + (r.error || "ошибка"));
+            const {data:fresh} = await supabase.from("nb_sources").select("meta").eq("id", s.id).maybeSingle(); if(fresh?.meta?.site_plans) s.meta = {...(s.meta || {}), site_plans:fresh.meta.site_plans};
+            setMsg(`✓ ${tr(lang,"домов")}: ${r.houses.length} · ${r.houses.map(h => `${h.house}: ${h.flats} ${tr(lang,"квартир на этаже")}`).join(", ")}`); }}>{busy === "site" ? "…" : tr(lang,"Загрузить планировки квартир")}</Button>
+        </div>
+        {m0.site_plans?.houses?.length > 0 && <small className="muted">✓ {new Date(m0.site_plans.at).toLocaleDateString("ru-RU")} · {m0.site_plans.houses.map(h => `${tr(lang,"Дом")} ${h.house}: ${h.flats.length}`).join(" · ")}</small>}
+      </div>
     </div>
     <h3 style={{margin:"14px 0 6px"}}>{tr(lang,"Наличие квартир")}</h3>
     <div className="feedSrcKinds">
@@ -9495,6 +9631,8 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const [editPlan,setEditPlan] = useState(false);
   const [picked,setPicked] = useState([]);       // квартиры для презентации
   const [pickClient,setPickClient] = useState(false);
+  const [presSel,setPresSel] = useState([]);     // варианты рассрочки для презентации (индексы)
+  const [presFull,setPresFull] = useState(false); // показать клиенту 100% оплату
   const [composer,setComposer] = useState(null); // {lead, items}
   const [, setVer] = useState(0);
   useEffect(() => { let alive = true;
@@ -9569,10 +9707,20 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
         </div>; })}</div>
       {rows.length > limit && <Button variant="soft" onClick={() => setLimit(limit + 60)}>{tr(lang,"Показать ещё")} ({rows.length - limit})</Button>}
       {picked.length > 0 && <div style={{position:"sticky", bottom:8, zIndex:5, display:"flex", gap:8, padding:8, borderRadius:14, background:"var(--card,#18181B)", border:"1.5px solid #F5C518", boxShadow:"0 6px 20px rgba(0,0,0,.25)"}}>
-        <Button className="full" onClick={() => setPickClient(true)}>📨 {tr(lang,"Презентация клиенту")} · {picked.length}</Button>
+        <Button className="full" onClick={() => { setPresSel(variants.length ? [vi] : []); setPresFull(false); setPickClient(true); }}>📨 {tr(lang,"Презентация клиенту")} · {picked.length}</Button>
         <Button variant="soft" onClick={() => setPicked([])}>×</Button></div>}
     </>}
-    {pickClient && <NbPickClient lang={lang} onClose={() => setPickClient(false)} onPick={(l) => { setPickClient(false); setComposer({lead:l, items:picked.map(u => nbUnitToItem(u, source, v, lang))}); }}/>}
+    {pickClient && <NbPickClient lang={lang} onClose={() => setPickClient(false)}
+      extra={(variants.length > 0 || plan.full_disc_pct) && <div className="card" style={{border:"1.5px solid #F5C518", padding:12, margin:"4px 0 10px", display:"grid", gap:8}}>
+        <b>💳 {tr(lang,"Варианты оплаты в презентации")}</b>
+        <small className="muted">{tr(lang,"Клиент увидит только отмеченные варианты — таблицей.")}</small>
+        <div className="nbChips">
+          {variants.map((x, i) => <button key={i} type="button" className={cn(presSel.includes(i) && "on")} onClick={() => setPresSel(p => p.includes(i) ? p.filter(k => k !== i) : [...p, i].sort((a, b) => a - b))}>{presSel.includes(i) ? "✓ " : ""}{nbVariantLabel(x, lang)}</button>)}
+          <button type="button" className={cn(presFull && "on")} onClick={() => setPresFull(!presFull)}>{presFull ? "✓ " : ""}{tr(lang,"100% оплата")}{plan.full_disc_pct ? ` −${plan.full_disc_pct}%` : ""}</button>
+        </div>
+        {!presSel.length && !presFull && <small style={{color:"#ef4444"}}>{tr(lang,"Не выбран ни один вариант — в презентации будет только цена.")}</small>}
+      </div>}
+      onPick={(l) => { setPickClient(false); setComposer({lead:l, items:picked.map(u => nbUnitToItem(u, source, presSel.map(i => variants[i]).filter(Boolean), lang, {full:presFull}))}); }}/>}
     {composer && <PresentationComposer lead={composer.lead} leadDbId={composer.lead.id} items={composer.items} properties={[]} currentProfile={currentProfile} agencyName={agencyName} lang={lang}
       onClose={() => setComposer(null)} onDone={() => setPicked([])}/>}
   </div>;
@@ -9601,7 +9749,7 @@ Object.assign(uiCalendar.uk, {"Для презентации клиенту":"Д
   "Планировки — для какого дома / секции (номер как в шахматке)":"Планування — для якого будинку / секції (номер як у шахматці)", "дом":"буд.", "Не использовать":"Не використовувати", "Материалы ещё не собраны.":"Матеріали ще не зібрані.",
   "Собрать визуализации и планировки с Google Диска":"Зібрати візуалізації та планування з Google Диска", "Собираем…":"Збираємо…", "Визуализаций":"Візуалізацій", "планировок":"планувань",
   "В презентацию попадают визуализации и планировка дома квартиры. Названия ЖК, застройщика и адреса там нет — проверьте, чтобы его не было и на картинках.":"У презентацію потрапляють візуалізації та планування будинку квартири. Назви ЖК, забудовника й адреси там немає — перевірте, щоб її не було й на картинках.",
-  "Текст":"Текст", "В презентацию":"У презентацію", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
+  "Текст":"Текст", "В презентацию":"У презентацію", "Варианты оплаты в презентации":"Варіанти оплати в презентації", "Дом":"Будинок", "Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.":"Якщо на сайті ЖК можна натиснути на квартиру й побачити її планування — вставте посилання. CRM підбере планування до кожної квартири за номером і площею та покаже його клієнту в презентації.", "Клиент увидит только отмеченные варианты — таблицей.":"Клієнт побачить лише позначені варіанти — таблицею.", "100% оплата":"100% оплата", "Не выбран ни один вариант — в презентации будет только цена.":"Не обрано жодного варіанту — у презентації буде лише ціна.", "Планировки квартир с сайта застройщика":"Планування квартир із сайту забудовника", "Ссылка на страницу с планировками":"Посилання на сторінку з плануваннями", "Загрузить планировки квартир":"Завантажити планування квартир", "домов":"будинків", "квартир на этаже":"квартир на поверсі", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
   "Презентация сохранится в карточке клиента. Название ЖК клиент не увидит.":"Презентація збережеться в картці клієнта. Назву ЖК клієнт не побачить."});
 Object.assign(uiCalendar.en, {"Срок рассрочки":"Installment term", "До сдачи дома":"Until completion", "Вариант рассрочки":"Installment option"});
 // ===== Конструктор источника Новобудов (для любого агентства) =====

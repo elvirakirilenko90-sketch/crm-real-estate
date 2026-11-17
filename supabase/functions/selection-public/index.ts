@@ -29,6 +29,22 @@ async function selectionByToken(token: string) {
   return s;
 }
 
+// Новобудови: таблица оплаты (только варианты, выбранные менеджером) — только числа
+const n0 = (v: unknown) => { if (v == null || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+function payOf(p: any) {
+  if (!p || typeof p !== "object") return null;
+  const rows = (Array.isArray(p.rows) ? p.rows : []).slice(0, 6).map((r: any) => ({ pct: n0(r?.pct), first: n0(r?.first), months: n0(r?.months), monthly: n0(r?.monthly), total: n0(r?.total), rate: n0(r?.rate),
+    until: /^\d{4}-\d{2}(-\d{2})?$/.test(String(r?.until || "")) ? r.until : null }));
+  const out = { full: n0(p.full), full_disc: n0(p.full_disc), rows };
+  return out.full != null || rows.length ? out : null;
+}
+// Планировка квартиры: план этажа (только из хранилища CRM) + контур квартиры
+function flatPlanOf(p: any) {
+  if (!p || typeof p !== "object" || !own(String(p.img || "")) || !/^[MLCZmlcz0-9 .,\-]{10,20000}$/.test(String(p.d || ""))) return null;
+  const box = (Array.isArray(p.box) ? p.box : []).map(Number); if (box.length !== 4 || box.some((x: number) => !Number.isFinite(x))) return null;
+  return { img: p.img, d: p.d, box, w: n0(p.w) || 0, h: n0(p.h) || 0 };
+}
+
 // безопасная карточка объекта — только разрешённые поля
 function publicItem(x: any, token: string) {
   const d = x.public_data || {};
@@ -41,6 +57,7 @@ function publicItem(x: any, token: string) {
     condition: clean(d.condition, 200), description: clean(d.description), comment: clean(x.manager_comment, 1000),
     advantages: (Array.isArray(d.advantages) ? d.advantages : []).map((a: unknown) => clean(a, 300)).filter(Boolean).slice(0, 12),
     layout: d.layout ? pic(String(d.layout), 0, "l") : null, photos,
+    payment: payOf(d.payment), flat_plan: flatPlanOf(d.flat_plan),
   };
   for (const k of Object.keys(out)) if (out[k] === null || (Array.isArray(out[k]) && !(out[k] as unknown[]).length && k !== "photos")) delete out[k];
   return out;
