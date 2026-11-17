@@ -9380,6 +9380,17 @@ const nbFileToB64 = (file) => new Promise((res, rej) => { const r = new FileRead
 // ===== Презентация квартир новостроек клиенту — без названия ЖК =====
 // Номер дома / секции квартиры: «2.10.1» → 2, «2-1/6/1» → 2-1, иначе поле «секция»
 const nbHouseOf = (u) => String(u.section || (String(u.unit_no || "").match(/^(\d+(?:-\d+)?)[./]/) || [])[1] || "").trim();
+// Очередь секции: ручная настройка meta.queues {"5":"1"} или из названий папок Диска («1 черга / Секція 5»)
+function nbQueueOf(sec, meta){
+  if(!sec) return null; const q = meta?.queues?.[sec]; if(q) return String(q);
+  for(const r of [...(meta?.unit_plans?.roots || []), ...(meta?.unit_plans?.folders || [])]){
+    if(String(r.section) !== String(sec)) continue;
+    const m = String(r.path || r.name || "").match(/(\d+)\s*(?:-?\s*(?:а|я))?\s*(?:черг|очеред)/i); if(m) return m[1];
+  }
+  return null;
+}
+// ЖК делится на секции (а не дома), если так подписаны папки планировок или задано вручную
+const nbSectionWord = (meta) => meta?.unit_word === "section" || [...(meta?.unit_plans?.roots || []), ...(meta?.unit_plans?.folders || [])].some(r => /секц/i.test(r.path || r.name || ""));
 // Планировка для квартиры: по номеру дома/секции; если планировка одна на ЖК — она
 // Дом/секция планировки: из настройки администратора, иначе из названия файла («Буд. 2 …», «5 Секция …», «A10-3 cекція»)
 const nbLayoutHouse = (x) => String(x.house || (String(x.name || "").match(/(?:буд(?:инок)?|дом|[сc]екц\S*|корпус)\.?\s*№?\s*(\d+)/i) || String(x.name || "").match(/(\d+)\s*[сc]екц/i) || [])[1] || "");
@@ -9461,9 +9472,9 @@ function nbUnitToItem(u, source, vs, lang, {full=false, pos=null}={}){
   const plan = source.meta?.plan || {}; vs = (Array.isArray(vs) ? vs : [vs]).filter(Boolean);
   const c = nbCalcUnit(u, plan, {});
   const roomsTxt = u.rooms == null ? L("Квартира","Квартира") : u.rooms === 0 ? L("Студия","Студія") : `${u.rooms}-${L("комнатная квартира","кімнатна квартира")}`;
-  const house = nbHouseOf(u);
+  const house = nbHouseOf(u), queue = nbQueueOf(house, source.meta);
   const desc = [plan.client_text,
-    [house && `${L("Дом","Будинок")} ${house}`, u.floor != null && `${u.floor} ${L("этаж","поверх")}`, u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")].filter(Boolean).join("\n\n");
+    [queue && `${L("Очередь","Черга")} ${queue}`, house && `${nbSectionWord(source.meta) ? L("Секция","Секція") : L("Дом","Будинок")} ${house}`, u.floor != null && `${u.floor} ${L("этаж","поверх")}`, u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")].filter(Boolean).join("\n\n");
   // преимущества — только по выбранным вариантам, чтобы не обещать клиенту условий, которых нет в расчёте
   const firsts = [...new Set(vs.map(x => Number(x.first_pct)).filter(n => n > 0))], terms = [...new Set(vs.map(x => nbMonthsUntil(x.until) ?? Number(x.months)).filter(n => n > 0))];
   const adv = [firsts.length && `${L("Первый взнос","Перший внесок")} ${firsts.length > 1 ? L("от ","від ") : ""}${Math.min(...firsts)}%`, terms.length && `${L("Рассрочка","Розстрочка")} ${terms.length > 1 ? L("до ","до ") : ""}${Math.max(...terms)} ${L("мес.","міс.")}`,
