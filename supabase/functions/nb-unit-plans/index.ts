@@ -143,8 +143,8 @@ Deno.serve(async (req) => {
       const pending = files.filter((f) => { const d = done.get(f.id); return !d || (f.modified && d.modified !== f.modified) || body.force; });
       // кэш найденных файлов — только их можно скачать через action=file
       await patchPlans(src.id, (up) => ({ ...up, known: files.map((f) => f.id), roots: roots.map((r) => ({ id: r.id, section: r.section, path: r.path.join(" / ") })), scanned_at: new Date().toISOString(),
-        // удалённые с Диска планировки убираем из списка
-        items: (up.items || []).filter((x: any) => files.some((f) => f.id === x.file_id)) }));
+        // удалённые с Диска планировки убираем из списка — только если Диск прочитался без ошибок
+        items: errors.length || e2.length ? (up.items || []) : (up.items || []).filter((x: any) => files.some((f) => f.id === x.file_id)) }));
       // площади квартир по секциям — чтобы распознанное с картинки число сверить с шахматкой
       const { data: us } = await db.from("nb_units").select("unit_no,section,area").eq("nb_source_id", src.id).limit(5000);
       const areas: Record<string, number[]> = {};
