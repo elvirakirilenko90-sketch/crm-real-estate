@@ -174,6 +174,9 @@ Deno.serve(async (req) => {
       const item = { file_id: fid, name: String(i.name || "").slice(0, 200), section: i.section ? String(i.section).slice(0, 10) : null, stoyak: num(i.stoyak), no: num(i.no), floor: num(i.floor),
         area: num(i.area), rooms: i.rooms === 0 ? 0 : num(i.rooms), modified: i.modified || null,
         floors: Array.isArray(i.floors) ? i.floors.map(Number).filter((n: number) => Number.isInteger(n) && n > 0 && n < 60).slice(0, 40) : null, img: `${SUPABASE_URL}/storage/v1/object/public/presentations/${path}?v=${Date.now()}` };
+      // площадь, исправленную администратором вручную, не перезаписываем
+      const prev = (src.meta?.unit_plans?.items || []).find((x: any) => x.file_id === fid);
+      if (prev?.area_manual) Object.assign(item, { area: prev.area, area_manual: true });
       const res = await patchPlans(src.id, (u) => ({ ...u, items: [...(u.items || []).filter((x: any) => x.file_id !== fid), item], updated_at: new Date().toISOString() }));
       return json({ ok: true, item, total: res.items.length });
     }
