@@ -17,16 +17,16 @@ let pdfjsP = null, ocrP = null;
 const loadPdfjs = () => pdfjsP ||= import(/* @vite-ignore */ PDFJS).then(m => { m.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; return m; });
 const loadOcr = () => ocrP ||= import(/* @vite-ignore */ TESSERACT).then(async m => {
   const T = m.default || m; const w = await T.createWorker("eng");
-  await w.setParameters({tessedit_char_whitelist:"0123456789,.KkКк"}); return w;
+  await w.setParameters({tessedit_char_whitelist:"0123456789,.KkКк", tessedit_pageseg_mode:"11"}); return w;
 });
 
-const num = (s) => { const n = Number(String(s || "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
+const num = (s) => { const t = String(s ?? "").trim().replace(",", "."); if(!t) return null; const n = Number(t); return Number.isFinite(n) ? n : null; };
 const roomsOf = (s) => /студ/i.test(s) ? 0 : (Number((String(s).match(/(\d)\s*-?\s*(?:к(?![а-яіїєґ])|кімн|комн)/i) || [])[1]) || null);
 const areaInName = (s) => { const m = String(s).match(/(?:^|[^\d])(\d{2,3})[,.](\d{1,2})(?!\d)/); return m && Number(m[1]) >= 15 ? Number(`${m[1]}.${m[2]}`) : null; };
 // «2-6» → [2..6], «2,3,6» → [2,3,6], «…консольной 9» → [9]
 function floorsInName(name){
   const s = String(name).replace(/\.[a-z]+$/i, "");
-  if(areaInName(s)) return null;
+  if(areaInName(s) || /стояк/i.test(s)) return null;
   const r = s.match(/(?:^|\s)(\d{1,2})\s*-\s*(\d{1,2})(?:\s|$)/); if(r){ const a = +r[1], b = +r[2]; if(a <= b && b <= 40) return Array.from({length:b - a + 1}, (_, i) => a + i); }
   const l = s.match(/(?:^|\s)(\d{1,2}(?:\s*,\s*\d{1,2})+)(?:\s|$)/); if(l) return l[1].split(",").map(Number).filter(n => n <= 40);
   const one = s.match(/\s(\d{1,2})$/); return one && +one[1] <= 40 ? [+one[1]] : null;
@@ -54,7 +54,7 @@ function planBox(src, {textRects = [], pdf = false} = {}){
         const p = X < 0 || Y < 0 || X >= w || Y >= h ? 0 : a[Y * w + X]; if(p) any = 1; else all = 0; } }
       o[yy * w + xx] = grow ? any : all; }
     return o; };
-  m = morph(morph(m, false), true);                 // убираем тонкие линии и буквы
+  if(!pdf) m = morph(morph(m, false), true);       // картинки: убираем тонкие линии и буквы (в PDF текст уже вырезан, а тонкие стены нужны)
   for(let i = 0; i < 3; i++) m = morph(m, true);    // склеиваем стены и комнаты в одну область
   const lab = new Int32Array(w * h); let best = null, id = 0; const st = [];
   for(let s = 0; s < w * h; s++){ if(!m[s] || lab[s]) continue; id++; let x0 = w, y0 = h, x1 = 0, y1 = 0, n = 0; st.push(s); lab[s] = id;
@@ -114,8 +114,12 @@ async function fromImage(blob, name){
   let area = areaInName(name), erase = [];
   // табличка «2K / тип / жилая / общая»: распознаём числа, самое большое — общая площадь; табличку закрашиваем
   try{
-    const ocr = await loadOcr(); const {data} = await ocr.recognize(c);
-    const nums = (data.words || []).map(wd => ({v:num((wd.text.match(/^(\d{2,3}[,.]\d{2})$/) || [])[1]), b:wd.bbox})).filter(x => x.v && x.v >= 15 && x.v <= 300);
+    // мелкие картинки увеличиваем — так цифры распознаются надёжнее
+    const up = Math.max(1, Math.min(3, 1800 / c.width)); let oc = c;
+    if(up > 1.05){ oc = canvasOf(Math.round(c.width * up), Math.round(c.height * up)); const ox = oc.getContext("2d"); ox.imageSmoothingQuality = "high"; ox.drawImage(c, 0, 0, oc.width, oc.height); }
+    const ocr = await loadOcr(); const {data} = await ocr.recognize(oc);
+    const val = (t) => { const m = String(t).replace(/\s/g, "").match(/(\d{2,3})[,.](\d{2})$/); if(!m) return null; let v = Number(`${m[1]}.${m[2]}`); if(v > 200 && m[1].length === 3) v = Number(`${m[1].slice(1)}.${m[2]}`); return v >= 15 && v <= 200 ? v : null; };
+    const nums = (data.words || []).map(wd => ({v:val(wd.text), b:{x0:wd.bbox.x0 / up, y0:wd.bbox.y0 / up, x1:wd.bbox.x1 / up, y1:wd.bbox.y1 / up}})).filter(x => x.v);
     const top = nums.sort((a, b) => b.v - a.v)[0];
     if(top){ if(!area) area = top.v; const bw = top.b.x1 - top.b.x0, bh = top.b.y1 - top.b.y0;
       erase.push({x:top.b.x0 - bw * 1.1, y:top.b.y0 - bh * 2.4, w:bw * 2.3, h:bh * 3.6}); }
