@@ -36,26 +36,27 @@ function floorsInName(name){
 const canvasOf = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 // Рамка чертежа: «плотные» пиксели (стены, заливка комнат) без тонких линий и текста; самая крупная связная область.
 function planBox(src, {textRects = [], pdf = false} = {}){
-  const W = src.width, H = src.height, k = Math.max(1, Math.max(W, H) / 700), w = Math.round(W / k), h = Math.round(H / k);
+  const W = src.width, H = src.height, k = Math.max(1, Math.max(W, H) / (pdf ? 700 : 1200)), w = Math.round(W / k), h = Math.round(H / k);
   const c = canvasOf(w, h), x = c.getContext("2d", {willReadFrequently:true}); x.drawImage(src, 0, 0, w, h);
   const d = x.getImageData(0, 0, w, h).data; let m = new Uint8Array(w * h);
   for(let i = 0; i < w * h; i++){
     const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
     const lime = g > 180 && r > 120 && b < 170 && g - b > 60;
-    m[i] = !lime && (mx < 150 || (mx - mn > 35 && mx < 252)) ? 1 : 0;
+    // PDF: стены (тёмные); картинки: стены и заливка комнат (светлый цвет)
+    m[i] = !lime && (pdf ? (mx < 150 || (mx - mn > 35 && mx < 252)) : (mx < 235 || mx - mn > 25)) ? 1 : 0;
   }
   for(const t of textRects){ const x0 = Math.max(0, Math.floor(t.x / k)), y0 = Math.max(0, Math.floor(t.y / k)), x1 = Math.min(w, Math.ceil((t.x + t.w) / k)), y1 = Math.min(h, Math.ceil((t.y + t.h) / k));
     for(let yy = y0; yy < y1; yy++) m.fill(0, yy * w + x0, yy * w + x1); }
   // эрозия (grow=false): точка остаётся, если все 8 соседей «плотные»; наращивание (grow=true): если плотный хоть один
-  const morph = (a, grow) => { const o = new Uint8Array(w * h);
+  const morph = (a, grow, cross = false) => { const o = new Uint8Array(w * h);
     for(let yy = 0; yy < h; yy++) for(let xx = 0; xx < w; xx++){
       let any = 0, all = 1;
-      for(let dy = -1; dy <= 1; dy++){ const Y = yy + dy; for(let dx = -1; dx <= 1; dx++){ const X = xx + dx;
+      for(let dy = -1; dy <= 1; dy++){ const Y = yy + dy; for(let dx = -1; dx <= 1; dx++){ if(cross && dx && dy) continue; const X = xx + dx;
         const p = X < 0 || Y < 0 || X >= w || Y >= h ? 0 : a[Y * w + X]; if(p) any = 1; else all = 0; } }
       o[yy * w + xx] = grow ? any : all; }
     return o; };
-  if(!pdf) m = morph(morph(m, false), true);       // картинки: убираем тонкие линии и буквы (в PDF текст уже вырезан, а тонкие стены нужны)
-  for(let i = 0; i < 3; i++) m = morph(m, true);    // склеиваем стены и комнаты в одну область
+  if(!pdf) m = morph(morph(m, false, true), true, true); // картинки: убираем линии в 1 px (выноски, рамки) — в PDF текст уже вырезан, а тонкие стены нужны
+  for(let i = 0; i < (pdf ? 3 : 4); i++) m = morph(m, true); // склеиваем стены и комнаты в одну область
   const lab = new Int32Array(w * h); let best = null, id = 0; const st = [];
   for(let s = 0; s < w * h; s++){ if(!m[s] || lab[s]) continue; id++; let x0 = w, y0 = h, x1 = 0, y1 = 0, n = 0; st.push(s); lab[s] = id;
     while(st.length){ const p = st.pop(), px = p % w, py = (p / w) | 0; n++; if(px < x0) x0 = px; if(px > x1) x1 = px; if(py < y0) y0 = py; if(py > y1) y1 = py;
@@ -65,13 +66,32 @@ function planBox(src, {textRects = [], pdf = false} = {}){
   if(!best) return null;
   return {x0:best.x0 * k, y0:best.y0 * k, x1:(best.x1 + 1) * k, y1:(best.y1 + 1) * k};
 }
+// Табличка «2K | 31,56 / тип | 63,50» на картинке: прямоугольная рамка из тонких линий на белом фоне — закрашиваем
+function eraseLabelBoxes(ctx, w, h){
+  const img = ctx.getImageData(0, 0, w, h), d = img.data, dark = (x, y) => x >= 0 && y >= 0 && x < w && y < h && Math.max(d[(y * w + x) * 4], d[(y * w + x) * 4 + 1], d[(y * w + x) * 4 + 2]) < 110;
+  const minL = Math.max(40, 0.05 * w), maxL = 0.5 * w, lines = [];
+  for(let y = 2; y < h - 2; y++){ let x = 0;
+    while(x < w){ if(!dark(x, y)){ x++; continue; } let e = x; while(e < w && dark(e, y)) e++;
+      const L = e - x;
+      if(L >= minL && L <= maxL){ let thick = 0; for(let k = 0; k < 9; k++){ const xx = Math.round(x + (L * (k + 0.5)) / 9); if(dark(xx, y - 3) || dark(xx, y + 3)) thick++; }
+        if(thick <= 2 && !lines.some(l => Math.abs(l.y - y) <= 2 && Math.abs(l.x0 - x) <= 3 && Math.abs(l.x1 - e) <= 3)) lines.push({y, x0:x, x1:e}); }
+      x = e; } }
+  const side = (x, y0, y1) => { let n = 0; for(let y = y0; y <= y1; y++) if(dark(x, y) || dark(x + 1, y) || dark(x - 1, y)) n++; return n / (y1 - y0 + 1); };
+  ctx.fillStyle = "#fff"; let erased = 0;
+  for(const a of lines) for(const b of lines){
+    if(b.y - a.y < 20 || b.y - a.y > 0.3 * h || Math.abs(a.x0 - b.x0) > 4 || Math.abs(a.x1 - b.x1) > 4) continue;
+    if(side(a.x0, a.y, b.y) >= 0.8 && side(a.x1 - 1, a.y, b.y) >= 0.8){ ctx.fillRect(a.x0 - 4, a.y - 4, a.x1 - a.x0 + 8, b.y - a.y + 8); erased++; }
+  }
+  return erased;
+}
 // Вырезаем рамку, закрашиваем серые плашки макета, салатовые элементы и заданные прямоугольники (табличка с площадью)
-function cropClean(src, box, {erase = []} = {}){
+function cropClean(src, box, {erase = [], labels = false} = {}){
   const W = src.width, H = src.height, pad = Math.round(0.015 * Math.max(W, H));
   const x0 = Math.max(0, Math.floor(box.x0 - pad)), y0 = Math.max(0, Math.floor(box.y0 - pad)), x1 = Math.min(W, Math.ceil(box.x1 + pad)), y1 = Math.min(H, Math.ceil(box.y1 + pad));
   const w = x1 - x0, h = y1 - y0, c = canvasOf(w, h), x = c.getContext("2d", {willReadFrequently:true});
   x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(src, x0, y0, w, h, 0, 0, w, h);
   x.fillStyle = "#fff"; for(const r of erase) x.fillRect(r.x - x0, r.y - y0, r.w, r.h);
+  if(labels) eraseLabelBoxes(x, w, h);
   const img = x.getImageData(0, 0, w, h), d = img.data;
   // серые плашки (237,239,235) — закрашиваем их прямоугольник целиком вместе с текстом
   const panel = new Uint8Array(w * h);
@@ -124,7 +144,7 @@ async function fromImage(blob, name){
     if(top){ if(!area) area = top.v; const bw = top.b.x1 - top.b.x0, bh = top.b.y1 - top.b.y0;
       erase.push({x:top.b.x0 - bw * 1.1, y:top.b.y0 - bh * 2.4, w:bw * 2.3, h:bh * 3.6}); }
   }catch(e){ /* без распознавания — площадь только из имени файла */ }
-  return {canvas:cropClean(c, box, {erase}), info:{area}};
+  return {canvas:cropClean(c, box, {erase, labels:true}), info:{area}};
 }
 
 // Обработать новые файлы ЖК. call(action, body, {raw}) — запрос к nb-unit-plans (с входом администратора или ключом задания).

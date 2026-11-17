@@ -3,6 +3,7 @@ import { uiExtra, uiTemplates } from "./i18n-extra.js";
 import ListingCard from "./ListingCard.jsx";
 import { createPortal } from "react-dom";
 import { supabase, SUPABASE_URL, SUPABASE_KEY } from "./supabaseClient";
+import { processUnitPlans } from "./nbUnitPlans.js";
 const stages = ["Новый Лид","Первый контакт","В работе","Назначена встреча","Проведена встреча","Думает","Задаток","Сделка","Отказ","Отложили"];
 // Этапы, сохранённые раньше на украинском/английском, показываем в общих колонках воронки
 const LEGACY_STAGE = {"Новий лід":"Новый Лид","New Lead":"Новый Лид","Перший контакт":"Первый контакт","У роботі":"В работе","В роботі":"В работе","Призначено зустріч":"Назначена встреча","Зустріч проведено":"Проведена встреча","Думає":"Думает","Завдаток":"Задаток","Угода":"Сделка","Відмова":"Отказ","Відклали":"Отложили"};
@@ -9418,6 +9419,32 @@ const nbCardPlanFor = (u, meta) => {
   const best = (pos && inSec.find(c => c.pos === pos)) || inSec.sort((x, y) => Math.abs(x.area - a) - Math.abs(y.area - a))[0];
   return best?.img || null;
 };
+// Поквартирные планировки с Google Диска застройщика (meta.unit_plans.items, функция nb-unit-plans + src/nbUnitPlans.js).
+// pos — номер квартиры на этаже (стояк). Порядок: тот же стояк в секции (площадь ±3%) →
+// та же секция, ближайшая площадь (±1,5%), с учётом комнатности и этажей из названия файла.
+const nbUnitPlanFor = (u, meta, pos) => {
+  const items = (meta?.unit_plans?.items || []).filter(x => x.img); if(!items.length) return null;
+  const no = String(u.unit_no || "").trim(), a = Number(u.area) || 0;
+  const sec = String(u.section || (no.match(/^(\d+)\./) || [])[1] || "").trim();
+  const cands = items.filter(x => !x.section || !sec || String(x.section) === sec); if(!cands.length) return null;
+  const near = (x, tol) => !a || !x.area ? false : Math.abs(x.area - a) / a <= tol;
+  if(pos){ const st = cands.find(x => x.stoyak === pos && (!a || !x.area || near(x, .03))); if(st) return st.img; }
+  const scored = cands.filter(x => near(x, .015)).map(x => ({x, sc:Math.abs(x.area - a) / a
+    + (x.rooms != null && u.rooms != null && x.rooms !== u.rooms ? 1 : 0)
+    + (x.floors?.length && u.floor != null && !x.floors.includes(Number(u.floor)) ? .02 : 0)
+    + (x.stoyak && pos && x.stoyak !== pos ? .02 : 0)})).sort((p, q) => p.sc - q.sc);
+  return scored[0]?.sc < 1 ? scored[0].x.img : null;
+};
+// Номер квартиры на этаже: «6.5.3» → 3; иначе — порядковый номер среди квартир той же секции и этажа
+function nbPosMap(units){
+  const map = new Map(), groups = new Map();
+  for(const u of units){ const no = String(u.unit_no || "").trim(), m = no.match(/^\d+\.\d+\.(\d+)$/);
+    if(m){ map.set(u.id, Number(m[1])); continue; }
+    if(!/^\d+$/.test(no) || u.floor == null) continue;
+    const key = `${u.section || ""}|${u.floor}`; if(!groups.has(key)) groups.set(key, []); groups.get(key).push(u); }
+  for(const list of groups.values()) list.sort((a, b) => Number(a.unit_no) - Number(b.unit_no)).forEach((u, i) => map.set(u.id, i + 1));
+  return map;
+}
 // Строки таблицы оплаты — только варианты, которые выбрал менеджер
 function nbPaymentFor(u, plan, vs, withFull){
   const rows = vs.map(x => { const k = nbCalcUnit(u, plan, x); if(!k) return null;
@@ -9429,7 +9456,7 @@ function nbPaymentFor(u, plan, vs, withFull){
 }
 // Квартира → объект презентации. Названия ЖК, застройщика и адреса нет — только район, дом, этаж, площадь
 // и расчёт рассрочки ТОЛЬКО по вариантам, которые выбрал менеджер (vs), таблицей.
-function nbUnitToItem(u, source, vs, lang, {full=false}={}){
+function nbUnitToItem(u, source, vs, lang, {full=false, pos=null}={}){
   const ua = lang !== "ru"; const L = (ru, uk) => ua ? uk : ru;
   const plan = source.meta?.plan || {}; vs = (Array.isArray(vs) ? vs : [vs]).filter(Boolean);
   const c = nbCalcUnit(u, plan, {});
@@ -9446,7 +9473,7 @@ function nbUnitToItem(u, source, vs, lang, {full=false}={}){
   return {own:false, nbUnit:true, nb_unit_id:u.id, title:`${roomsTxt}, ${u.area} м²`, price:Math.round((c?.base ?? Number(u.total_price)) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
     rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null,
     // есть планировка квартиры с сайта — план этажа целиком не нужен (он показывается с выделенной квартирой)
-    layout:flat_plan ? null : (nbCardPlanFor(u, source.meta) || nbLayoutFor(u, source.meta?.media)), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
+    layout:flat_plan ? null : (nbUnitPlanFor(u, source.meta, pos) || nbCardPlanFor(u, source.meta) || nbLayoutFor(u, source.meta?.media)), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
     advantages:adv, condition:L("Новостройка","Новобудова"), property_type:L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
 }
 // Выбор клиента для презентации (только клиенты, которых менеджер видит по правам)
@@ -9645,6 +9672,28 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const [editPlan,setEditPlan] = useState(false);
   const [picked,setPicked] = useState([]);       // квартиры для презентации
   const [pickClient,setPickClient] = useState(false);
+  const [planJob,setPlanJob] = useState(null);  // фоновая обработка поквартирных планировок с Диска
+  // Администратор открыл ЖК → проверяем Диск (не чаще раза в 12 часов): новые секции/очереди/файлы планировок
+  // обрабатываются в браузере и сохраняются в CRM. Менеджерам ничего делать не нужно.
+  useEffect(() => {
+    if(!isAdmin || source.kind !== "gdrive") return;
+    const key = `nbUnitPlans:${source.id}`; let last = 0; try{ last = Number(localStorage.getItem(key)) || 0; }catch{}
+    if(Date.now() - last < 12 * 3600e3) return;
+    let alive = true;
+    (async () => {
+      try{ localStorage.setItem(key, String(Date.now())); }catch{}
+      const {data:{session}} = await supabase.auth.getSession(); if(!session) return;
+      const call = async (action, body, {raw} = {}) => {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/nb-unit-plans`, {method:"POST", headers:{"Content-Type":"application/json", apikey:SUPABASE_KEY, Authorization:`Bearer ${session.access_token}`}, body:JSON.stringify({...body, action})});
+        return raw ? r : r.json(); };
+      try{
+        const r = await processUnitPlans({sourceId:source.id, call, onProgress:(p) => alive && !p.done && setPlanJob({i:p.i, total:p.total})});
+        if(r.done.length){ const {data} = await supabase.from("nb_sources").select("meta").eq("id", source.id).maybeSingle(); if(data?.meta?.unit_plans) source.meta = {...(source.meta || {}), unit_plans:data.meta.unit_plans}; }
+        if(alive) setPlanJob(r.done.length || r.failed.length ? {done:r.done.length, failed:r.failed} : null);
+      }catch(e){ if(alive) setPlanJob({error:e.message}); }
+    })();
+    return () => { alive = false; };
+  }, [source.id, isAdmin]);
   const [presSel,setPresSel] = useState([]);     // варианты рассрочки для презентации (индексы)
   const [presFull,setPresFull] = useState(false); // показать клиенту 100% оплату
   const [composer,setComposer] = useState(null); // {lead, items}
@@ -9682,6 +9731,9 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   };
   return <div className="card nbCalc" style={{border:"1.5px solid #F5C518", marginBottom:12}}>
     <button className="nbHelpHead" onClick={() => setOpen(!open)}>🏠 <b>{tr(lang,"Наличие и рассрочка")}</b> · {units.filter(u => (u.property_type || "apartment") === "apartment").length} {tr(lang,"свободных")}{updated ? ` · ${tr(lang,"обновлено")} ${updated}` : ""} <i>{open ? "▴" : "▾"}</i></button>
+    {planJob && <small className={planJob.error ? "feedSrcErr" : "muted"} style={{display:"block", margin:"4px 2px"}}>🗂 {planJob.error ? `${tr(lang,"Планировки с Диска")}: ${planJob.error}`
+      : planJob.total != null && planJob.done == null ? `${tr(lang,"Обновляю планировки квартир с Диска")}: ${planJob.i + 1} / ${planJob.total}`
+      : `${tr(lang,"Планировки квартир с Диска обновлены")}: ${planJob.done}${planJob.failed?.length ? ` · ${tr(lang,"не получилось")}: ${planJob.failed.map(f => f.name).join(", ")}` : ""}`}</small>}
     {editPlan && <NbPlanModal s={source} lang={lang} onClose={() => { setEditPlan(false); setVer(x => x + 1); }} onSaved={() => setVer(x => x + 1)}/>}
     {open && <>
       {isAdmin && <Button variant="soft" onClick={() => setEditPlan(true)}>🧮 {tr(lang,"Калькулятор ЖК: условия и формулы")}</Button>}
@@ -9734,7 +9786,10 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
         </div>
         {!presSel.length && !presFull && <small style={{color:"#ef4444"}}>{tr(lang,"Не выбран ни один вариант — в презентации будет только цена.")}</small>}
       </div>}
-      onPick={(l) => { setPickClient(false); setComposer({lead:l, items:picked.map(u => nbUnitToItem(u, source, presSel.map(i => variants[i]).filter(Boolean), lang, {full:presFull}))}); }}/>}
+      onPick={async (l) => { setPickClient(false);
+        // номер квартиры на этаже считаем по всем квартирам секции, включая проданные
+        const {data:all} = await supabase.from("nb_units").select("id,unit_no,section,floor").eq("nb_source_id", source.id).limit(5000);
+        const pm = nbPosMap(all?.length ? all : (units || [])); setComposer({lead:l, items:picked.map(u => nbUnitToItem(u, source, presSel.map(i => variants[i]).filter(Boolean), lang, {full:presFull, pos:pm.get(u.id)}))}); }}/>}
     {composer && <PresentationComposer lead={composer.lead} leadDbId={composer.lead.id} items={composer.items} properties={[]} currentProfile={currentProfile} agencyName={agencyName} lang={lang}
       onClose={() => setComposer(null)} onDone={() => setPicked([])}/>}
   </div>;
@@ -9763,7 +9818,7 @@ Object.assign(uiCalendar.uk, {"Для презентации клиенту":"Д
   "Планировки — для какого дома / секции (номер как в шахматке)":"Планування — для якого будинку / секції (номер як у шахматці)", "дом":"буд.", "Не использовать":"Не використовувати", "Материалы ещё не собраны.":"Матеріали ще не зібрані.",
   "Собрать визуализации и планировки с Google Диска":"Зібрати візуалізації та планування з Google Диска", "Собираем…":"Збираємо…", "Визуализаций":"Візуалізацій", "планировок":"планувань",
   "В презентацию попадают визуализации и планировка дома квартиры. Названия ЖК, застройщика и адреса там нет — проверьте, чтобы его не было и на картинках.":"У презентацію потрапляють візуалізації та планування будинку квартири. Назви ЖК, забудовника й адреси там немає — перевірте, щоб її не було й на картинках.",
-  "Текст":"Текст", "В презентацию":"У презентацію", "Варианты оплаты в презентации":"Варіанти оплати в презентації", "Дом":"Будинок", "Нет связи с сервером — проверьте интернет и обновите страницу. Квартиры и расчёты выше работают.":"Немає зв'язку із сервером — перевірте інтернет і оновіть сторінку. Квартири й розрахунки вище працюють.", "Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.":"Якщо на сайті ЖК можна натиснути на квартиру й побачити її планування — вставте посилання. CRM підбере планування до кожної квартири за номером і площею та покаже його клієнту в презентації.", "Клиент увидит только отмеченные варианты — таблицей.":"Клієнт побачить лише позначені варіанти — таблицею.", "100% оплата":"100% оплата", "Не выбран ни один вариант — в презентации будет только цена.":"Не обрано жодного варіанту — у презентації буде лише ціна.", "Планировки квартир с сайта застройщика":"Планування квартир із сайту забудовника", "Ссылка на страницу с планировками":"Посилання на сторінку з плануваннями", "Загрузить планировки квартир":"Завантажити планування квартир", "домов":"будинків", "квартир на этаже":"квартир на поверсі", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
+  "Текст":"Текст", "В презентацию":"У презентацію", "Варианты оплаты в презентации":"Варіанти оплати в презентації", "Дом":"Будинок", "Планировки с Диска":"Планування з Диска", "Обновляю планировки квартир с Диска":"Оновлюю планування квартир з Диска", "Планировки квартир с Диска обновлены":"Планування квартир з Диска оновлено", "не получилось":"не вийшло", "Нет связи с сервером — проверьте интернет и обновите страницу. Квартиры и расчёты выше работают.":"Немає зв'язку із сервером — перевірте інтернет і оновіть сторінку. Квартири й розрахунки вище працюють.", "Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.":"Якщо на сайті ЖК можна натиснути на квартиру й побачити її планування — вставте посилання. CRM підбере планування до кожної квартири за номером і площею та покаже його клієнту в презентації.", "Клиент увидит только отмеченные варианты — таблицей.":"Клієнт побачить лише позначені варіанти — таблицею.", "100% оплата":"100% оплата", "Не выбран ни один вариант — в презентации будет только цена.":"Не обрано жодного варіанту — у презентації буде лише ціна.", "Планировки квартир с сайта застройщика":"Планування квартир із сайту забудовника", "Ссылка на страницу с планировками":"Посилання на сторінку з плануваннями", "Загрузить планировки квартир":"Завантажити планування квартир", "домов":"будинків", "квартир на этаже":"квартир на поверсі", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
   "Презентация сохранится в карточке клиента. Название ЖК клиент не увидит.":"Презентація збережеться в картці клієнта. Назву ЖК клієнт не побачить."});
 Object.assign(uiCalendar.en, {"Срок рассрочки":"Installment term", "До сдачи дома":"Until completion", "Вариант рассрочки":"Installment option"});
 // ===== Конструктор источника Новобудов (для любого агентства) =====
