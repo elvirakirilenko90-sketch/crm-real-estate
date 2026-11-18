@@ -9337,7 +9337,9 @@ function nbCalcUnit(u, plan, v, pct, months){
   const p = pct !== "" && pct != null ? Number(pct) : Number(vv.first_pct) || 0;
   const m = months !== "" && months != null ? Number(months) : (nbMonthsUntil(vv.until) ?? (Number(vv.months) || 0));
   const first = price * p / 100;
-  const disc = plan?.first_disc_pct && p >= (Number(plan.first_disc_from) || 0) ? first * Number(plan.first_disc_pct) / 100 : 0;
+  // скидка на ПВ может быть акцией до даты (plan.first_disc_until) — после неё не применяется
+  const discOn = !plan?.first_disc_until || new Date().toISOString().slice(0, 10) <= plan.first_disc_until;
+  const disc = discOn && plan?.first_disc_pct && p >= (Number(plan.first_disc_from) || 0) ? first * Number(plan.first_disc_pct) / 100 : 0;
   const rest = price - first; const r = (Number(vv.annual_rate) || 0) / 1200;
   const monthly = m > 0 && rest > 0 ? (r > 0 ? rest * r / (1 - Math.pow(1 + r, -m)) : rest / m) : null;
   const std = {base, price, pct:p, first:first - disc, disc, rest, months:m || null, monthly, full:base * (1 - (Number(plan?.full_disc_pct) || 0) / 100)};
@@ -9370,7 +9372,7 @@ const nbTermKey = (v) => v.until ? "until" : (v.months ? String(Number(v.months)
 // Подходит ли вариант под выбранные в фильтре ПВ и срок (готовые значения из условий администратора)
 const nbVariantFits = (v, first, term) => (!first || String(Number(v.first_pct)) === String(first)) && (!term || nbTermKey(v) === term);
 const nbUsd = (n) => n == null || !isFinite(n) ? "—" : "$" + Math.round(n).toLocaleString("ru-RU").replace(/,/g, " ");
-const nbVariantLabel = (v, lang) => [v.first_pct != null && v.first_pct !== "" ? `${tr(lang,"ПВ")} ${v.first_pct}%` : null,
+const nbVariantLabel = (v, lang) => [v.queue ? `${v.queue} ${tr(lang,"очередь")}` : null, v.first_pct != null && v.first_pct !== "" ? `${tr(lang,"ПВ")} ${v.first_pct}%` : null,
   v.until ? `${tr(lang,"до")} ${new Date(v.until).toLocaleDateString("ru-RU", {month:"2-digit", year:"numeric"})}` : v.months ? `${v.months} ${tr(lang,"мес")}` : null,
   Number(v.markup_m2) ? `+$${v.markup_m2}/м²` : null, Number(v.markup_pct) ? `+${v.markup_pct}%` : null, Number(v.annual_rate) ? `${v.annual_rate}% ${tr(lang,"годовых")}` : null].filter(Boolean).join(" · ") || tr(lang,"Без условий");
 const nbSyncLine = (sync, lang) => { if(!sync?.at) return null; const d = new Date(sync.at).toLocaleDateString("ru-RU", {day:"2-digit", month:"2-digit"});
@@ -9390,7 +9392,38 @@ function nbQueueOf(sec, meta){
   return null;
 }
 // ЖК делится на секции (а не дома), если так подписаны папки планировок или задано вручную
-const nbSectionWord = (meta) => meta?.unit_word === "section" || [...(meta?.unit_plans?.roots || []), ...(meta?.unit_plans?.folders || [])].some(r => /секц/i.test(r.path || r.name || ""));
+const nbSectionWord = (meta) => meta?.unit_word === "section" || (meta?.queue_rules || []).some(r => r.section || r.sections) || [...(meta?.unit_plans?.roots || []), ...(meta?.unit_plans?.folders || [])].some(r => /секц/i.test(r.path || r.name || ""));
+// Очередь и секция квартиры по правилам ЖК (meta.queue_rules), первое подходящее правило:
+//   {queue:"2", sections:["1","2"], no:"^\\d+$"} — по секции и виду номера; {queue:"3", section:"1", key:"3строит.*1секц"} — по файлу шахматки.
+// Нет правил — очередь по названиям папок Диска.
+const nbRe = (src, fl) => { try{ return new RegExp(src, fl); }catch{ return null; } };
+function nbRuleOf(u, meta){
+  for(const r of meta?.queue_rules || []){
+    if(r.sections && !r.sections.map(String).includes(nbHouseOf(u))) continue;
+    if(r.key && !nbRe(r.key, "i")?.test(String(u.unit_key || ""))) continue;
+    if(r.no && !nbRe(r.no)?.test(String(u.unit_no || "").trim())) continue;
+    return r;
+  }
+  return null;
+}
+const nbUnitSection = (u, meta) => String(nbRuleOf(u, meta)?.section ?? nbHouseOf(u));
+const nbUnitQueue = (u, meta) => { const r = nbRuleOf(u, meta); return r?.queue != null ? String(r.queue) : nbQueueOf(nbUnitSection(u, meta), meta); };
+// Вариант рассрочки может относиться только к одной очереди (variant.queue). Для квартиры другой очереди
+// берём её вариант с тем же ПВ — так менеджер выбирает «ПВ 10%», а срок подставляется верный для очереди.
+const nbVarFits = (v, q) => !v?.queue || q == null || String(v.queue) === String(q);
+function nbVariantFor(v, u, meta){
+  if(!v || !Object.keys(v).length) return v; const q = nbUnitQueue(u, meta); if(nbVarFits(v, q)) return v;
+  const own = nbPlanVariants(meta).filter(x => nbVarFits(x, q));
+  return own.find(x => Number(x.first_pct) === Number(v.first_pct)) || own[0] || v;
+}
+// Акции застройщика на конкретные квартиры (meta.plan.unit_promos): {text, until, sections, areas, no}
+function nbUnitPromos(u, meta){
+  const today = new Date().toISOString().slice(0, 10), a = Number(u.area);
+  return (meta?.plan?.unit_promos || []).filter(p => (!p.until || p.until >= today)
+    && (!p.sections || p.sections.map(String).includes(nbUnitSection(u, meta)))
+    && (!p.areas || p.areas.some(x => Math.abs(Number(x) - a) < 0.015))
+    && (!p.no || nbRe(p.no)?.test(String(u.unit_no || ""))));
+}
 // Планировка для квартиры: по номеру дома/секции; если планировка одна на ЖК — она
 // Дом/секция планировки: из настройки администратора, иначе из названия файла («Буд. 2 …», «5 Секция …», «A10-3 cекція»)
 const nbLayoutHouse = (x) => String(x.house || (String(x.name || "").match(/(?:буд(?:инок)?|дом|[сc]екц\S*|корпус)\.?\s*№?\s*(\d+)/i) || String(x.name || "").match(/(\d+)\s*[сc]екц/i) || [])[1] || "");
@@ -9437,7 +9470,9 @@ const nbUnitPlanFor = (u, meta, pos) => {
   const items = (meta?.unit_plans?.items || []).filter(x => x.img); if(!items.length) return null;
   const no = String(u.unit_no || "").trim(), a = Number(u.area) || 0;
   const sec = String(u.section || (no.match(/^(\d+)\./) || [])[1] || "").trim();
-  const cands = items.filter(x => !x.section || !sec || String(x.section) === sec); if(!cands.length) return null;
+  // планировки другой очереди не подставляем (секции 1–2 есть и в 1-й, и во 2-й очереди)
+  const uq = meta?.queue_rules?.length ? nbUnitQueue(u, meta) : null;
+  const cands = items.filter(x => (!x.section || !sec || String(x.section) === sec) && (!uq || !x.section || nbQueueOf(String(x.section), meta) == null || nbQueueOf(String(x.section), meta) === uq)); if(!cands.length) return null;
   const near = (x, tol) => !a || !x.area ? false : Math.abs(x.area - a) / a <= tol;
   if(pos){ const st = cands.find(x => x.stoyak === pos && (!a || !x.area || near(x, .03))); if(st) return st.img; }
   const scored = cands.filter(x => near(x, .015)).map(x => ({x, sc:Math.abs(x.area - a) / a
@@ -9470,9 +9505,11 @@ function nbPaymentFor(u, plan, vs, withFull){
 function nbUnitToItem(u, source, vs, lang, {full=false, pos=null}={}){
   const ua = lang !== "ru"; const L = (ru, uk) => ua ? uk : ru;
   const plan = source.meta?.plan || {}; vs = (Array.isArray(vs) ? vs : [vs]).filter(Boolean);
+  // условия очереди этой квартиры (срок 36 / 48 мес и т.п.), без повторов
+  vs = vs.map(x => nbVariantFor(x, u, source.meta)).filter((x, i, a) => a.indexOf(x) === i);
   const c = nbCalcUnit(u, plan, {});
   const roomsTxt = u.rooms == null ? L("Квартира","Квартира") : u.rooms === 0 ? L("Студия","Студія") : `${u.rooms}-${L("комнатная квартира","кімнатна квартира")}`;
-  const house = nbHouseOf(u), queue = nbQueueOf(house, source.meta);
+  const house = nbUnitSection(u, source.meta), queue = nbUnitQueue(u, source.meta);
   const desc = [plan.client_text,
     [queue && `${L("Очередь","Черга")} ${queue}`, house && `${nbSectionWord(source.meta) ? L("Секция","Секція") : L("Дом","Будинок")} ${house}`, u.floor != null && `${u.floor} ${L("этаж","поверх")}`, u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")].filter(Boolean).join("\n\n");
   // преимущества — только по выбранным вариантам, чтобы не обещать клиенту условий, которых нет в расчёте
@@ -9524,7 +9561,7 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const setV = (i, patch) => setVariants(variants.map((v, k) => k === i ? {...v, ...patch} : v));
   const numOr = (x) => x === "" || x == null ? undefined : Number(String(x).replace(",", "."));
   const cleanPlan = () => ({variants:variants.map(v => Object.fromEntries(Object.entries({first_pct:numOr(v.first_pct), months:v.until ? undefined : numOr(v.months), until:v.until || undefined,
-      markup_m2:numOr(v.markup_m2), markup_pct:numOr(v.markup_pct), annual_rate:numOr(v.annual_rate)}).filter(([, x]) => x !== undefined && !Number.isNaN(x)))).filter(v => Object.keys(v).length),
+      markup_m2:numOr(v.markup_m2), markup_pct:numOr(v.markup_pct), annual_rate:numOr(v.annual_rate), queue:v.queue || undefined}).filter(([, x]) => x !== undefined && !Number.isNaN(x)))).filter(v => Object.keys(v).length),
     client_text:clientText.trim() || undefined,
     default_idx:def, first_disc_from:numOr(extra.first_disc_from), first_disc_pct:numOr(extra.first_disc_pct), full_disc_pct:numOr(extra.full_disc_pct), note:extra.note.trim() || undefined,
     formulas:Object.fromEntries(Object.entries(formulas).map(([k, x]) => [k, String(x || "").trim()]).filter(([, x]) => x)),
@@ -9532,7 +9569,8 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const invoke = async (body) => { const {data, error} = await supabase.functions.invoke("nb-sync", {body}); return error ? {ok:false, error:error.message} : (data || {ok:false}); };
   const save = async (after) => {
     setBusy("save"); setMsg("");
-    const plan = JSON.parse(JSON.stringify(cleanPlan()));
+    // акции по квартирам и срок акции на ПВ задаются не в этом окне — сохраняем как были
+    const plan = JSON.parse(JSON.stringify({unit_promos:m0.plan?.unit_promos, first_disc_until:m0.plan?.first_disc_until, ...cleanPlan()}));
     const v0 = plan.variants[Math.min(def, plan.variants.length - 1)] || {};
     const price_files = files.split(/\s+/).map(x => x.trim()).filter(Boolean).map(id => ({id}));
     // ПВ и срок по умолчанию дублируем в старые поля — по ним работают фильтры и подписи на карточке
@@ -9726,7 +9764,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const [composer,setComposer] = useState(null); // {lead, items}
   const [, setVer] = useState(0);
   const [fresh,setFresh] = useState(null);       // сверка наличия с шахматкой на Диске: {at, changed, sold}
-  const UNIT_COLS = "id,unit_no,section,floor,rooms,area,price_m2,total_price,property_type,note,first_seen_at,price_history,last_seen_at";
+  const UNIT_COLS = "id,unit_key,unit_no,section,floor,rooms,area,price_m2,total_price,property_type,note,first_seen_at,price_history,last_seen_at";
   const loadUnits = () => supabase.from("nb_units").select(UNIT_COLS).eq("nb_source_id", source.id).eq("status", "free").limit(2000).then(({data}) => nbRoomsFill(data || []));
   // Актуальное наличие: сервер сверяет шахматку на Диске (не чаще раза в 10 минут, без изменений — только отпечаток файла)
   const syncFresh = async () => { try{ const {data} = await supabase.functions.invoke("nb-fresh", {body:{source_id:source.id}}); return data || {}; }catch{ return {}; } };
@@ -9740,7 +9778,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const week = Date.now() - 8 * 864e5;
   const firstSeen = Math.min(...units.map(u => Date.parse(u.first_seen_at) || Date.now()));
   const firstImport = firstSeen > week; // первая загрузка ЖК — все квартиры «новые», значок не показываем
-  const rows = units.map(u => ({u, c:nbCalcUnit(u, plan, v, pct, months)})).filter(({u, c}) => {
+  const rows = units.map(u => ({u, c:nbCalcUnit(u, plan, nbVariantFor(v, u, source.meta), pct, months)})).filter(({u, c}) => {
     if(f.type && (u.property_type || "apartment") !== f.type) return false;
     if(f.rooms !== "" && (f.rooms === "4" ? !(u.rooms >= 4) : String(u.rooms ?? "") !== f.rooms)) return false;
     if(f.area !== "" && (() => { const [lo, hi] = NB_AREA_RANGES[Number(f.area)]; const a = Number(u.area); return !(a >= lo && a < hi); })()) return false;
@@ -9772,6 +9810,11 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
     {open && <>
       {isAdmin && <Button variant="soft" onClick={() => setEditPlan(true)}>🧮 {tr(lang,"Калькулятор ЖК: условия и формулы")}</Button>}
       {plan.note && <div className="feedSrcCheck">💡 {plan.note}</div>}
+      {(source.meta?.promos?.lines?.length > 0 || source.meta?.promos?.items?.length > 0) && <details className="feedSrcCheck" style={{whiteSpace:"pre-wrap"}}>
+        <summary style={{cursor:"pointer"}}>📣 <b>{tr(lang,"Акции и условия застройщика")}</b> <small className="muted">({tr(lang,"из шахматки и файлов на Диске")})</small></summary>
+        {(source.meta.promos.items || []).map((x, i) => <div key={"i" + i} style={{marginTop:8}}><b>📄 {x.name}</b>{x.until ? ` · ${tr(lang,"до")} ${x.until.split("-").reverse().join(".")}` : ""}<div style={{fontSize:13}}>{String(x.text || "").slice(0, 1500)}</div></div>)}
+        {(source.meta.promos.lines || []).map((t, i) => <div key={"l" + i} style={{marginTop:8, fontSize:13}}>📊 {t}</div>)}
+      </details>}
       {variants.length > 1 && <><small className="muted">{tr(lang,"Вариант рассрочки")}:</small><div className="nbChips">{variants.map((x, i) => <button key={i} className={cn(i === vi && "on")} onClick={() => setVi(i)}>{nbVariantLabel(x, lang)}</button>)}</div></>}
       {variants.length === 1 && <small className="muted">{tr(lang,"Условия")}: {nbVariantLabel(v, lang)}</small>}
       {!variants.length && <small className="muted">{tr(lang,"Администратор ещё не задал условия рассрочки — показаны цены без расчёта")}</small>}
@@ -9790,9 +9833,11 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
       <div className="nbUnits">{rows.slice(0, limit).map(({u, c}) => { const hist = u.price_history || []; const last = hist[hist.length - 1];
         return <div key={u.id} className="nbUnit">
           <div className="nbUnitHead"><b>№ {u.unit_no}</b><span style={{display:"flex", gap:4, flexWrap:"wrap"}}>
+            {nbUnitPromos(u, source.meta).map((p, i) => <span key={"p" + i} className="nbStatus" title={p.text} style={{background:"#F5C518", color:"#0B0B0C"}}>🔥 {p.label || tr(lang,"Акция")}</span>)}
             {!firstImport && u.first_seen_at && Date.parse(u.first_seen_at) > week && <span className="nbStatus">{tr(lang,"новая")}</span>}
             {last && Date.parse(last.at) > week && <span className={cn("nbStatus", last.to > last.from && "busy")}>{last.to > last.from ? "↑" : "↓"} {nbUsd(last.from)}</span>}</span></div>
-          <div className="nbUnitFacts">{[u.section && `${tr(lang,"Секция")} ${u.section}`, u.floor != null && `${u.floor} ${tr(lang,"эт.")}`, u.rooms != null && (u.rooms === 0 ? tr(lang,"студия") : `${u.rooms} ${tr(lang,"комн.")}`), u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")}</div>
+          {nbUnitPromos(u, source.meta).map((p, i) => <small key={"pt" + i} style={{display:"block", color:"#B45309"}}>🔥 {p.text}</small>)}
+          <div className="nbUnitFacts">{[nbUnitQueue(u, source.meta) && source.meta?.queue_rules?.length && `${nbUnitQueue(u, source.meta)} ${tr(lang,"очередь")}`, nbUnitSection(u, source.meta) && `${tr(lang,"Секция")} ${nbUnitSection(u, source.meta)}`, u.floor != null && `${u.floor} ${tr(lang,"эт.")}`, u.rooms != null && (u.rooms === 0 ? tr(lang,"студия") : `${u.rooms} ${tr(lang,"комн.")}`), u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")}</div>
           <div className="nbUnitCalc">
             <div><small>{tr(lang,"Цена")}</small><b>{nbUsd(c?.base)}</b></div>
             {c && c.price > c.base + 1 && <div><small>{tr(lang,"В рассрочку")}</small><b>{nbUsd(c.price)}</b></div>}
@@ -9861,7 +9906,7 @@ Object.assign(uiCalendar.uk, {"Для презентации клиенту":"Д
   "Планировки — для какого дома / секции (номер как в шахматке)":"Планування — для якого будинку / секції (номер як у шахматці)", "дом":"буд.", "Не использовать":"Не використовувати", "Материалы ещё не собраны.":"Матеріали ще не зібрані.",
   "Собрать визуализации и планировки с Google Диска":"Зібрати візуалізації та планування з Google Диска", "Собираем…":"Збираємо…", "Визуализаций":"Візуалізацій", "планировок":"планувань",
   "В презентацию попадают визуализации и планировка дома квартиры. Названия ЖК, застройщика и адреса там нет — проверьте, чтобы его не было и на картинках.":"У презентацію потрапляють візуалізації та планування будинку квартири. Назви ЖК, забудовника й адреси там немає — перевірте, щоб її не було й на картинках.",
-  "Текст":"Текст", "В презентацию":"У презентацію", "Варианты оплаты в презентации":"Варіанти оплати в презентації", "Дом":"Будинок", "Наличие и площади обновлены по шахматке с Диска":"Наявність і площі оновлено за шахматкою з Диска", "Уже продано / в брони по шахматке — убрано из презентации:":"Вже продано / в броні за шахматкою — прибрано з презентації:", "Поквартирные планировки с Диска":"Поквартирні планування з Диска", "CRM сама находит на Диске папки «Поквартирные планировки» (новые секции и очереди тоже), вырезает чертёж без текста и подбирает к квартире по секции, стояку и площади. Если площадь не распознана или неверна — поправьте её здесь.":"CRM сама знаходить на Диску папки «Поквартирні планування» (нові секції та черги теж), вирізає креслення без тексту й підбирає до квартири за секцією, стояком і площею. Якщо площу не розпізнано або вона неправильна — виправте її тут.", "стояк":"стояк", "Секция":"Секція", "Планировки с Диска":"Планування з Диска", "Обновляю планировки квартир с Диска":"Оновлюю планування квартир з Диска", "Планировки квартир с Диска обновлены":"Планування квартир з Диска оновлено", "не получилось":"не вийшло", "Нет связи с сервером — проверьте интернет и обновите страницу. Квартиры и расчёты выше работают.":"Немає зв'язку із сервером — перевірте інтернет і оновіть сторінку. Квартири й розрахунки вище працюють.", "Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.":"Якщо на сайті ЖК можна натиснути на квартиру й побачити її планування — вставте посилання. CRM підбере планування до кожної квартири за номером і площею та покаже його клієнту в презентації.", "Клиент увидит только отмеченные варианты — таблицей.":"Клієнт побачить лише позначені варіанти — таблицею.", "100% оплата":"100% оплата", "Не выбран ни один вариант — в презентации будет только цена.":"Не обрано жодного варіанту — у презентації буде лише ціна.", "Планировки квартир с сайта застройщика":"Планування квартир із сайту забудовника", "Ссылка на страницу с планировками":"Посилання на сторінку з плануваннями", "Загрузить планировки квартир":"Завантажити планування квартир", "домов":"будинків", "квартир на этаже":"квартир на поверсі", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
+  "Текст":"Текст", "В презентацию":"У презентацію", "Варианты оплаты в презентации":"Варіанти оплати в презентації", "Дом":"Будинок", "очередь":"черга", "Акция":"Акція", "Акции и условия застройщика":"Акції та умови забудовника", "из шахматки и файлов на Диске":"з шахматки та файлів на Диску", "Наличие и площади обновлены по шахматке с Диска":"Наявність і площі оновлено за шахматкою з Диска", "Уже продано / в брони по шахматке — убрано из презентации:":"Вже продано / в броні за шахматкою — прибрано з презентації:", "Поквартирные планировки с Диска":"Поквартирні планування з Диска", "CRM сама находит на Диске папки «Поквартирные планировки» (новые секции и очереди тоже), вырезает чертёж без текста и подбирает к квартире по секции, стояку и площади. Если площадь не распознана или неверна — поправьте её здесь.":"CRM сама знаходить на Диску папки «Поквартирні планування» (нові секції та черги теж), вирізає креслення без тексту й підбирає до квартири за секцією, стояком і площею. Якщо площу не розпізнано або вона неправильна — виправте її тут.", "стояк":"стояк", "Секция":"Секція", "Планировки с Диска":"Планування з Диска", "Обновляю планировки квартир с Диска":"Оновлюю планування квартир з Диска", "Планировки квартир с Диска обновлены":"Планування квартир з Диска оновлено", "не получилось":"не вийшло", "Нет связи с сервером — проверьте интернет и обновите страницу. Квартиры и расчёты выше работают.":"Немає зв'язку із сервером — перевірте інтернет і оновіть сторінку. Квартири й розрахунки вище працюють.", "Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.":"Якщо на сайті ЖК можна натиснути на квартиру й побачити її планування — вставте посилання. CRM підбере планування до кожної квартири за номером і площею та покаже його клієнту в презентації.", "Клиент увидит только отмеченные варианты — таблицей.":"Клієнт побачить лише позначені варіанти — таблицею.", "100% оплата":"100% оплата", "Не выбран ни один вариант — в презентации будет только цена.":"Не обрано жодного варіанту — у презентації буде лише ціна.", "Планировки квартир с сайта застройщика":"Планування квартир із сайту забудовника", "Ссылка на страницу с планировками":"Посилання на сторінку з плануваннями", "Загрузить планировки квартир":"Завантажити планування квартир", "домов":"будинків", "квартир на этаже":"квартир на поверсі", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
   "Презентация сохранится в карточке клиента. Название ЖК клиент не увидит.":"Презентація збережеться в картці клієнта. Назву ЖК клієнт не побачить."});
 Object.assign(uiCalendar.en, {"Срок рассрочки":"Installment term", "До сдачи дома":"Until completion", "Вариант рассрочки":"Installment option"});
 // ===== Конструктор источника Новобудов (для любого агентства) =====
