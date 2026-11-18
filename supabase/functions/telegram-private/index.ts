@@ -18,7 +18,7 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const BUCKET = "news-media";
 const FIRST_SYNC_POSTS = 3;
 const MAX_POSTS_PER_RUN = 10;
-const MAX_FILE_BYTES = 50 * 1024 * 1024; // видео до 50 МБ
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // файлы до 20 МБ (больше — не хватает памяти функции); большое видео — обложкой
 const MAX_FILES_PER_POST = 20;
 const MERGE_WINDOW_SEC = 180;
 const CORS = {
@@ -216,7 +216,8 @@ async function syncSource(client: TelegramClient, src: any) {
 async function syncAgency(agencyId: number, sourceId?: number) {
   const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
   let q = db.from("feed_sources").select("*").eq("agency_id", agencyId).eq("kind", "tg_private");
-  q = sourceId ? q.eq("id", sourceId) : q.eq("active", true);
+  // сначала каналы, которые дольше всех не обновлялись — чтобы при нехватке времени не застревали одни и те же
+  q = sourceId ? q.eq("id", sourceId) : q.eq("active", true).order("last_synced_at", { ascending: true, nullsFirst: true });
   const { data: sources } = await q;
   if (!sources?.length) return [];
   if (!acc?.session || acc.status !== "connected") {
@@ -227,7 +228,14 @@ async function syncAgency(agencyId: number, sourceId?: number) {
   try {
     ({ client } = await makeClient(acc.session));
     const results = [];
-    for (const s of sources) results.push(await syncSource(client, s));
+    // лимит времени функции: новые каналы не начинаем после 100 с — остальные возьмёт следующий запуск (через 30 мин)
+    const t0 = Date.now();
+    for (const s of sources) {
+      if (!sourceId && Date.now() - t0 > 100_000) break;
+      // отметка попытки заранее: если канал «уронит» функцию, в следующий раз он пойдёт последним и не задержит остальные
+      if (!sourceId) await db.from("feed_sources").update({ last_synced_at: new Date().toISOString() }).eq("id", s.id);
+      results.push(await syncSource(client, s));
+    }
     return results;
   } catch (e) {
     const msg = humanError(e);
