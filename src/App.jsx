@@ -9493,6 +9493,8 @@ const nbCardPlanFor = (u, meta) => {
 const nbUnitPlanFor = (u, meta, pos) => {
   const items = (meta?.unit_plans?.items || []).filter(x => x.img); if(!items.length) return null;
   const no = String(u.unit_no || "").trim(), a = Number(u.area) || 0;
+  // планировки с сайта застройщика (Гефест): точное совпадение «этаж-номер» — «14.9» или «6IX4»
+  const km = no.match(/^(\d+)(?:\.|[IVXLC]+)(\d+)$/); if(km){ const hit = items.find(x => x.key === `${km[1]}-${km[2]}`); if(hit) return hit.img; if(meta?.unit_plans?.source === "gefest-site") return null; }
   const sec = String(u.section || (no.match(/^(\d+)\./) || [])[1] || "").trim();
   // планировки другой очереди не подставляем (секции 1–2 есть и в 1-й, и во 2-й очереди)
   const uq = meta?.queue_rules?.length ? nbUnitQueue(u, meta) : null;
@@ -9533,7 +9535,8 @@ function nbUnitToItem(u, source, vs, lang, {full=false, pos=null}={}){
   vs = vs.map(x => nbVariantFor(x, u, source.meta)).filter((x, i, a) => x && Object.keys(x).length && a.indexOf(x) === i);
   if(nbFullOnly(u)) full = true;
   const c = nbCalcUnit(u, plan, {});
-  const roomsTxt = u.rooms == null ? L("Квартира","Квартира") : u.rooms === 0 ? L("Студия","Студія") : `${u.rooms}-${L("комнатная квартира","кімнатна квартира")}`;
+  const office = u.property_type === "commercial" && /офис|офіс/i.test(String(u.note || ""));
+  const roomsTxt = office ? L("Офис","Офіс") : u.property_type === "commercial" ? L("Коммерческое помещение","Комерційне приміщення") : u.rooms == null ? L("Квартира","Квартира") : u.rooms === 0 ? L("Студия","Студія") : `${u.rooms}-${L("комнатная квартира","кімнатна квартира")}`;
   const house = nbUnitSection(u, source.meta), queue = nbUnitQueue(u, source.meta);
   const desc = [plan.client_text,
     [queue && `${L("Очередь","Черга")} ${queue}`, house && `${nbSectionWord(source.meta) ? L("Секция","Секція") : L("Дом","Будинок")} ${house}`, u.floor != null && `${u.floor} ${L("этаж","поверх")}`, u.area && `${u.area} м²`, u.price_m2 && `${nbUsd(u.price_m2)}/м²`].filter(Boolean).join(" · ")].filter(Boolean).join("\n\n");
@@ -9549,7 +9552,7 @@ function nbUnitToItem(u, source, vs, lang, {full=false, pos=null}={}){
     rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null,
     // есть планировка квартиры с сайта — план этажа целиком не нужен (он показывается с выделенной квартирой)
     layout:flat_plan || hideP ? null : (nbUnitPlanFor(u, source.meta, pos) || nbCardPlanFor(u, source.meta) || nbLayoutFor(u, source.meta?.media)), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
-    advantages:adv, condition:L("Новостройка","Новобудова"), property_type:L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
+    advantages:adv, condition:L("Новостройка","Новобудова"), property_type:office ? L("Офис в бизнес-центре","Офіс у бізнес-центрі") : u.property_type === "commercial" ? L("Коммерческое помещение","Комерційне приміщення") : L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
 }
 // Выбор клиента для презентации (только клиенты, которых менеджер видит по правам)
 function NbPickClient({lang, onPick, onClose, extra=null}){
@@ -9808,7 +9811,9 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   // Актуальное наличие: сервер сверяет шахматку на Диске (не чаще раза в 10 минут, без изменений — только отпечаток файла)
   const syncFresh = async () => { try{ const {data} = await supabase.functions.invoke("nb-fresh", {body:{source_id:source.id}}); return data || {}; }catch{ return {}; } };
   useEffect(() => { let alive = true;
-    loadUnits().then(list => { if(alive) setUnits(list); });
+    loadUnits().then(list => { if(!alive) return; setUnits(list);
+      // ЖК только с офисами/коммерцией (БЦ) — сразу показываем всё, а не «Квартиры» (там было бы пусто)
+      if(list.length && !list.some(u => (u.property_type || "apartment") === "apartment")) setF(x => ({...x, type:""})); });
     syncFresh().then(async r => { if(!alive) return; setFresh({changed:!!r.changed});
       if(r.changed){ const list = await loadUnits(); if(alive) setUnits(list); } });
     return () => { alive = false; }; }, [source.id]);
@@ -9841,7 +9846,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
     try { if(navigator.share){ await navigator.share({text:lines}); return; } await navigator.clipboard.writeText(lines); setNote(tr(lang,"Текст скопирован — вставьте клиенту в Viber / Telegram / WhatsApp")); setTimeout(() => setNote(""), 3000); } catch {}
   };
   return <div className="card nbCalc" style={{border:"1.5px solid #F5C518", marginBottom:12}}>
-    <button className="nbHelpHead" onClick={() => setOpen(!open)}>🏠 <b>{tr(lang,"Наличие и рассрочка")}</b> · {units.filter(u => (u.property_type || "apartment") === "apartment").length} {tr(lang,"свободных")}{updated ? ` · ${tr(lang,"обновлено")} ${updated}` : ""} <i>{open ? "▴" : "▾"}</i></button>
+    <button className="nbHelpHead" onClick={() => setOpen(!open)}>🏠 <b>{tr(lang,"Наличие и рассрочка")}</b> · {units.filter(u => (u.property_type || "apartment") === "apartment").length || units.length} {tr(lang,"свободных")}{updated ? ` · ${tr(lang,"обновлено")} ${updated}` : ""} <i>{open ? "▴" : "▾"}</i></button>
     {fresh?.changed && <small className="muted" style={{display:"block", margin:"4px 2px"}}>🔄 {tr(lang,"Наличие и площади обновлены по шахматке с Диска")}</small>}
     {planJob && <small className={planJob.error ? "feedSrcErr" : "muted"} style={{display:"block", margin:"4px 2px"}}>🗂 {planJob.error ? `${tr(lang,"Планировки с Диска")}: ${planJob.error}`
       : planJob.total != null && planJob.done == null ? `${tr(lang,"Обновляю планировки квартир с Диска")}: ${planJob.i + 1} / ${planJob.total}`
