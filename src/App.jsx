@@ -4652,7 +4652,7 @@ function presPaymentTable(ctx,{payment,lang,x,y,w}){
   if(rows.length){
     ctx.save();ctx.shadowColor="rgba(212,160,23,.28)";ctx.shadowBlur=30;ctx.shadowOffsetY=10;ctx.fillStyle=PRES_Y.row;
     if(rows.length<=3){
-      const params=[[L("Первый взнос","Перший внесок"),r=>[usd(r.first),r.pct?`${r.pct}% ${L("от стоимости","від вартості")}`:""]],[L("Платёж в месяц","Щомісячний платіж"),r=>r.monthly!=null?[usd(r.monthly),`× ${r.months} ${L("мес.","міс.")}`]:["—",""]],[L("Срок рассрочки","Термін розстрочки"),r=>[term(r),""]],[L("Общая стоимость","Загальна вартість"),r=>[usd(r.total),""]]];
+      const params=[[L("Первый взнос","Перший внесок"),r=>[usd(r.first),[r.pct?`${r.pct}% ${L("от стоимости","від вартості")}`:"",r.disc?`${L("скидка","знижка")} ${r.disc_pct||""}% −${usd(r.disc)}`:""].filter(Boolean).join(" · ")]],[L("Платёж в месяц","Щомісячний платіж"),r=>r.monthly!=null?[usd(r.monthly),`× ${r.months} ${L("мес.","міс.")}`]:["—",""]],[L("Срок рассрочки","Термін розстрочки"),r=>[term(r),""]],[L("Общая стоимость","Загальна вартість"),r=>[usd(r.total),""]]];
       const headH=rows.length>1?96:0,rowH=rows.length===1?112:104,H=headH+params.length*rowH;
       presRound(ctx,x,y,w,H,26);ctx.fill();ctx.restore();
       ctx.save();presRound(ctx,x,y,w,H,26);ctx.clip();
@@ -4665,14 +4665,14 @@ function presPaymentTable(ctx,{payment,lang,x,y,w}){
         ctx.fillStyle=PRES_Y.deep;ctx.font=`800 22px ${PRES_SANS}`;presText(ctx,lab,x+28,ry+rowH/2+8,labW-40,26,2);
         rows.forEach((r,i)=>{const cx=x+labW+i*colW;ctx.fillStyle=PRES_Y.line;ctx.fillRect(cx,ry,2,rowH);const [big,small]=f(r);
           ctx.fillStyle=PRES_Y.ink;presFit(ctx,big,800,PRES_SANS,rows.length===1?44:rows.length===2?38:32,22,colW-44,1);ctx.fillText(big,cx+24,ry+(small?rowH/2+4:rowH/2+14));
-          if(small){ctx.fillStyle=PRES_Y.deep;ctx.font=`700 18px ${PRES_SANS}`;ctx.fillText(small,cx+24,ry+rowH/2+34);}});});
+          if(small){ctx.fillStyle=PRES_Y.deep;presFit(ctx,small,700,PRES_SANS,18,12,colW-44,1);ctx.fillText(small,cx+24,ry+rowH/2+34);}});});
       ctx.restore();y+=H+22;
     }else{
       const cols=[[L("Вариант","Варіант"),.34],[L("Первый взнос","Перший внесок"),.22],[L("В месяц","Щомісяця"),.22],[L("Итого","Разом"),.22]],headH=70,rowH=84,H=headH+rows.length*rowH;
       presRound(ctx,x,y,w,H,26);ctx.fill();ctx.restore();ctx.save();presRound(ctx,x,y,w,H,26);ctx.clip();
       ctx.fillStyle=PRES_Y.head;ctx.fillRect(x,y,w,headH);let cx=x;ctx.font=`800 20px ${PRES_SANS}`;ctx.fillStyle=PRES_Y.ink;cols.forEach(([t,f])=>{ctx.fillText(t,cx+22,y+44);cx+=w*f;});
       rows.forEach((r,k)=>{const ry=y+headH+k*rowH;ctx.fillStyle=k%2?PRES_Y.row2:PRES_Y.row;ctx.fillRect(x,ry,w,rowH);if(k){ctx.fillStyle=PRES_Y.line;ctx.fillRect(x,ry,w,2);}
-        const vals=[vname(r),usd(r.first),r.monthly!=null?`${usd(r.monthly)} × ${r.months}`:"—",usd(r.total)];let cx2=x;
+        const vals=[vname(r),usd(r.first)+(r.disc?` (−${r.disc_pct||""}%)`:""),r.monthly!=null?`${usd(r.monthly)} × ${r.months}`:"—",usd(r.total)];let cx2=x;
         vals.forEach((v,i)=>{ctx.fillStyle=PRES_Y.ink;presFit(ctx,v,800,PRES_SANS,i?28:22,16,w*cols[i][1]-34,1);ctx.fillText(v,cx2+22,ry+rowH/2+10);cx2+=w*cols[i][1];});});
       ctx.restore();y+=H+22;
     }
@@ -9416,6 +9416,16 @@ function nbVariantFor(v, u, meta){
   const own = nbPlanVariants(meta).filter(x => nbVarFits(x, q));
   return own.find(x => Number(x.first_pct) === Number(v.first_pct)) || own[0] || v;
 }
+// Предложение «ПВ от X% — скидка Y% на первый взнос»: тот же срок очереди, ПВ = порог скидки.
+// null — если скидки нет, она закончилась или выбранный вариант уже с таким ПВ.
+function nbDiscOffer(u, meta, v){
+  const plan = meta?.plan || {}, from = Number(plan.first_disc_from), pct = Number(plan.first_disc_pct);
+  if(!from || !pct || (plan.first_disc_until && new Date().toISOString().slice(0, 10) > plan.first_disc_until)) return null;
+  const cur = nbVariantFor(v || {}, u, meta) || {}; if(Number(cur.first_pct) >= from) return null;
+  const q = nbUnitQueue(u, meta); const vs = nbPlanVariants(meta).filter(x => nbVarFits(x, q));
+  const base = vs.find(x => Number(x.first_pct) === from && Number(x.months) === Number(cur.months)) || {...cur, first_pct:from};
+  const c = nbCalcUnit(u, plan, base); return c && c.disc > 0 ? {...c, disc_pct:pct, from} : null;
+}
 // Акции застройщика на конкретные квартиры (meta.plan.unit_promos): {text, until, sections, areas, no}
 function nbUnitPromos(u, meta){
   const today = new Date().toISOString().slice(0, 10), a = Number(u.area);
@@ -9494,7 +9504,7 @@ function nbPosMap(units){
 // Строки таблицы оплаты — только варианты, которые выбрал менеджер
 function nbPaymentFor(u, plan, vs, withFull){
   const rows = vs.map(x => { const k = nbCalcUnit(u, plan, x); if(!k) return null;
-    return {pct:k.pct || 0, first:Math.round(k.first), months:k.months || null, monthly:k.monthly != null ? Math.round(k.monthly) : null, total:Math.round(k.price - (k.disc || 0)),
+    return {pct:k.pct || 0, first:Math.round(k.first), disc:k.disc > 0 ? Math.round(k.disc) : null, disc_pct:k.disc > 0 ? Number(plan.first_disc_pct) || null : null, months:k.months || null, monthly:k.monthly != null ? Math.round(k.monthly) : null, total:Math.round(k.price - (k.disc || 0)),
       rate:Number(x.annual_rate) || null, until:x.until ? String(x.until).slice(0, 10) : null}; }).filter(Boolean).slice(0, 6);
   const c = nbCalcUnit(u, plan, {});
   const full = withFull && c ? Math.round(c.full ?? c.base) : null;
@@ -9797,6 +9807,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
     const lines = [`${source.title}${u.section ? `, ${tr(lang,"секция")} ${u.section}` : ""}`, `№ ${u.unit_no}${u.floor != null ? ` · ${u.floor} ${tr(lang,"эт.")}` : ""}${u.rooms != null ? ` · ${u.rooms === 0 ? tr(lang,"студия") : u.rooms + " " + tr(lang,"комн.")}` : ""} · ${u.area} м²`,
       `${tr(lang,"Цена")}: ${nbUsd(c?.base)}${u.price_m2 ? ` (${nbUsd(u.price_m2)}/м²)` : ""}`,
       c && c.months ? `${tr(lang,"Рассрочка")}: ${tr(lang,"первый взнос")} ${c.pct}% — ${nbUsd(c.first)}, ${tr(lang,"далее")} ${nbUsd(c.monthly)} × ${c.months} ${tr(lang,"мес")}${c.price > c.base ? ` (${tr(lang,"итого")} ${nbUsd(c.price - c.disc)})` : ""}` : null,
+      (() => { const o = nbDiscOffer(u, source.meta, v); return o ? `${tr(lang,"При ПВ")} ${o.from}% — ${tr(lang,"скидка")} ${o.disc_pct}% ${tr(lang,"на первый взнос")}: ${nbUsd(o.first)} (${tr(lang,"экономия")} ${nbUsd(o.disc)}), ${tr(lang,"далее")} ${nbUsd(o.monthly)} × ${o.months} ${tr(lang,"мес")}` : null; })(),
       plan.full_disc_pct ? `${tr(lang,"При 100% оплате")}: ${nbUsd(c?.full)}` : null].filter(Boolean).join("\n");
     try { if(navigator.share){ await navigator.share({text:lines}); return; } await navigator.clipboard.writeText(lines); setNote(tr(lang,"Текст скопирован — вставьте клиенту в Viber / Telegram / WhatsApp")); setTimeout(() => setNote(""), 3000); } catch {}
   };
@@ -9841,10 +9852,11 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
           <div className="nbUnitCalc">
             <div><small>{tr(lang,"Цена")}</small><b>{nbUsd(c?.base)}</b></div>
             {c && c.price > c.base + 1 && <div><small>{tr(lang,"В рассрочку")}</small><b>{nbUsd(c.price)}</b></div>}
-            {c && c.pct > 0 && <div><small>{tr(lang,"Первый взнос")} {c.pct}%</small><b>{nbUsd(c.first)}</b></div>}
+            {c && c.pct > 0 && <div><small>{tr(lang,"Первый взнос")} {c.pct}%{c.disc > 0 ? ` · −${plan.first_disc_pct}%` : ""}</small><b>{nbUsd(c.first)}</b></div>}
             {c?.monthly != null && <div><small>{tr(lang,"В месяц")} × {c.months}</small><b>{nbUsd(c.monthly)}</b></div>}
             {plan.full_disc_pct ? <div><small>100% −{plan.full_disc_pct}%</small><b>{nbUsd(c?.full)}</b></div> : null}
           </div>
+          {(() => { const o = nbDiscOffer(u, source.meta, v); return o && <small style={{display:"block", color:"#B45309", margin:"2px 0 4px"}}>💡 {tr(lang,"При ПВ")} {o.from}% {tr(lang,"скидка")} {o.disc_pct}%: {tr(lang,"взнос")} {nbUsd(o.first)} ({tr(lang,"экономия")} {nbUsd(o.disc)}), {tr(lang,"далее")} {nbUsd(o.monthly)} × {o.months}</small>; })()}
           <div style={{display:"flex", gap:6}}>
             <button className="nbPriceBtn" style={{flex:1}} onClick={() => share({u, c})}>📤 {tr(lang,"Текст")}</button>
             <button className="nbPriceBtn" style={{flex:1, ...(picked.some(x => x.id === u.id) ? {background:"#F5C518", color:"#0B0B0C"} : {})}} onClick={() => setPicked(p => p.some(x => x.id === u.id) ? p.filter(x => x.id !== u.id) : [...p, u])}>{picked.some(x => x.id === u.id) ? "✓ " + tr(lang,"В презентации") : "＋ " + tr(lang,"В презентацию")}</button>
@@ -9906,7 +9918,7 @@ Object.assign(uiCalendar.uk, {"Для презентации клиенту":"Д
   "Планировки — для какого дома / секции (номер как в шахматке)":"Планування — для якого будинку / секції (номер як у шахматці)", "дом":"буд.", "Не использовать":"Не використовувати", "Материалы ещё не собраны.":"Матеріали ще не зібрані.",
   "Собрать визуализации и планировки с Google Диска":"Зібрати візуалізації та планування з Google Диска", "Собираем…":"Збираємо…", "Визуализаций":"Візуалізацій", "планировок":"планувань",
   "В презентацию попадают визуализации и планировка дома квартиры. Названия ЖК, застройщика и адреса там нет — проверьте, чтобы его не было и на картинках.":"У презентацію потрапляють візуалізації та планування будинку квартири. Назви ЖК, забудовника й адреси там немає — перевірте, щоб її не було й на картинках.",
-  "Текст":"Текст", "В презентацию":"У презентацію", "Варианты оплаты в презентации":"Варіанти оплати в презентації", "Дом":"Будинок", "очередь":"черга", "Акция":"Акція", "Акции и условия застройщика":"Акції та умови забудовника", "из шахматки и файлов на Диске":"з шахматки та файлів на Диску", "Наличие и площади обновлены по шахматке с Диска":"Наявність і площі оновлено за шахматкою з Диска", "Уже продано / в брони по шахматке — убрано из презентации:":"Вже продано / в броні за шахматкою — прибрано з презентації:", "Поквартирные планировки с Диска":"Поквартирні планування з Диска", "CRM сама находит на Диске папки «Поквартирные планировки» (новые секции и очереди тоже), вырезает чертёж без текста и подбирает к квартире по секции, стояку и площади. Если площадь не распознана или неверна — поправьте её здесь.":"CRM сама знаходить на Диску папки «Поквартирні планування» (нові секції та черги теж), вирізає креслення без тексту й підбирає до квартири за секцією, стояком і площею. Якщо площу не розпізнано або вона неправильна — виправте її тут.", "стояк":"стояк", "Секция":"Секція", "Планировки с Диска":"Планування з Диска", "Обновляю планировки квартир с Диска":"Оновлюю планування квартир з Диска", "Планировки квартир с Диска обновлены":"Планування квартир з Диска оновлено", "не получилось":"не вийшло", "Нет связи с сервером — проверьте интернет и обновите страницу. Квартиры и расчёты выше работают.":"Немає зв'язку із сервером — перевірте інтернет і оновіть сторінку. Квартири й розрахунки вище працюють.", "Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.":"Якщо на сайті ЖК можна натиснути на квартиру й побачити її планування — вставте посилання. CRM підбере планування до кожної квартири за номером і площею та покаже його клієнту в презентації.", "Клиент увидит только отмеченные варианты — таблицей.":"Клієнт побачить лише позначені варіанти — таблицею.", "100% оплата":"100% оплата", "Не выбран ни один вариант — в презентации будет только цена.":"Не обрано жодного варіанту — у презентації буде лише ціна.", "Планировки квартир с сайта застройщика":"Планування квартир із сайту забудовника", "Ссылка на страницу с планировками":"Посилання на сторінку з плануваннями", "Загрузить планировки квартир":"Завантажити планування квартир", "домов":"будинків", "квартир на этаже":"квартир на поверсі", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
+  "Текст":"Текст", "В презентацию":"У презентацію", "Варианты оплаты в презентации":"Варіанти оплати в презентації", "Дом":"Будинок", "При ПВ":"При ПВ", "скидка":"знижка", "взнос":"внесок", "экономия":"економія", "на первый взнос":"на перший внесок", "очередь":"черга", "Акция":"Акція", "Акции и условия застройщика":"Акції та умови забудовника", "из шахматки и файлов на Диске":"з шахматки та файлів на Диску", "Наличие и площади обновлены по шахматке с Диска":"Наявність і площі оновлено за шахматкою з Диска", "Уже продано / в брони по шахматке — убрано из презентации:":"Вже продано / в броні за шахматкою — прибрано з презентації:", "Поквартирные планировки с Диска":"Поквартирні планування з Диска", "CRM сама находит на Диске папки «Поквартирные планировки» (новые секции и очереди тоже), вырезает чертёж без текста и подбирает к квартире по секции, стояку и площади. Если площадь не распознана или неверна — поправьте её здесь.":"CRM сама знаходить на Диску папки «Поквартирні планування» (нові секції та черги теж), вирізає креслення без тексту й підбирає до квартири за секцією, стояком і площею. Якщо площу не розпізнано або вона неправильна — виправте її тут.", "стояк":"стояк", "Секция":"Секція", "Планировки с Диска":"Планування з Диска", "Обновляю планировки квартир с Диска":"Оновлюю планування квартир з Диска", "Планировки квартир с Диска обновлены":"Планування квартир з Диска оновлено", "не получилось":"не вийшло", "Нет связи с сервером — проверьте интернет и обновите страницу. Квартиры и расчёты выше работают.":"Немає зв'язку із сервером — перевірте інтернет і оновіть сторінку. Квартири й розрахунки вище працюють.", "Если на сайте ЖК можно нажать на квартиру и увидеть её планировку — вставьте ссылку. CRM подберёт планировку к каждой квартире по номеру и площади и покажет её клиенту в презентации.":"Якщо на сайті ЖК можна натиснути на квартиру й побачити її планування — вставте посилання. CRM підбере планування до кожної квартири за номером і площею та покаже його клієнту в презентації.", "Клиент увидит только отмеченные варианты — таблицей.":"Клієнт побачить лише позначені варіанти — таблицею.", "100% оплата":"100% оплата", "Не выбран ни один вариант — в презентации будет только цена.":"Не обрано жодного варіанту — у презентації буде лише ціна.", "Планировки квартир с сайта застройщика":"Планування квартир із сайту забудовника", "Ссылка на страницу с планировками":"Посилання на сторінку з плануваннями", "Загрузить планировки квартир":"Завантажити планування квартир", "домов":"будинків", "квартир на этаже":"квартир на поверсі", "В презентации":"У презентації", "Презентация клиенту":"Презентація клієнту", "Для какого клиента презентация?":"Для якого клієнта презентація?", "Имя или телефон клиента":"Ім'я або телефон клієнта",
   "Презентация сохранится в карточке клиента. Название ЖК клиент не увидит.":"Презентація збережеться в картці клієнта. Назву ЖК клієнт не побачить."});
 Object.assign(uiCalendar.en, {"Срок рассрочки":"Installment term", "До сдачи дома":"Until completion", "Вариант рассрочки":"Installment option"});
 // ===== Конструктор источника Новобудов (для любого агентства) =====

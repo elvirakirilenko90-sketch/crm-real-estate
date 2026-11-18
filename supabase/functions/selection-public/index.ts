@@ -33,7 +33,7 @@ async function selectionByToken(token: string) {
 const n0 = (v: unknown) => { if (v == null || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 function payOf(p: any) {
   if (!p || typeof p !== "object") return null;
-  const rows = (Array.isArray(p.rows) ? p.rows : []).slice(0, 6).map((r: any) => ({ pct: n0(r?.pct), first: n0(r?.first), months: n0(r?.months), monthly: n0(r?.monthly), total: n0(r?.total), rate: n0(r?.rate),
+  const rows = (Array.isArray(p.rows) ? p.rows : []).slice(0, 6).map((r: any) => ({ pct: n0(r?.pct), first: n0(r?.first), disc: n0(r?.disc), disc_pct: n0(r?.disc_pct), months: n0(r?.months), monthly: n0(r?.monthly), total: n0(r?.total), rate: n0(r?.rate),
     until: /^\d{4}-\d{2}(-\d{2})?$/.test(String(r?.until || "")) ? r.until : null }));
   const out = { full: n0(p.full), full_disc: n0(p.full_disc), rows };
   return out.full != null || rows.length ? out : null;

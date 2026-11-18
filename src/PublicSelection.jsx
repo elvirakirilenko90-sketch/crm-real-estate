@@ -24,7 +24,8 @@ export function PaymentTable({ p }) {
   const big = { fontSize: rows.length >= 3 ? 19 : rows.length === 2 ? 18 : 22, fontWeight: 900, color: Y.ink, lineHeight: 1.15, whiteSpace: "nowrap" };
   const small = { display: "block", fontSize: 12, fontWeight: 700, color: Y.deep, marginTop: 2 };
   const params = [
-    ["Перший внесок", r => <><span style={big}>{usd(r.first)}</span>{r.pct ? <span style={small}>{r.pct}% від вартості</span> : null}</>],
+    ["Перший внесок", r => <><span style={big}>{usd(r.first)}</span>{r.pct ? <span style={small}>{r.pct}% від вартості</span> : null}
+      {r.disc ? <span style={{ ...small, color: "#0F7B3F" }}>знижка {r.disc_pct ? `${r.disc_pct}% ` : ""}−{usd(r.disc)}</span> : null}</>],
     ["Щомісячний платіж", r => r.monthly != null ? <><span style={big}>{usd(r.monthly)}</span><span style={small}>× {r.months} міс.</span></> : <span style={big}>—</span>],
     ["Термін розстрочки", r => <span style={{ ...big, fontSize: Math.min(big.fontSize, 18), whiteSpace: "normal" }}>{termOf(r)}</span>],
     ["Загальна вартість", r => <span style={big}>{usd(r.total)}</span>],
