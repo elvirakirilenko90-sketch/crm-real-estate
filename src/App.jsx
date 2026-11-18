@@ -9327,6 +9327,8 @@ const nbPlanVariants = (meta) => { const p = meta?.plan || {};
   return meta?.first_pct != null || meta?.months ? [{first_pct:meta.first_pct, months:meta.months}] : []; };
 const nbMonthsUntil = (d) => { if(!d) return null; const t = new Date(d); if(isNaN(+t)) return null; const n = new Date();
   return Math.max(1, (t.getFullYear() - n.getFullYear()) * 12 + (t.getMonth() - n.getMonth())); };
+// Скидка при 100% оплате; если это акция до даты (plan.full_disc_until) — после неё 0
+const nbFullDisc = (plan) => plan?.full_disc_until && new Date().toISOString().slice(0, 10) > plan.full_disc_until ? 0 : Number(plan?.full_disc_pct) || 0;
 // Расчёт одной квартиры: v — вариант условий; pct / months — то, что вписал менеджер (необязательно)
 function nbCalcUnit(u, plan, v, pct, months){
   const area = Number(u.area) || 0;
@@ -9342,13 +9344,13 @@ function nbCalcUnit(u, plan, v, pct, months){
   const disc = discOn && plan?.first_disc_pct && p >= (Number(plan.first_disc_from) || 0) ? first * Number(plan.first_disc_pct) / 100 : 0;
   const rest = price - first; const r = (Number(vv.annual_rate) || 0) / 1200;
   const monthly = m > 0 && rest > 0 ? (r > 0 ? rest * r / (1 - Math.pow(1 + r, -m)) : rest / m) : null;
-  const std = {base, price, pct:p, first:first - disc, disc, rest, months:m || null, monthly, full:base * (1 - (Number(plan?.full_disc_pct) || 0) / 100)};
+  const std = {base, price, pct:p, first:first - disc, disc, rest, months:m || null, monthly, full:base * (1 - (nbFullDisc(plan)) / 100)};
   // Свои формулы ЖК (калькулятор застройщика): считаются поверх стандартных, пустая формула = стандартная
   const F = plan?.formulas || {};
   if(!NB_CALC_FORMULAS.some(f => String(F[f.key] || "").trim())) return std;
   const vars = {площадь:area, цена_м2:Number(u.price_m2) || (area ? base / area : 0), цена:base, пв:p, срок:m, удорожание_м2:Number(vv.markup_m2) || 0,
     удорожание_проц:Number(vv.markup_pct) || 0, ставка:Number(vv.annual_rate) || 0, скидка_пв:p >= (Number(plan?.first_disc_from) || 0) ? Number(plan?.first_disc_pct) || 0 : 0,
-    скидка_100:Number(plan?.full_disc_pct) || 0, этаж:Number(u.floor) || 0, комнат:Number(u.rooms) || 0};
+    скидка_100:nbFullDisc(plan), этаж:Number(u.floor) || 0, комнат:Number(u.rooms) || 0};
   (plan.params || []).forEach(x => { if(x.key) vars[String(x.key).toLowerCase()] = Number(x.value) || 0; });
   const out = {};
   for(const f of NB_CALC_FORMULAS){
@@ -9512,7 +9514,7 @@ function nbPaymentFor(u, plan, vs, withFull){
       rate:Number(x.annual_rate) || null, until:x.until ? String(x.until).slice(0, 10) : null}; }).filter(Boolean).slice(0, 6);
   const c = nbCalcUnit(u, plan, {}); const resale = nbFullOnly(u);
   const full = withFull && c ? Math.round(resale ? c.base : (c.full ?? c.base)) : null;
-  return rows.length || full != null ? {rows, ...(full != null ? {full, full_disc:resale ? null : Number(plan.full_disc_pct) || null} : {})} : null;
+  return rows.length || full != null ? {rows, ...(full != null ? {full, full_disc:resale ? null : nbFullDisc(plan) || null} : {})} : null;
 }
 // Квартира → объект презентации. Названия ЖК, застройщика и адреса нет — только район, дом, этаж, площадь
 // и расчёт рассрочки ТОЛЬКО по вариантам, которые выбрал менеджер (vs), таблицей.
@@ -9585,7 +9587,7 @@ function NbPlanModal({s, lang, onClose, onSaved}){
   const save = async (after) => {
     setBusy("save"); setMsg("");
     // акции по квартирам и срок акции на ПВ задаются не в этом окне — сохраняем как были
-    const plan = JSON.parse(JSON.stringify({unit_promos:m0.plan?.unit_promos, first_disc_until:m0.plan?.first_disc_until, ...cleanPlan()}));
+    const plan = JSON.parse(JSON.stringify({unit_promos:m0.plan?.unit_promos, first_disc_until:m0.plan?.first_disc_until, full_disc_until:m0.plan?.full_disc_until, ...cleanPlan()}));
     const v0 = plan.variants[Math.min(def, plan.variants.length - 1)] || {};
     const price_files = files.split(/\s+/).map(x => x.trim()).filter(Boolean).map(id => ({id}));
     // ПВ и срок по умолчанию дублируем в старые поля — по ним работают фильтры и подписи на карточке
@@ -9819,7 +9821,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
       `${tr(lang,"Цена")}: ${nbUsd(c?.base)}${u.price_m2 ? ` (${nbUsd(u.price_m2)}/м²)` : ""}`,
       c && c.months ? `${tr(lang,"Рассрочка")}: ${tr(lang,"первый взнос")} ${c.pct}% — ${nbUsd(c.first)}, ${tr(lang,"далее")} ${nbUsd(c.monthly)} × ${c.months} ${tr(lang,"мес")}${c.price > c.base ? ` (${tr(lang,"итого")} ${nbUsd(c.price - c.disc)})` : ""}` : null,
       (() => { const o = nbDiscOffer(u, source.meta, v); return o ? `${tr(lang,"При ПВ")} ${o.from}% — ${tr(lang,"скидка")} ${o.disc_pct}% ${tr(lang,"на первый взнос")}: ${nbUsd(o.first)} (${tr(lang,"экономия")} ${nbUsd(o.disc)}), ${tr(lang,"далее")} ${nbUsd(o.monthly)} × ${o.months} ${tr(lang,"мес")}` : null; })(),
-      plan.full_disc_pct ? `${tr(lang,"При 100% оплате")}: ${nbUsd(c?.full)}` : null].filter(Boolean).join("\n");
+      nbFullDisc(plan) ? `${tr(lang,"При 100% оплате")}: ${nbUsd(c?.full)}` : null].filter(Boolean).join("\n");
     try { if(navigator.share){ await navigator.share({text:lines}); return; } await navigator.clipboard.writeText(lines); setNote(tr(lang,"Текст скопирован — вставьте клиенту в Viber / Telegram / WhatsApp")); setTimeout(() => setNote(""), 3000); } catch {}
   };
   return <div className="card nbCalc" style={{border:"1.5px solid #F5C518", marginBottom:12}}>
@@ -9867,7 +9869,7 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
             {c && c.price > c.base + 1 && <div><small>{tr(lang,"В рассрочку")}</small><b>{nbUsd(c.price)}</b></div>}
             {c && c.pct > 0 && <div><small>{tr(lang,"Первый взнос")} {c.pct}%{c.disc > 0 ? ` · −${plan.first_disc_pct}%` : ""}</small><b>{nbUsd(c.first)}</b></div>}
             {c?.monthly != null && <div><small>{tr(lang,"В месяц")} × {c.months}</small><b>{nbUsd(c.monthly)}</b></div>}
-            {plan.full_disc_pct ? <div><small>100% −{plan.full_disc_pct}%</small><b>{nbUsd(c?.full)}</b></div> : null}
+            {nbFullDisc(plan) ? <div><small>100% −{nbFullDisc(plan)}%</small><b>{nbUsd(c?.full)}</b></div> : null}
           </div>
           {(() => { const o = nbDiscOffer(u, source.meta, v); return o && <small style={{display:"block", color:"#B45309", margin:"2px 0 4px"}}>💡 {tr(lang,"При ПВ")} {o.from}% {tr(lang,"скидка")} {o.disc_pct}%: {tr(lang,"взнос")} {nbUsd(o.first)} ({tr(lang,"экономия")} {nbUsd(o.disc)}), {tr(lang,"далее")} {nbUsd(o.monthly)} × {o.months}</small>; })()}
           <div style={{display:"flex", gap:6}}>
@@ -9881,12 +9883,12 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
         <Button variant="soft" onClick={() => setPicked([])}>×</Button></div>}
     </>}
     {pickClient && <NbPickClient lang={lang} onClose={() => setPickClient(false)}
-      extra={(variants.length > 0 || plan.full_disc_pct) && <div className="card" style={{border:"1.5px solid #F5C518", padding:12, margin:"4px 0 10px", display:"grid", gap:8}}>
+      extra={(variants.length > 0 || nbFullDisc(plan)) && <div className="card" style={{border:"1.5px solid #F5C518", padding:12, margin:"4px 0 10px", display:"grid", gap:8}}>
         <b>💳 {tr(lang,"Варианты оплаты в презентации")}</b>
         <small className="muted">{tr(lang,"Клиент увидит только отмеченные варианты — таблицей.")}</small>
         <div className="nbChips">
           {variants.map((x, i) => <button key={i} type="button" className={cn(presSel.includes(i) && "on")} onClick={() => setPresSel(p => p.includes(i) ? p.filter(k => k !== i) : [...p, i].sort((a, b) => a - b))}>{presSel.includes(i) ? "✓ " : ""}{nbVariantLabel(x, lang)}</button>)}
-          <button type="button" className={cn(presFull && "on")} onClick={() => setPresFull(!presFull)}>{presFull ? "✓ " : ""}{tr(lang,"100% оплата")}{plan.full_disc_pct ? ` −${plan.full_disc_pct}%` : ""}</button>
+          <button type="button" className={cn(presFull && "on")} onClick={() => setPresFull(!presFull)}>{presFull ? "✓ " : ""}{tr(lang,"100% оплата")}{nbFullDisc(plan) ? ` −${nbFullDisc(plan)}%` : ""}</button>
         </div>
         {!presSel.length && !presFull && <small style={{color:"#ef4444"}}>{tr(lang,"Не выбран ни один вариант — в презентации будет только цена.")}</small>}
       </div>}
