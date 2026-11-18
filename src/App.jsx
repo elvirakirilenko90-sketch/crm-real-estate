@@ -9541,12 +9541,14 @@ function nbUnitToItem(u, source, vs, lang, {full=false, pos=null}={}){
   const firsts = [...new Set(vs.map(x => Number(x.first_pct)).filter(n => n > 0))], terms = [...new Set(vs.map(x => nbMonthsUntil(x.until) ?? Number(x.months)).filter(n => n > 0))];
   const adv = [firsts.length && `${L("Первый взнос","Перший внесок")} ${firsts.length > 1 ? L("от ","від ") : ""}${Math.min(...firsts)}%`, terms.length && `${L("Рассрочка","Розстрочка")} ${terms.length > 1 ? L("до ","до ") : ""}${Math.max(...terms)} ${L("мес.","міс.")}`,
     vs.some(x => !Number(x.markup_m2) && !Number(x.markup_pct) && !Number(x.annual_rate) && (x.months || x.until)) && L("Без удорожания","Без подорожчання"), L("Новостройка","Новобудова")].filter(Boolean);
-  const photos = (source.meta?.media?.renders || []).filter(x => !x.off && x.url).map(x => x.url).slice(0, 10);
-  const flat_plan = nbFlatPlanFor(u, source.meta);
+  // meta.pres_hide_renders / pres_hide_plans — не показывать в презентации визуализации / планировки ЖК (данные не удаляются)
+  const hideR = !!source.meta?.pres_hide_renders, hideP = !!source.meta?.pres_hide_plans;
+  const photos = hideR ? [] : (source.meta?.media?.renders || []).filter(x => !x.off && x.url).map(x => x.url).slice(0, 10);
+  const flat_plan = hideP ? null : nbFlatPlanFor(u, source.meta);
   return {own:false, nbUnit:true, nb_unit_id:u.id, title:`${roomsTxt}, ${u.area} м²`, price:Math.round((c?.base ?? Number(u.total_price)) || 0) || null, currency:"USD", district:source.meta?.district || null, city:source.meta?.city || null,
     rooms:u.rooms, area:u.area, floor:u.floor, description:desc, photo_urls:photos, main_photo_url:photos[0] || null,
     // есть планировка квартиры с сайта — план этажа целиком не нужен (он показывается с выделенной квартирой)
-    layout:flat_plan ? null : (nbUnitPlanFor(u, source.meta, pos) || nbCardPlanFor(u, source.meta) || nbLayoutFor(u, source.meta?.media)), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
+    layout:flat_plan || hideP ? null : (nbUnitPlanFor(u, source.meta, pos) || nbCardPlanFor(u, source.meta) || nbLayoutFor(u, source.meta?.media)), flat_plan, payment:nbPaymentFor(u, plan, vs, full),
     advantages:adv, condition:L("Новостройка","Новобудова"), property_type:L("Квартира в новостройке","Квартира в новобудові"), contact_name:"", contact_phone:""};
 }
 // Выбор клиента для презентации (только клиенты, которых менеджер видит по правам)
