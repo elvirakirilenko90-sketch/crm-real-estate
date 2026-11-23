@@ -9141,7 +9141,8 @@ function tgCodeWhere(lang, r){
   return T[k][L] + (k === "email" && r?.where?.match(/\(([^)]+)\)/) ? ` (${r.where.match(/\(([^)]+)\)/)[1]})` : "");
 }
 
-function TelegramAccountBox({lang, onStatus}){
+// slot="inbox" — отдельный аккаунт для входящих лидов (личка, комментарии каналов); без slot — аккаунт ленты
+function TelegramAccountBox({lang, onStatus, slot}){
   const [st,setSt] = useState(null);
   const [phone,setPhone] = useState("");
   const [code,setCode] = useState("");
@@ -9150,7 +9151,7 @@ function TelegramAccountBox({lang, onStatus}){
   const [busy,setBusy] = useState("");
   const [msg,setMsg] = useState("");
   const call = async (body) => {
-    const {data,error} = await supabase.functions.invoke("telegram-private", {body});
+    const {data,error} = await supabase.functions.invoke("telegram-private", {body: slot ? {...body, slot} : body});
     if(error) return {ok:false, error:error.message || String(error)};
     return data || {ok:false};
   };
@@ -9181,7 +9182,7 @@ function TelegramAccountBox({lang, onStatus}){
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/telegram-private`, {
         method:"POST", signal: ctl.signal,
         headers:{"Content-Type":"application/json", apikey: SUPABASE_KEY, Authorization:`Bearer ${session?.access_token || SUPABASE_KEY}`},
-        body: JSON.stringify({action:"qr_stream"}),
+        body: JSON.stringify(slot ? {action:"qr_stream", slot} : {action:"qr_stream"}),
       });
       if(!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
       const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
@@ -9260,15 +9261,15 @@ function TelegramAccountBox({lang, onStatus}){
 
   // 2) Аккаунт подключён
   if(st.status === "connected") return <div className="tgAcc ok">
-    <div className="tgAccRow"><span>✓ {tr(lang,"Telegram-аккаунт агентства подключён")}: <b>{st.name}</b>{st.phone ? ` (${st.phone})` : ""}</span>
-      <Button variant="soft" onClick={() => { if(window.confirm(tr(lang,"Отключить Telegram-аккаунт? Закрытые каналы перестанут обновляться, опубликованные посты останутся."))) run("logout", {action:"logout"}); }} disabled={!!busy}>{busy === "logout" ? "…" : tr(lang,"Отключить аккаунт")}</Button>
+    <div className="tgAccRow"><span>✓ {tr(lang, slot === "inbox" ? "Telegram для лидов подключён" : "Telegram-аккаунт агентства подключён")}: <b>{st.name}</b>{st.phone ? ` (${st.phone})` : ""}</span>
+      <Button variant="soft" onClick={() => { if(window.confirm(tr(lang, slot === "inbox" ? "Отключить Telegram для лидов? Новые сообщения перестанут приходить в CRM, созданные лиды останутся." : "Отключить Telegram-аккаунт? Закрытые каналы перестанут обновляться, опубликованные посты останутся."))) run("logout", {action:"logout"}); }} disabled={!!busy}>{busy === "logout" ? "…" : tr(lang,"Отключить аккаунт")}</Button>
     </div>
     {msg && <div className="feedSrcCheck bad">⚠ {msg}</div>}
   </div>;
 
   // 3) Вход: телефон → код → пароль
   return <div className="tgAcc">
-    <b>{tr(lang,"Подключите Telegram-аккаунт агентства")}</b>
+    <b>{tr(lang, slot === "inbox" ? "Подключите Telegram, куда пишут клиенты" : "Подключите Telegram-аккаунт агентства")}</b>
     <p className="muted">{tr(lang,"Закрытые каналы CRM читает от имени аккаунта, который в них состоит (или вступит по ссылке-приглашению). Лучше использовать отдельный рабочий номер агентства.")}</p>
     {st.status !== "password_needed" && qrBlock}
     {st.status !== "password_needed" && !qr && <p className="muted tgOr">{tr(lang,"или по номеру телефона и коду:")}</p>}
@@ -10636,6 +10637,12 @@ function FeedSourcesAdmin({currentProfile, lang, onChanged}){
     <div className="row"><section><h3>{tr(lang,"Источники ленты")}</h3>
       <p className="muted">{tr(lang,"Подключите Telegram-каналы и папки Google Drive — новые публикации будут сами появляться в ленте вашего агентства каждые 30 минут. Менеджеры видят только название источника, ссылку — нет.")}</p></section>
       {list.length > 0 && <Button variant="soft" onClick={() => runSync(null)} disabled={!!busy}>{busy === "sync-all" ? "…" : "↻ " + tr(lang,"Обновить все сейчас")}</Button>}
+    </div>
+
+    <div className="feedSrcAdd">
+      <b>{tr(lang,"Telegram для входящих лидов")}</b>
+      <p className="muted">{tr(lang,"Личные сообщения (кроме сохранённых контактов) и комментарии под постами ваших каналов сами становятся лидами: весь текст клиента — в запросе. Проверка каждые 5 минут.")}</p>
+      <TelegramAccountBox lang={lang} slot="inbox"/>
     </div>
 
     <div className="feedSrcAdd">

@@ -250,8 +250,8 @@ async function syncAgency(agencyId: number, sourceId?: number) {
 // Не берём: сохранённые контакты (свои люди), ботов, свои исходящие, историю до первого запуска.
 // Состояние: crm_private_settings.tg_inbox_state = {since, seen:{peerId:lastMsgId}}.
 async function tgInbox(agencyId: number, dry = false) {
-  const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
-  if (!acc?.session || acc.status !== "connected") return { ok: false, error: "Telegram-аккаунт агентства не подключён" };
+  const { data: acc } = await db.from("telegram_inbox_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
+  if (!acc?.session || acc.status !== "connected") return { ok: false, error: "Telegram для лидов не подключён" };
   const st: any = JSON.parse((await setting("tg_inbox_state")) || "{}"); const now = Math.floor(Date.now() / 1000);
   if (!st.since && dry) { st.since = now - 86400; st.seen = {}; }
   if (!st.since) { st.since = now; st.seen = {}; await db.from("crm_private_settings").upsert({ key: "tg_inbox_state", value: JSON.stringify(st) }); return { ok: true, started: true }; }
@@ -330,11 +330,14 @@ Deno.serve(async (req) => {
   if (!isTech && !isDirector) return json({ error: "Только для администратора" }, 403);
   if (!agencyId) return json({ error: "Не определено агентство пользователя" }, 400);
   const action = String(body.action || "status");
+  // slot "inbox" — отдельный аккаунт для входящих лидов (таблица telegram_inbox_accounts), иначе — аккаунт ленты
+  const TBL = body.slot === "inbox" ? "telegram_inbox_accounts" : "telegram_accounts";
+  if (body.slot === "inbox" && (action === "resolve" || action === "sync")) return json({ error: "Не для аккаунта лидов" }, 400);
 
   try {
     if (action === "status") {
       const configured = !!(await setting("tg_api_id")) && !!(await setting("tg_api_hash"));
-      const { data: acc } = await db.from("telegram_accounts").select("status,phone,tg_name,updated_at").eq("agency_id", agencyId).maybeSingle();
+      const { data: acc } = await db.from(TBL).select("status,phone,tg_name,updated_at").eq("agency_id", agencyId).maybeSingle();
       const phone = acc?.phone ? acc.phone.replace(/^(\+?\d{5})\d+(\d{2})$/, "$1•••••$2") : null;
       return json({ ok: true, configured, can_configure: !!isTech, status: acc?.status || "new", phone, name: acc?.tg_name || null });
     }
@@ -353,7 +356,7 @@ Deno.serve(async (req) => {
       if (/^380\d{9}$/.test(phone)) phone = "+" + phone;
       let acc: any = null;
       if (action === "resend") {
-        ({ data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle());
+        ({ data: acc } = await db.from(TBL).select("*").eq("agency_id", agencyId).maybeSingle());
         if (!acc?.temp_session || !acc?.phone_code_hash) return json({ ok: false, error: "Сначала нажмите «Получить код»" });
         phone = acc.phone;
       } else if (!/^\+\d{10,15}$/.test(phone)) return json({ ok: false, error: "Введите номер в формате +380XXXXXXXXX" });
@@ -373,7 +376,7 @@ Deno.serve(async (req) => {
           t.includes("Call") || t.includes("FlashCall") || t.includes("MissedCall") ? "звонком на этот номер — код это последние цифры номера звонящего / продиктует робот" :
           "способом " + t;
         const next = String(res.nextType?.className || "");
-        await db.from("telegram_accounts").upsert({ agency_id: agencyId, phone, status: "code_sent", temp_session: (client.session as any).save(), phone_code_hash: res.phoneCodeHash, connected_by_email: me || null, updated_at: new Date().toISOString() });
+        await db.from(TBL).upsert({ agency_id: agencyId, phone, status: "code_sent", temp_session: (client.session as any).save(), phone_code_hash: res.phoneCodeHash, connected_by_email: me || null, updated_at: new Date().toISOString() });
         console.log("telegram-private sent code", t, "next", next);
         return json({ ok: true, type: t, where, can_resend: !!next, timeout: res.timeout || null });
       } finally { await close(client); }
@@ -394,7 +397,7 @@ Deno.serve(async (req) => {
         let timer: number | undefined;
         try {
           await client.connect();
-          await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "qr_wait", temp_session: null, phone_code_hash: null, connected_by_email: me || null, updated_at: new Date().toISOString() });
+          await db.from(TBL).upsert({ agency_id: agencyId, status: "qr_wait", temp_session: null, phone_code_hash: null, connected_by_email: me || null, updated_at: new Date().toISOString() });
           const login = client.signInUserWithQrCode({ apiId, apiHash }, {
             qrCode: async ({ token }: any) => {
               const bytes = new Uint8Array(token); let bin = ""; for (const x of bytes) bin += String.fromCharCode(x);
@@ -405,7 +408,7 @@ Deno.serve(async (req) => {
             },
             password: async () => {
               // Вход подтверждён, нужен облачный пароль: сохраняем эту же сессию — пароль введут в CRM
-              await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "password_needed", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
+              await db.from(TBL).upsert({ agency_id: agencyId, status: "password_needed", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
               console.log("telegram-private qr_stream password_needed");
               send({ need_password: true });
               throw new Error("NEED_PASSWORD");
@@ -416,13 +419,13 @@ Deno.serve(async (req) => {
           await Promise.race([login, timeout]);
           const me2: any = await client.getMe();
           const name = [me2?.firstName, me2?.lastName].filter(Boolean).join(" ") || me2?.username || "Telegram";
-          await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, phone: me2?.phone ? "+" + me2.phone : null, tg_name: name, connected_by_email: me || null, updated_at: new Date().toISOString() });
+          await db.from(TBL).upsert({ agency_id: agencyId, status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, phone: me2?.phone ? "+" + me2.phone : null, tg_name: name, connected_by_email: me || null, updated_at: new Date().toISOString() });
           console.log("telegram-private qr_stream connected");
           send({ connected: true, name });
         } catch (e) {
           const m = String((e as any)?.errorMessage || (e as Error)?.message || e);
           console.log("telegram-private qr_stream end", m);
-          const { data: now } = await db.from("telegram_accounts").select("status").eq("agency_id", agencyId).maybeSingle();
+          const { data: now } = await db.from(TBL).select("status").eq("agency_id", agencyId).maybeSingle();
           if (now?.status === "password_needed") send({ need_password: true });
           else if (m.includes("QR_TIMEOUT")) send({ timeout: true });
           else send({ error: humanError(e) });
@@ -434,7 +437,7 @@ Deno.serve(async (req) => {
 
     // Вход по QR-коду / подтверждению в приложении Telegram (без кода из СМС/чата)
     if (action === "qr_start" || action === "qr_check") {
-      const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
+      const { data: acc } = await db.from(TBL).select("*").eq("agency_id", agencyId).maybeSingle();
       // Всегда продолжаем начатую попытку: если вход уже подтвердили в Telegram, новая попытка его бы потеряла
       const session = acc?.status === "qr_wait" ? (acc.temp_session || "") : "";
       if (action === "qr_check" && !session) return json({ ok: false, error: "Нажмите «Войти по QR-коду» ещё раз" });
@@ -449,7 +452,7 @@ Deno.serve(async (req) => {
           }
         } catch (e) {
           if (String((e as any)?.errorMessage || e).includes("SESSION_PASSWORD_NEEDED")) {
-            await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "password_needed", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
+            await db.from(TBL).upsert({ agency_id: agencyId, status: "password_needed", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
             return json({ ok: false, need_password: true, error: "Вход подтверждён. У аккаунта включена двухэтапная проверка — введите пароль" });
           }
           throw e;
@@ -458,20 +461,20 @@ Deno.serve(async (req) => {
         if (r.className === "auth.LoginTokenSuccess") {
           const me2: any = await client.getMe();
           const name = [me2?.firstName, me2?.lastName].filter(Boolean).join(" ") || me2?.username || "Telegram";
-          await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, phone: me2?.phone ? "+" + me2.phone : null, tg_name: name, connected_by_email: me || null, updated_at: new Date().toISOString() });
+          await db.from(TBL).upsert({ agency_id: agencyId, status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, phone: me2?.phone ? "+" + me2.phone : null, tg_name: name, connected_by_email: me || null, updated_at: new Date().toISOString() });
           return json({ ok: true, connected: true, name });
         }
         const bytes = new Uint8Array(r.token);
         let bin = ""; for (const b of bytes) bin += String.fromCharCode(b);
         const url = "tg://login?token=" + btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
         const svg = await QRCode.toString(url, { type: "svg", margin: 1, width: 240, color: { dark: "#000000", light: "#ffffff" } });
-        await db.from("telegram_accounts").upsert({ agency_id: agencyId, status: "qr_wait", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
+        await db.from(TBL).upsert({ agency_id: agencyId, status: "qr_wait", temp_session: (client.session as any).save(), connected_by_email: me || null, updated_at: new Date().toISOString() });
         return json({ ok: true, waiting: true, url, svg, expires: r.expires || null });
       } finally { await close(client); }
     }
 
     if (action === "sign_in") {
-      const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
+      const { data: acc } = await db.from(TBL).select("*").eq("agency_id", agencyId).maybeSingle();
       if (!acc?.temp_session) return json({ ok: false, error: "Сначала нажмите «Получить код»" });
       const { client, apiId, apiHash } = await makeClient(acc.temp_session);
       try {
@@ -493,7 +496,7 @@ Deno.serve(async (req) => {
             if (!String((e as any)?.errorMessage || e).includes("SESSION_PASSWORD_NEEDED")) throw e;
             needPwd = true;
             if (!body.password) {
-              await db.from("telegram_accounts").update({ status: "password_needed", temp_session: (client.session as any).save(), updated_at: new Date().toISOString() }).eq("agency_id", agencyId);
+              await db.from(TBL).update({ status: "password_needed", temp_session: (client.session as any).save(), updated_at: new Date().toISOString() }).eq("agency_id", agencyId);
               return json({ ok: false, need_password: true, error: "У аккаунта включена двухэтапная проверка — введите пароль" });
             }
           }
@@ -504,20 +507,20 @@ Deno.serve(async (req) => {
         }
         const me2: any = await client.getMe();
         const name = [me2?.firstName, me2?.lastName].filter(Boolean).join(" ") || me2?.username || "Telegram";
-        await db.from("telegram_accounts").update({ status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, tg_name: name, updated_at: new Date().toISOString() }).eq("agency_id", agencyId);
+        await db.from(TBL).update({ status: "connected", session: (client.session as any).save(), temp_session: null, phone_code_hash: null, tg_name: name, updated_at: new Date().toISOString() }).eq("agency_id", agencyId);
         return json({ ok: true, name });
       } finally { await close(client); }
     }
 
     if (action === "logout") {
-      const { data: acc } = await db.from("telegram_accounts").select("session").eq("agency_id", agencyId).maybeSingle();
+      const { data: acc } = await db.from(TBL).select("session").eq("agency_id", agencyId).maybeSingle();
       if (acc?.session) { let c: TelegramClient | undefined; try { ({ client: c } = await makeClient(acc.session)); await c.invoke(new Api.auth.LogOut()); } catch { /* */ } finally { await close(c); } }
-      await db.from("telegram_accounts").delete().eq("agency_id", agencyId);
+      await db.from(TBL).delete().eq("agency_id", agencyId);
       return json({ ok: true });
     }
 
     if (action === "resolve") {
-      const { data: acc } = await db.from("telegram_accounts").select("session,status").eq("agency_id", agencyId).maybeSingle();
+      const { data: acc } = await db.from(TBL).select("session,status").eq("agency_id", agencyId).maybeSingle();
       if (!acc?.session || acc.status !== "connected") return json({ ok: false, error: "Сначала подключите Telegram-аккаунт агентства" });
       const { client } = await makeClient(acc.session);
       try {
