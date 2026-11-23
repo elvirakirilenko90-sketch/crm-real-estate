@@ -17,13 +17,27 @@ const usd = v => v == null ? "—" : `$${Math.round(Number(v)).toLocaleString("u
 const termOf = r => r.until ? `до ${r.until.slice(5, 7)}.${r.until.slice(0, 4)}` : r.months ? `${r.months} міс.` : "—";
 const varName = r => [r.pct ? `ПВ ${r.pct}%` : null, r.months || r.until ? termOf(r) : null, r.rate ? `${r.rate}% річних` : null].filter(Boolean).join(" · ") || "Розстрочка";
 
+// Альтернатива «50% платежу» (row.half, считает сервер): до здачі — половина щомісячного платежу,
+// решта тіла — після здачі за after_months міс. під after_rate% річних на залишок, що зменшується (ануїтет).
+const halfParams = (big, small) => [
+  ["Перший внесок", r => <><span style={big}>{usd(r.first)}</span>{r.pct ? <span style={small}>{r.pct}% від вартості</span> : null}</>],
+  ["До здачі будинку", r => <><span style={big}>{usd(r.half.monthly)}</span><span style={small}>× {r.half.months} міс. · 50% платежу</span></>],
+  ["Після здачі", r => <><span style={big}>{usd(r.half.after_monthly)}</span><span style={small}>× {r.half.after_months} міс. · {r.half.after_rate}% річних</span></>],
+  ["Загальна вартість", r => <><span style={big}>{usd(r.half.total)}</span>{r.half.overpay ? <span style={small}>переплата {usd(r.half.overpay)}</span> : null}</>],
+];
+
 export function PaymentTable({ p }) {
-  const rows = (p?.rows || []).filter(Boolean);
-  if (!rows.length && p?.full == null) return null;
+  const [mode, setMode] = useState("full");
+  const all = (p?.rows || []).filter(Boolean);
+  if (!all.length && p?.full == null) return null;
+  const hasHalf = all.some(r => r.half);
+  const half = hasHalf && mode === "half";
+  const rows = half ? all.filter(r => r.half) : all;
   const cell = { padding: "12px 14px", borderBottom: `1px solid ${Y.line}`, fontVariantNumeric: "tabular-nums" };
   const big = { fontSize: rows.length >= 3 ? 19 : rows.length === 2 ? 18 : 22, fontWeight: 900, color: Y.ink, lineHeight: 1.15, whiteSpace: "nowrap" };
   const small = { display: "block", fontSize: 12, fontWeight: 700, color: Y.deep, marginTop: 2 };
-  const params = [
+  const tab = on => ({ flex: 1, border: 0, borderRadius: 999, padding: "9px 10px", fontWeight: 900, fontSize: 13, lineHeight: 1.2, cursor: "pointer", background: on ? "#111" : "transparent", color: on ? "#fff" : "#3f3f46" });
+  const params = half ? halfParams(big, small) : [
     ["Перший внесок", r => <><span style={big}>{usd(r.first)}</span>{r.pct ? <span style={small}>{r.pct}% від вартості</span> : null}
       {r.disc ? <span style={{ ...small, color: "#0F7B3F" }}>знижка {r.disc_pct ? `${r.disc_pct}% ` : ""}−{usd(r.disc)}</span> : null}</>],
     ["Щомісячний платіж", r => r.monthly != null ? <><span style={big}>{usd(r.monthly)}</span><span style={small}>× {r.months} міс.</span></> : <span style={big}>—</span>],
@@ -35,6 +49,15 @@ export function PaymentTable({ p }) {
       <span style={{ width: 34, height: 34, borderRadius: 12, background: Y.head, display: "grid", placeItems: "center", fontSize: 18 }}>💳</span>
       <b style={{ fontSize: 19 }}>{rows.length > 1 ? "Варіанти оплати" : rows.length ? "Умови оплати" : "Оплата"}</b>
     </div>
+    {hasHalf && <>
+      <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 999, background: "#f4f4f5", marginBottom: 8 }}>
+        <button type="button" style={tab(!half)} onClick={() => setMode("full")}>Повна розстрочка</button>
+        <button type="button" style={tab(half)} onClick={() => setMode("half")}>50% платежу до здачі</button>
+      </div>
+      <p style={{ margin: "0 0 10px", fontSize: 13, lineHeight: 1.45, color: "#52525b" }}>{half
+        ? `До здачі будинку ви сплачуєте лише половину щомісячного платежу. Решту (${usd(rows[0]?.half?.after_principal)}${rows.length > 1 ? " — для варіанту 1" : ""}) — після здачі: ${rows[0]?.half?.after_months} щомісячних платежів під ${rows[0]?.half?.after_rate}% річних на залишок, який щомісяця зменшується.`
+        : "Рівні щомісячні платежі до здачі будинку. Натисніть «50% платежу до здачі», щоб побачити альтернативний варіант з меншим платежем зараз."}</p>
+    </>}
     {rows.length > 0 && <div style={{ borderRadius: 18, overflow: "hidden", border: `1.5px solid ${Y.line}`, boxShadow: "0 8px 24px rgba(212,160,23,.18)" }}>
       {rows.length <= 2 ? <table style={{ width: "100%", borderCollapse: "collapse", background: Y.row, tableLayout: "fixed" }}>
         {rows.length > 1 && <thead><tr style={{ background: Y.head }}>
@@ -63,7 +86,9 @@ export function PaymentTable({ p }) {
   </section>;
 }
 
-// Квартира, вырезанная из плана этажа по контуру (как на сайте застройщика), и та же квартира на плане этажа
+// Квартира, вырезанная из плана этажа по контуру (как на сайте застройщика), и та же квартира на плане этажа.
+// p.hq — отдельный чёткий план квартиры (например, Одеські Традиції): тогда во вкладке «Квартира» показывается он,
+// в жёлтой рамке, а не вырез из (мелкого) плана этажа.
 export function FlatPlan({ p }) {
   const [view, setView] = useState("flat");
   if (!p?.img || !p.d || !Array.isArray(p.box)) return null;
@@ -80,7 +105,9 @@ export function FlatPlan({ p }) {
       <button type="button" style={tab(view === "floor")} onClick={() => setView("floor")}>Розташування на поверсі</button>
     </div>
     <div style={{ borderRadius: 20, background: "#fff", border: "1px solid #e4e4e7", padding: 10, boxShadow: "0 10px 30px rgba(0,0,0,.06)" }}>
-      {view === "flat"
+      {view === "flat" && p.hq
+        ? <img src={p.hq} alt="Планування квартири" loading="lazy" style={{ width: "100%", height: "auto", maxHeight: "70vh", objectFit: "contain", display: "block", boxSizing: "border-box", border: `5px solid ${Y.head}`, borderRadius: 6, background: "#fff" }} />
+        : view === "flat"
         ? <svg viewBox={`${bx - pad} ${by - pad} ${bw + pad * 2} ${bh + pad * 2}`} style={{ width: "100%", height: "auto", maxHeight: "70vh", display: "block" }} role="img" aria-label="Планування квартири">
             <defs><clipPath id={id}><path d={p.d} /></clipPath></defs>
             <image href={p.img} x="0" y="0" width={W} height={H} clipPath={`url(#${id})`} preserveAspectRatio="none" />
