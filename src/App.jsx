@@ -1010,18 +1010,19 @@ function LoginScreen({onLogin}) {
 
 function Sidebar({page,setPage,role,lang}) {
   const canSeeHelp = role === "Администратор директор" || role === "Администратор тех отдел";
-  const items = [["home","Главная","⌂"],["feed","Лента","▤"],["clients","Канбан и клиенты","👥"],["calendar","Календарь","📅"],["properties","Вторичка","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["analytics","Статистика/Отчетность","📊"],["tools","Аналитика","⌁"],...(canSeeHelp ? [["help","Помощь менеджерам","🔔"]] : []),...(role === "Администратор тех отдел" ? [["access","Доступы","🔐"]] : []),["more","Ещё","☰"]];
+  const items = [["home","Главная","⌂"],["feed","Лента","▤"],["clients","Канбан и клиенты","👥"],["calendar","Календарь","📅"],["properties","Вторичка","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["analytics","Статистика/Отчетность","📊"],["tools","Аналитика","⌁"],...(canSeeHelp ? [["inbox","Нераспределённые лиды","📥"],["help","Помощь менеджерам","🔔"]] : []),...(role === "Администратор тех отдел" ? [["access","Доступы","🔐"]] : []),["more","Ещё","☰"]];
   return <aside className="sidebar"><div className="logo"><div>♛</div><section><b>CRM Real Estate</b><span>Premium SaaS</span></section></div><div className="roleBox">{role}</div>{items.map(([id,label,icon])=><button key={id} onClick={()=>setPage(id)} className={cn("sideBtn", page===id && "active")}><span>{icon}</span>{tr(lang,label)}</button>)}</aside>;
 }
 
 function Top({page,setPage,agencyName,lang,agencyId}) {
-  const titles = {home:"Главная",feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",properties:"Вторичка",deals:"Сделки",analytics:"Статистика/Отчетность",tools:"Аналитика",newbuilds:"Новобудови",help:"Помощь менеджерам",access:"Доступы",more:"Еще"};
+  const titles = {home:"Главная",feed:"Лента новостей",clients:"Клиенты",calendar:"Календарь",properties:"Вторичка",deals:"Сделки",analytics:"Статистика/Отчетность",tools:"Аналитика",newbuilds:"Новобудови",help:"Помощь менеджерам",inbox:"Нераспределённые лиды",access:"Доступы",more:"Еще"};
   const logo = typeof loadAgencyBrand === "function" ? loadAgencyBrand(agencyId).logo_url : "";
   return <div className="top"><div className="topLine"><div style={{minWidth:0}}><p>♛ {agencyName || "CRM Real Estate"}</p><h1>{tr(lang,titles[page])}</h1></div><button className="agencyTop" aria-label={tr(lang,"Ещё")} onClick={()=>setPage("more")}>{logo ? <img src={logo} alt="" style={{width:"100%",height:"100%",objectFit:"contain",borderRadius:12,background:"#fff"}}/> : String(agencyName || "CRM").trim().charAt(0).toUpperCase()}</button></div><div className="search">🔎 <input placeholder={tr(lang,"Поиск по CRM...")} /></div></div>;
 }
 
-function Bottom({page,setPage,lang}) {
-  const items = [["home","Главная","⌂"],["feed","Лента","▤"],["clients","Клиенты","👥"],["calendar","Календарь","📅"],["properties","Объекты","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["tools","Аналитика","📊"],["more","Ещё","☰"]];
+function Bottom({page,setPage,lang,role}) {
+  const isBoss = role === "Администратор директор" || role === "Администратор тех отдел";
+  const items = [["home","Главная","⌂"],["feed","Лента","▤"],["clients","Клиенты","👥"],...(isBoss ? [["inbox","Лиды","📥"]] : []),["calendar","Календарь","📅"],["properties","Объекты","🏢"],["newbuilds","Новобудови","🏗"],["deals","Сделки","💼"],["tools","Аналитика","📊"],["more","Ещё","☰"]];
   return <nav className="bottom">{items.map(([id,label,icon])=><button key={id} className={page===id ? "active" : ""} onClick={()=>setPage(id)}><span>{icon}</span>{tr(lang,label)}</button>)}</nav>;
 }
 
@@ -7917,6 +7918,68 @@ function HelpCard({h, lead, lang, currentProfile, onOpen, onAnswered}){
   </div>;
 }
 
+// «Нераспределённые лиды»: обращения из Telegram / Instagram / Facebook / TikTok (таблица inbox_leads, пишет lead-inbox).
+// Директор и тех. отдел видят весь текст клиента и отдают обращение менеджеру — тогда в «Клиентах» появляется «Новый Лид».
+// Ничего не удаляется: «Отклонить» только переносит обращение во вкладку «Отклонённые».
+const INBOX_ICON = {telegram:"✈️", instagram:"📸", facebook:"📘", tiktok:"🎵"};
+function UnassignedLeads({users, lang="ru", onOpenLead, onChanged}){
+  const [rows,setRows] = useState([]);
+  const [filter,setFilter] = useState("new");
+  const [pick,setPick] = useState({});
+  const [busy,setBusy] = useState(0);
+  const [msg,setMsg] = useState("");
+  const load = async () => {
+    const {data} = await supabase.from("inbox_leads").select("*").order("last_at",{ascending:false}).limit(300);
+    setRows(data || []);
+  };
+  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+  const managers = (users || []).filter(u => u.access !== false && u.status !== "blocked" && u.email).sort((a,b) => String(a.full_name || a.email).localeCompare(String(b.full_name || b.email)));
+  const act = async (r, action) => {
+    if(action === "assign" && !pick[r.id]) { setMsg(tr(lang,"Выберите менеджера")); return; }
+    if(action === "reject" && !window.confirm(tr(lang,"Отклонить обращение? Оно перейдёт во вкладку «Отклонённые», лид не создаётся."))) return;
+    setBusy(r.id); setMsg("");
+    const {data,error} = await supabase.functions.invoke("lead-inbox", {body: action === "assign" ? {action, id:r.id, manager_email:pick[r.id]} : {action, id:r.id}});
+    setBusy(0);
+    if(error || !data?.ok) { setMsg((data && data.error) || error?.message || tr(lang,"Не получилось")); return; }
+    setMsg(action === "assign" ? `✓ ${tr(lang,"Лид отдан")}: ${data.manager}` : tr(lang,"Обращение отклонено"));
+    await load(); onChanged && onChanged();
+  };
+  const n = k => rows.filter(r => r.status === k).length;
+  const list = rows.filter(r => r.status === filter);
+  const when = v => v ? new Date(v).toLocaleString(lang==="en"?"en-GB":lang==="uk"?"uk-UA":"ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
+  const who = email => { const u = (users || []).find(x => String(x.email).toLowerCase() === String(email || "").toLowerCase()); return u?.full_name || email || ""; };
+  return <main className="screen">
+    <div className="card dark"><h2>📥 {tr(lang,"Нераспределённые лиды")}</h2><p>{tr(lang,"Сообщения и комментарии клиентов из Telegram, Instagram, Facebook и TikTok. Выберите менеджера — в «Клиентах» появится «Новый Лид» со всем текстом клиента. Новые сообщения того же клиента дописываются сюда же. Обновляется само.")}</p></div>
+    <div className="nbChips">
+      <button className={cn(filter === "new" && "on")} onClick={() => setFilter("new")}>📥 {tr(lang,"Новые")} · {n("new")}</button>
+      <button className={cn(filter === "assigned" && "on")} onClick={() => setFilter("assigned")}>✓ {tr(lang,"Отданы")} · {n("assigned")}</button>
+      <button className={cn(filter === "rejected" && "on")} onClick={() => setFilter("rejected")}>✕ {tr(lang,"Отклонённые")} · {n("rejected")}</button>
+    </div>
+    {msg && <div className="card amber">{msg}</div>}
+    {!list.length && <div className="card"><p className="muted">{filter === "new" ? tr(lang,"Новых обращений нет. Как только клиент напишет — оно появится здесь.") : tr(lang,"Пусто")}</p></div>}
+    {list.map(r => <div key={r.id} className="card">
+      <div className="row"><section style={{minWidth:0}}>
+        <b>{INBOX_ICON[r.platform] || "💬"} {r.name || (r.nick ? "@" + r.nick : tr(lang,"Без имени"))}</b>
+        {r.name && r.nick && <span className="muted"> · @{r.nick}</span>}
+        <p className="muted">{r.source}{r.account ? ` · @${r.account}` : ""} · {when(r.last_at)}{r.msg_count > 1 ? ` · ${r.msg_count} ${tr(lang,"сообщ.")}` : ""}</p>
+        {r.phone ? <p>📞 <a href={`tel:${String(r.phone).replace(/[^\d+]/g,"")}`}>{r.phone}</a></p> : <p className="muted">{tr(lang,"Телефона нет — только ник")}</p>}
+      </section></div>
+      {r.existing_lead_id && <p className="muted">⚠️ {tr(lang,"Этот номер уже есть в CRM")} · <a href="#" onClick={e => { e.preventDefault(); onOpenLead && onOpenLead(r.existing_lead_id); }}>{tr(lang,"открыть карточку")}</a></p>}
+      <div style={{whiteSpace:"pre-wrap", wordBreak:"break-word", fontSize:14, margin:"8px 0", padding:"10px 12px", borderRadius:12, background:"rgba(127,127,127,.08)"}}>{r.messages}</div>
+      {r.status === "new" && <div className="grid2">
+        <select className="input" value={pick[r.id] || ""} onChange={e => setPick(p => ({...p, [r.id]: e.target.value}))}>
+          <option value="">{tr(lang,"Кому отдать…")}</option>
+          {managers.map(u => <option key={u.email} value={u.email}>{u.full_name || u.email}</option>)}
+        </select>
+        <Button onClick={() => act(r, "assign")} disabled={busy === r.id}>{busy === r.id ? "…" : tr(lang,"Отдать менеджеру")}</Button>
+      </div>}
+      {r.status === "new" && <Button variant="soft" onClick={() => act(r, "reject")} disabled={busy === r.id}>{tr(lang,"Отклонить (спам / не клиент)")}</Button>}
+      {r.status === "assigned" && <p className="muted">✓ {tr(lang,"Отдан")}: <b>{who(r.assigned_to)}</b> · {when(r.decided_at)}{r.lead_id ? <> · <a href="#" onClick={e => { e.preventDefault(); onOpenLead && onOpenLead(r.lead_id); }}>{tr(lang,"открыть лид")}</a></> : null}</p>}
+      {r.status === "rejected" && <p className="muted">✕ {tr(lang,"Отклонено")} · {when(r.decided_at)}</p>}
+    </div>)}
+  </main>;
+}
+
 function Help({help,setHelp,leads,setLeads,onOpen,currentProfile,role,lang="ru"}) {
   const canSeeHelp = role === "Администратор директор" || role === "Администратор тех отдел";
   const [filter,setFilter] = useState("open");
@@ -12088,7 +12151,7 @@ export default function App(){
   }
 
   useEffect(() => {
-    if (page === "help" && !(role === "Администратор директор" || role === "Администратор тех отдел")) {
+    if ((page === "help" || page === "inbox") && !(role === "Администратор директор" || role === "Администратор тех отдел")) {
       setPage("clients");
     }
   }, [page, role, setPage]);
@@ -12142,11 +12205,12 @@ export default function App(){
         {page==="analytics"&&<StatisticsReporting onOpenLead={openLeadById} leads={visibleLeads} properties={properties} events={visibleEvents} role={role} users={users} activities={activities} currentProfile={currentProfile} dealRecords={deals}/>} 
         {page==="tools"&&<AnalyticsWorkspace lang={lang} currentProfile={currentProfile} properties={properties} leads={visibleLeads} onOpenProperty={setProperty} agencyName={agencyName} theme={theme}/>} 
         {page==="help"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<Help help={help} setHelp={setHelp} setLeads={setLeads} leads={visibleLeads} onOpen={setLead} currentProfile={currentProfile} role={role} lang={lang}/>} 
+        {page==="inbox"&&(role==="Администратор директор"||role==="Администратор тех отдел")&&<UnassignedLeads users={users} lang={lang} onOpenLead={openLeadById} onChanged={()=>loadFromSupabase(currentProfile)}/>}
         {page==="access"&&role==="Администратор тех отдел"&&<Access agencies={agencies} setAgencies={setAgencies} users={users} setUsers={setUsers}/>} 
         {/* Новобудови временно пустой раздел; компонент NewBuilds и данные ЖК сохранены, вернуть: <NewBuilds role={role} leads={visibleLeads} currentProfile={currentProfile}/> */}
         {page==="newbuilds"&&<NewBuildsHub currentProfile={currentProfile} role={role} lang={lang} agencyName={agencyName}/>}
         {page==="more"&&<More onLeadsImported={()=>loadFromSupabase(currentProfile)} onOpenLead={openLeadById} role={role} setRole={setRole} setPage={setPage} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang} leads={leads} setLeads={setLeads} users={users} currentProfile={currentProfile} onLogout={signOut} agencyName={agencyName}/>} 
-        <Bottom page={page} setPage={setPage} lang={lang}/>
+        <Bottom page={page} setPage={setPage} lang={lang} role={role}/>
         {currentProfile?.email&&<FirstTouchWatcher currentProfile={currentProfile} leads={leads} onOpenLead={openLeadById} lang={lang}/>}
         {currentProfile?.email&&<ClientReactionNotifier me={currentProfile.email} onOpenLead={openLeadById} lang={lang}/>}
         {currentProfile?.email&&!omList&&<ObjectMatchNotifier om={om} properties={properties} onOpenLead={openLeadById} onOpenProperty={setProperty} lang={lang}/>}
