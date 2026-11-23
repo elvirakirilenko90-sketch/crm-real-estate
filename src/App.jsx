@@ -9464,6 +9464,8 @@ function nbDiscOffer(u, meta, v){
 }
 // Акции застройщика на конкретные квартиры (meta.plan.unit_promos): {text, until, sections, areas, no}
 function nbUnitPromos(u, meta){
+  // акция — только для квартир в продаже: у проданных/бронь метку 🔥 не показываем (иначе «акционных» больше, чем есть)
+  if(u?.status && u.status !== "free") return [];
   const today = new Date().toISOString().slice(0, 10), a = Number(u.area);
   return (meta?.plan?.unit_promos || []).filter(p => (!p.until || p.until >= today)
     && (!p.sections || p.sections.map(String).includes(nbUnitSection(u, meta)))
