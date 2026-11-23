@@ -9846,7 +9846,11 @@ function NbUnitsPanel({source, lang, prefer, isAdmin, currentProfile, agencyName
   const week = Date.now() - 8 * 864e5;
   const firstSeen = Math.min(...units.map(u => Date.parse(u.first_seen_at) || Date.now()));
   const firstImport = firstSeen > week; // первая загрузка ЖК — все квартиры «новые», значок не показываем
+  // акционная очередь (variant.queue = «акція») — при её выборе показываем только акционные квартиры;
+  // остальные квартиры считаются по обычным вариантам с удорожанием и в этот список не попадают
+  const promoQ = v.queue && /акці|акци/i.test(String(v.queue)) ? String(v.queue) : null;
   const rows = units.map(u => ({u, c:nbCalcUnit(u, plan, nbVariantFor(v, u, source.meta), pct, months)})).filter(({u, c}) => {
+    if(promoQ && nbUnitQueue(u, source.meta) !== promoQ) return false;
     if(f.type && (u.property_type || "apartment") !== f.type) return false;
     if(f.rooms !== "" && (f.rooms === "4" ? !(u.rooms >= 4) : String(u.rooms ?? "") !== f.rooms)) return false;
     if(f.area !== "" && (() => { const [lo, hi] = NB_AREA_RANGES[Number(f.area)]; const a = Number(u.area); return !(a >= lo && a < hi); })()) return false;
