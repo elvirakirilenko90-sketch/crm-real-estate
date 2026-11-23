@@ -2270,6 +2270,9 @@ async function amBuildSelectionPdf({selection, items, currentProfile, agencyName
     // новостройки: планировка квартиры + таблица оплаты (только выбранные менеджером варианты)
     if(d.payment || d.flat_plan) await presNbPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property,
       title:`${pubClean(d.title) || txt.property} — ${d.payment ? L("планировка и оплата","планування та оплата") : L("планировка","планування")}`, payment:d.payment || null, flatPlan:d.flat_plan || null, layout:d.layout || null});
+    // альтернатива «50% платежа до сдачи» (row.half) — отдельной страницей с пояснением
+    if((d.payment?.rows||[]).some(r=>r?.half)) await presNbHalfPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property,
+      title:`${pubClean(d.title) || txt.property} — ${L("альтернативная рассрочка","альтернативна розстрочка")}`, payment:d.payment});
     // планировка — отдельной страницей (новостройки)
     else if(d.layout) await presObjectPage(pages,{pal:pp, agencyName, lang, index:i, total:items.length, label:txt.property, title:`${pubClean(d.title) || txt.property} — ${L("планировка","планування")}`,
       photo:d.layout, price:amMoney(d.price, d.currency), priceLabel:txt.price,
@@ -4641,18 +4644,19 @@ async function presFlatPlan(ctx,fp,x,y,w,h,mode="flat"){
 }
 const PRES_Y={head:"#F5C518",ink:"#1A1405",row:"#FFF7D1",row2:"#FFFBEA",line:"#EED37A",deep:"#7A5A00"};
 // Жёлтая таблица оплаты. Возвращает y под таблицей.
-function presPaymentTable(ctx,{payment,lang,x,y,w}){
+function presPaymentTable(ctx,{payment,lang,x,y,w,half=false}){
   const L=(ru,uk)=>lang==="uk"?uk:ru, usd=v=>v==null?"—":"$"+Math.round(Number(v)).toLocaleString("ru-RU").replace(/,/g," ");
   const term=r=>r.until?`${L("до","до")} ${String(r.until).slice(5,7)}.${String(r.until).slice(0,4)}`:r.months?`${r.months} ${L("мес.","міс.")}`:"—";
   const vname=r=>[r.pct?`${L("ПВ","ПВ")} ${r.pct}%`:null,(r.months||r.until)?term(r):null,r.rate?`${r.rate}% ${L("годовых","річних")}`:null].filter(Boolean).join(" · ")||L("Рассрочка","Розстрочка");
-  const rows=(payment?.rows||[]).slice(0,6);
+  const rows=(payment?.rows||[]).filter(r=>!half||r?.half).slice(0,6);
   ctx.fillStyle=PRES_Y.head;presRound(ctx,x,y,58,58,16);ctx.fill();ctx.fillStyle=PRES_Y.ink;ctx.font=`800 30px ${PRES_SANS}`;ctx.textAlign="center";ctx.fillText("$",x+29,y+40);ctx.textAlign="left";
-  ctx.fillStyle="#141414";ctx.font=`700 36px ${PRES_SERIF}`;ctx.fillText(rows.length>1?L("Варианты оплаты","Варіанти оплати"):rows.length?L("Условия оплаты","Умови оплати"):L("Оплата","Оплата"),x+78,y+42);
+  ctx.fillStyle="#141414";ctx.font=`700 36px ${PRES_SERIF}`;ctx.fillText(half?L("50% платежа до сдачи","50% платежу до здачі"):rows.length>1?L("Варианты оплаты","Варіанти оплати"):rows.length?L("Условия оплаты","Умови оплати"):L("Оплата","Оплата"),x+78,y+42);
   y+=86;
   if(rows.length){
     ctx.save();ctx.shadowColor="rgba(212,160,23,.28)";ctx.shadowBlur=30;ctx.shadowOffsetY=10;ctx.fillStyle=PRES_Y.row;
     if(rows.length<=3){
       const params=[[L("Первый взнос","Перший внесок"),r=>[usd(r.first),[r.pct?`${r.pct}% ${L("от стоимости","від вартості")}`:"",r.disc?`${L("скидка","знижка")} ${r.disc_pct||""}% −${usd(r.disc)}`:""].filter(Boolean).join(" · ")]],[L("Платёж в месяц","Щомісячний платіж"),r=>r.monthly!=null?[usd(r.monthly),`× ${r.months} ${L("мес.","міс.")}`]:["—",""]],[L("Срок рассрочки","Термін розстрочки"),r=>[term(r),""]],[L("Общая стоимость","Загальна вартість"),r=>[usd(r.total),""]]];
+      if(half) params.splice(1,3,[L("До сдачи дома","До здачі будинку"),r=>[usd(r.half.monthly),`× ${r.half.months} ${L("мес.","міс.")} · 50% ${L("платежа","платежу")}`]],[L("После сдачи","Після здачі"),r=>[usd(r.half.after_monthly),`× ${r.half.after_months} ${L("мес.","міс.")} · ${r.half.after_rate}% ${L("годовых","річних")}`]],[L("Общая стоимость","Загальна вартість"),r=>[usd(r.half.total),r.half.overpay?`${L("переплата","переплата")} ${usd(r.half.overpay)}`:""]]);
       const headH=rows.length>1?96:0,rowH=rows.length===1?112:104,H=headH+params.length*rowH;
       presRound(ctx,x,y,w,H,26);ctx.fill();ctx.restore();
       ctx.save();presRound(ctx,x,y,w,H,26);ctx.clip();
@@ -4672,12 +4676,12 @@ function presPaymentTable(ctx,{payment,lang,x,y,w}){
       presRound(ctx,x,y,w,H,26);ctx.fill();ctx.restore();ctx.save();presRound(ctx,x,y,w,H,26);ctx.clip();
       ctx.fillStyle=PRES_Y.head;ctx.fillRect(x,y,w,headH);let cx=x;ctx.font=`800 20px ${PRES_SANS}`;ctx.fillStyle=PRES_Y.ink;cols.forEach(([t,f])=>{ctx.fillText(t,cx+22,y+44);cx+=w*f;});
       rows.forEach((r,k)=>{const ry=y+headH+k*rowH;ctx.fillStyle=k%2?PRES_Y.row2:PRES_Y.row;ctx.fillRect(x,ry,w,rowH);if(k){ctx.fillStyle=PRES_Y.line;ctx.fillRect(x,ry,w,2);}
-        const vals=[vname(r),usd(r.first)+(r.disc?` (−${r.disc_pct||""}%)`:""),r.monthly!=null?`${usd(r.monthly)} × ${r.months}`:"—",usd(r.total)];let cx2=x;
+        const vals=half?[vname(r),usd(r.first),`${usd(r.half.monthly)} × ${r.half.months}`,usd(r.half.total)]:[vname(r),usd(r.first)+(r.disc?` (−${r.disc_pct||""}%)`:""),r.monthly!=null?`${usd(r.monthly)} × ${r.months}`:"—",usd(r.total)];let cx2=x;
         vals.forEach((v,i)=>{ctx.fillStyle=PRES_Y.ink;presFit(ctx,v,800,PRES_SANS,i?28:22,16,w*cols[i][1]-34,1);ctx.fillText(v,cx2+22,ry+rowH/2+10);cx2+=w*cols[i][1];});});
       ctx.restore();y+=H+22;
     }
   }
-  if(payment?.full!=null){ctx.fillStyle="#111214";presRound(ctx,x,y,w,96,22);ctx.fill();
+  if(!half&&payment?.full!=null){ctx.fillStyle="#111214";presRound(ctx,x,y,w,96,22);ctx.fill();
     ctx.fillStyle="#FFFFFF";ctx.font=`800 26px ${PRES_SANS}`;ctx.fillText(L("Полная оплата 100%","Повна оплата 100%"),x+30,y+(payment.full_disc?44:58));
     if(payment.full_disc){ctx.fillStyle=PRES_Y.head;ctx.font=`700 19px ${PRES_SANS}`;ctx.fillText(`${L("скидка","знижка")} ${payment.full_disc}%`,x+30,y+74);}
     ctx.fillStyle=PRES_Y.head;ctx.font=`800 40px ${PRES_SANS}`;ctx.textAlign="right";ctx.fillText(usd(payment.full),x+w-30,y+62);ctx.textAlign="left";y+=118;}
@@ -4700,7 +4704,10 @@ async function presNbPage(pages,{pal,agencyName,lang,index,total,label,title,pay
     let ok=false;
     if(flatPlan){
       const insetW=flatPlan?Math.min(300,PRES_IN*.28):0;
-      ok=await presFlatPlan(ctx,flatPlan,PRES_M+30,y+64,PRES_IN-60-insetW-20,planH-94,"flat");
+      // отдельный чёткий план квартиры (flatPlan.hq) — вместо выреза из мелкого плана этажа; рамка жёлтая, как в онлайн-подборке
+      if(flatPlan.hq){const fx=PRES_M+30,fy=y+64,fw=PRES_IN-60-insetW-20,fh=planH-94;ok=await drawRemoteImage(ctx,flatPlan.hq,fx+8,fy+8,fw-16,fh-16,"contain");
+        if(ok){ctx.strokeStyle="#F5C518";ctx.lineWidth=8;presRound(ctx,fx,fy,fw,fh,10);ctx.stroke();}}
+      if(!ok) ok=await presFlatPlan(ctx,flatPlan,PRES_M+30,y+64,PRES_IN-60-insetW-20,planH-94,"flat");
       // миниатюра этажа с выделенной квартирой
       const ix=PRES_M+PRES_IN-30-insetW, iy=y+planH-30-insetW;
       ctx.fillStyle=pal.soft;presRound(ctx,ix-10,iy-44,insetW+20,insetW+54,20);ctx.fill();
@@ -4712,6 +4719,21 @@ async function presNbPage(pages,{pal,agencyName,lang,index,total,label,title,pay
     y+=planH+34;
   }
   if(payment) presPaymentTable(ctx,{payment,lang,x:PRES_M,y,w:PRES_IN});
+  presPush(pages,c,.93);
+}
+// Страница «Альтернативная рассрочка: 50% платежа до сдачи» (row.half): пояснение + та же жёлтая таблица в режиме half
+async function presNbHalfPage(pages,{pal,agencyName,lang,index,total,label,title,payment}){
+  await presEnsureFonts();
+  const L=(ru,uk)=>lang==="uk"?uk:ru, usd=v=>v==null?"—":"$"+Math.round(Number(v)).toLocaleString("ru-RU").replace(/,/g," ");
+  const {c,ctx}=presCanvas(pal.paper);
+  presChrome(ctx,pal,{agencyName,label:total>1?`${label} ${String(index+1).padStart(2,"0")} / ${String(total).padStart(2,"0")}`:label,lang});
+  ctx.fillStyle=pal.ink;presFit(ctx,title,700,PRES_SERIF,40,28,PRES_IN,2);const ts=parseInt(ctx.font)||36;
+  let y=presText(ctx,title,PRES_M,168,PRES_IN,Math.round(ts*1.2),2)+30;
+  const h=(payment?.rows||[]).find(r=>r?.half)?.half||{};
+  const note=L(`До сдачи дома вы платите только половину ежемесячного платежа. Остаток (${usd(h.after_principal)}) — после сдачи: ${h.after_months} ежемесячных платежей под ${h.after_rate}% годовых на остаток, который каждый месяц уменьшается.`,
+    `До здачі будинку ви сплачуєте лише половину щомісячного платежу. Решту (${usd(h.after_principal)}) — після здачі: ${h.after_months} щомісячних платежів під ${h.after_rate}% річних на залишок, який щомісяця зменшується.`);
+  ctx.fillStyle=pal.ink;ctx.font=`500 26px ${PRES_SANS}`;y=presText(ctx,note,PRES_M,y,PRES_IN,38,6)+40;
+  presPaymentTable(ctx,{payment,lang,x:PRES_M,y,w:PRES_IN,half:true});
   presPush(pages,c,.93);
 }
 async function presContactPage(pages,{pal,brand,contactTitle,manager,contactLine,thanks}){
