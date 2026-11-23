@@ -6,6 +6,7 @@
 // Действия (body.action), вызывает администратор агентства из CRM:
 //   status | set_api (только тех. администратор) | send_code | sign_in | logout | resolve | sync
 // По расписанию (заголовок x-cron-secret): sync всех закрытых источников всех агентств.
+//   action "inbox" (x-cron-secret, каждые 5 мин): личка и комментарии каналов → лиды через lead-inbox.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { TelegramClient, Api } from "npm:telegram@2.26.22";
 import { StringSession } from "npm:telegram@2.26.22/sessions/index.js";
@@ -244,6 +245,52 @@ async function syncAgency(agencyId: number, sourceId?: number) {
   } finally { await close(client); }
 }
 
+// Входящие лиды из Telegram (по расписанию, action "inbox"): личные сообщения рабочего аккаунта и комментарии
+// в группах обсуждения каналов, где аккаунт — владелец/админ. Сообщения отдаются в lead-inbox (там — лиды, дубли, журнал).
+// Не берём: сохранённые контакты (свои люди), ботов, свои исходящие, историю до первого запуска.
+// Состояние: crm_private_settings.tg_inbox_state = {since, seen:{peerId:lastMsgId}}.
+async function tgInbox(agencyId: number, dry = false) {
+  const { data: acc } = await db.from("telegram_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
+  if (!acc?.session || acc.status !== "connected") return { ok: false, error: "Telegram-аккаунт агентства не подключён" };
+  const st: any = JSON.parse((await setting("tg_inbox_state")) || "{}"); const now = Math.floor(Date.now() / 1000);
+  if (!st.since && dry) { st.since = now - 86400; st.seen = {}; }
+  if (!st.since) { st.since = now; st.seen = {}; await db.from("crm_private_settings").upsert({ key: "tg_inbox_state", value: JSON.stringify(st) }); return { ok: true, started: true }; }
+  let client: TelegramClient | undefined; const items: any[] = []; const seen = { ...(st.seen || {}) };
+  try {
+    ({ client } = await makeClient(acc.session));
+    const me: any = await client.getMe(); const account = me?.username || [me?.firstName, me?.lastName].filter(Boolean).join(" ") || acc.phone;
+    const dialogs: any[] = await client.getDialogs({ limit: 60 });
+    for (const d of dialogs) {
+      const e: any = d.entity; const pid = String(d.id); const last = Number(d.message?.id || 0);
+      if (!e || last <= Number(seen[pid] || 0) || Number(d.message?.date || 0) < st.since) continue;
+      const isDm = d.isUser && !e.bot && !e.self && !e.contact && !e.support;
+      const isDisc = d.isGroup && e.megagroup && (e.creator || e.adminRights);
+      if (!isDm && !isDisc) { seen[pid] = last; continue; }
+      const msgs: any[] = (await client.getMessages(e, { limit: 30, minId: Number(seen[pid] || 0) })).filter((m: any) => !m.out && Number(m.date) >= st.since).reverse();
+      if (isDm && msgs.length) {
+        const text = msgs.map((m: any) => m.message || (m.media ? "[вложение]" : "")).filter(Boolean).join("\n");
+        items.push({ platform: "telegram", account, kind: "dm", external_id: `tg:dm:${pid}:${last}`, from_id: pid, nick: e.username || "", name: [e.firstName, e.lastName].filter(Boolean).join(" "),
+          phone: e.phone ? `+${e.phone}` : null, text, at: new Date(Number(msgs[msgs.length - 1].date) * 1000).toISOString() });
+      }
+      if (isDisc) for (const m of msgs) {
+        if (!m.replyTo || !m.senderId) continue; const s: any = await m.getSender().catch(() => null);
+        if (!s || s.className !== "User" || s.bot || s.self) continue;
+        items.push({ platform: "telegram", account, kind: "comment", external_id: `tg:c:${pid}:${m.id}`, from_id: String(s.id), nick: s.username || "", name: [s.firstName, s.lastName].filter(Boolean).join(" "),
+          text: m.message || "[вложение]", post_url: e.username ? `https://t.me/${e.username}/${m.id}` : `обсуждение «${e.title}»`, at: new Date(Number(m.date) * 1000).toISOString() });
+      }
+      seen[pid] = last;
+    }
+  } catch (e) { return { ok: false, error: humanError(e) }; } finally { await close(client); }
+  if (dry) return { ok: true, dry, dm: items.filter((x) => x.kind === "dm").length, comments: items.filter((x) => x.kind === "comment").length, with_phone: items.filter((x) => x.phone || /\d{9}/.test(String(x.text).replace(/\D/g, ""))).length, with_nick: items.filter((x) => x.nick).length };
+  let res: any = null;
+  if (items.length) {
+    const key = await setting("lead_inbox_key");
+    res = await fetch(`${SUPABASE_URL}/functions/v1/lead-inbox`, { method: "POST", headers: { "Content-Type": "application/json", "x-inbox-key": String(key) }, body: JSON.stringify(items) }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+  }
+  if (!res?.error) await db.from("crm_private_settings").upsert({ key: "tg_inbox_state", value: JSON.stringify({ since: st.since, seen }) });
+  return { ok: !res?.error, sent: items.length, results: res?.results || res };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   let body: any = {};
@@ -265,6 +312,7 @@ Deno.serve(async (req) => {
       } catch (e) { out.error = String((e as Error)?.message || e).slice(0, 300); } finally { await close(c); }
       return json(out);
     }
+    if (body.action === "inbox") return json(await tgInbox(Number(body.agency_id) || 1, !!body.dry));
     const { data: rows } = await db.from("feed_sources").select("agency_id").eq("kind", "tg_private").eq("active", true);
     const agencies = [...new Set((rows || []).map((r: any) => r.agency_id))];
     const results = [];
