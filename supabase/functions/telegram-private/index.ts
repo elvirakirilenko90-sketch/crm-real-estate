@@ -247,7 +247,7 @@ async function syncAgency(agencyId: number, sourceId?: number) {
 
 // Входящие лиды из Telegram (по расписанию, action "inbox"): личные сообщения рабочего аккаунта и комментарии
 // в группах обсуждения каналов, где аккаунт — владелец/админ. Сообщения отдаются в lead-inbox (там — лиды, дубли, журнал).
-// Не берём: сохранённые контакты (свои люди), ботов, свои исходящие, историю до первого запуска.
+// Не берём: ботов, свои исходящие, историю до первого запуска; сотрудников агентства отсекает lead-inbox (по телефону / нику из users).
 // Состояние: crm_private_settings.tg_inbox_state = {since, seen:{peerId:lastMsgId}}.
 // «О себе» из профиля Telegram — там часто номер телефона
 async function aboutOf(client: TelegramClient, u: any) {
@@ -267,7 +267,7 @@ async function tgInbox(agencyId: number, dry = false) {
     for (const d of dialogs) {
       const e: any = d.entity; const pid = String(d.id); const last = Number(d.message?.id || 0);
       if (!e || last <= Number(seen[pid] || 0) || Number(d.message?.date || 0) < st.since) continue;
-      const isDm = d.isUser && !e.bot && !e.self && !e.contact && !e.support;
+      const isDm = d.isUser && !e.bot && !e.self && !e.support; // сохранённые контакты тоже берём (клиентов часто сохраняют); сотрудников отсекает lead-inbox
       const isDisc = d.isGroup && e.megagroup && (e.creator || e.adminRights);
       if (!isDm && !isDisc) { seen[pid] = last; continue; }
       const msgs: any[] = (await client.getMessages(e, { limit: 30, minId: Number(seen[pid] || 0) })).filter((m: any) => !m.out && Number(m.date) >= st.since).reverse();

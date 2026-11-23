@@ -1,4 +1,4 @@
-// lead-inbox v3 (23.11.2026; v3: телефон из профиля / «О себе», ссылка на профиль клиента) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
+// lead-inbox v4 (23.11.2026; v3: телефон из профиля / «О себе», ссылка на профиль; v4: сотрудники агентства — не лиды) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
 // Кто шлёт: Make (Instagram / Facebook / TikTok, несколько аккаунтов) и telegram-private (личка и комментарии каналов).
 // Приём: заголовок x-inbox-key (или ?key=) = crm_private_settings.lead_inbox_key.
 //   Тело: { platform, account, kind: "dm"|"comment", external_id, from_id?, nick?, name?, phone?, text, post_url?, at? } или массив.
@@ -72,6 +72,11 @@ async function handle(m: any, accs: Map<string, any>) {
   const about = String(m.about || "").trim() || null;
   const who = nick || (m.from_id ? `id${m.from_id}` : "");
   if (!phone && !who) return fin({ result: "skipped", why: "нет телефона и ника" });
+  // сотрудники агентства (телефон или Telegram-ник из users) — не лиды
+  const staff = (await db.from("users").select("phone,telegram").eq("agency_id", AG)).data || [];
+  const tgNick = (v: unknown) => String(v || "").trim().replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "").toLowerCase();
+  if (staff.some((u: any) => (phone && last9(u.phone) && last9(u.phone) === last9(phone)) || (platform === "telegram" && nick && tgNick(u.telegram) === nick.toLowerCase())))
+    return fin({ result: "skipped", why: "сотрудник агентства" });
 
   // аккаунт → источник и (необязательно) менеджер; новый аккаунт добавляется сам
   const ak = `${platform}|${account.toLowerCase()}`; let acc = accs.get(ak);
