@@ -249,6 +249,10 @@ async function syncAgency(agencyId: number, sourceId?: number) {
 // в группах обсуждения каналов, где аккаунт — владелец/админ. Сообщения отдаются в lead-inbox (там — лиды, дубли, журнал).
 // Не берём: сохранённые контакты (свои люди), ботов, свои исходящие, историю до первого запуска.
 // Состояние: crm_private_settings.tg_inbox_state = {since, seen:{peerId:lastMsgId}}.
+// «О себе» из профиля Telegram — там часто номер телефона
+async function aboutOf(client: TelegramClient, u: any) {
+  try { const f: any = await client.invoke(new Api.users.GetFullUser({ id: u })); return String(f?.fullUser?.about || "").slice(0, 300); } catch { return ""; }
+}
 async function tgInbox(agencyId: number, dry = false) {
   const { data: acc } = await db.from("telegram_inbox_accounts").select("*").eq("agency_id", agencyId).maybeSingle();
   if (!acc?.session || acc.status !== "connected") return { ok: false, error: "Telegram для лидов не подключён" };
@@ -270,13 +274,13 @@ async function tgInbox(agencyId: number, dry = false) {
       if (isDm && msgs.length) {
         const text = msgs.map((m: any) => m.message || (m.media ? "[вложение]" : "")).filter(Boolean).join("\n");
         items.push({ platform: "telegram", account, kind: "dm", external_id: `tg:dm:${pid}:${last}`, from_id: pid, nick: e.username || "", name: [e.firstName, e.lastName].filter(Boolean).join(" "),
-          phone: e.phone ? `+${e.phone}` : null, text, at: new Date(Number(msgs[msgs.length - 1].date) * 1000).toISOString() });
+          phone: e.phone ? `+${e.phone}` : null, about: e.phone ? "" : await aboutOf(client, e), text, at: new Date(Number(msgs[msgs.length - 1].date) * 1000).toISOString() });
       }
       if (isDisc) for (const m of msgs) {
         if (!m.replyTo || !m.senderId) continue; const s: any = await m.getSender().catch(() => null);
         if (!s || s.className !== "User" || s.bot || s.self) continue;
         items.push({ platform: "telegram", account, kind: "comment", external_id: `tg:c:${pid}:${m.id}`, from_id: String(s.id), nick: s.username || "", name: [s.firstName, s.lastName].filter(Boolean).join(" "),
-          text: m.message || "[вложение]", post_url: e.username ? `https://t.me/${e.username}/${m.id}` : `обсуждение «${e.title}»`, at: new Date(Number(m.date) * 1000).toISOString() });
+          phone: s.phone ? `+${s.phone}` : null, about: s.phone ? "" : await aboutOf(client, s), text: m.message || "[вложение]", post_url: e.username ? `https://t.me/${e.username}/${m.id}` : `обсуждение «${e.title}»`, at: new Date(Number(m.date) * 1000).toISOString() });
       }
       seen[pid] = last;
     }

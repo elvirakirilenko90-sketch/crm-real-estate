@@ -7963,6 +7963,8 @@ function UnassignedLeads({users, lang="ru", onOpenLead, onChanged}){
         {r.name && r.nick && <span className="muted"> · @{r.nick}</span>}
         <p className="muted">{r.source}{r.account ? ` · @${r.account}` : ""} · {when(r.last_at)}{r.msg_count > 1 ? ` · ${r.msg_count} ${tr(lang,"сообщ.")}` : ""}</p>
         {r.phone ? <p>📞 <a href={`tel:${String(r.phone).replace(/[^\d+]/g,"")}`}>{r.phone}</a></p> : <p className="muted">{tr(lang,"Телефона нет — только ник")}</p>}
+        {r.profile_url && <p>🔗 {/^https?:/.test(r.profile_url) ? <a href={r.profile_url} target="_blank" rel="noreferrer">{tr(lang,"Профиль клиента")}</a> : r.profile_url}</p>}
+        {r.about && <p className="muted">{tr(lang,"О себе")}: {r.about}</p>}
       </section></div>
       {r.existing_lead_id && <p className="muted">⚠️ {tr(lang,"Этот номер уже есть в CRM")} · <a href="#" onClick={e => { e.preventDefault(); onOpenLead && onOpenLead(r.existing_lead_id); }}>{tr(lang,"открыть карточку")}</a></p>}
       <div style={{whiteSpace:"pre-wrap", wordBreak:"break-word", fontSize:14, margin:"8px 0", padding:"10px 12px", borderRadius:12, background:"rgba(127,127,127,.08)"}}>{r.messages}</div>

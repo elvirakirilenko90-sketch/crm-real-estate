@@ -1,4 +1,4 @@
-// lead-inbox v2 (23.11.2026) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
+// lead-inbox v3 (23.11.2026; v3: телефон из профиля / «О себе», ссылка на профиль клиента) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
 // Кто шлёт: Make (Instagram / Facebook / TikTok, несколько аккаунтов) и telegram-private (личка и комментарии каналов).
 // Приём: заголовок x-inbox-key (или ?key=) = crm_private_settings.lead_inbox_key.
 //   Тело: { platform, account, kind: "dm"|"comment", external_id, from_id?, nick?, name?, phone?, text, post_url?, at? } или массив.
@@ -47,7 +47,7 @@ async function assign(id: number, email: string, by: string) {
   if (r.status !== "new") return { ok: false, error: r.status === "assigned" ? "Уже отдано менеджеру" : "Обращение отклонено" };
   const { data: u } = await db.from("users").select("id,full_name,email").eq("agency_id", AG).eq("email", email).maybeSingle();
   if (!u) return { ok: false, error: "Менеджер не найден" };
-  const notes = `Ответственный менеджер: ${u.full_name || u.email}\n${r.messages}\n${r.nick ? `Ник: @${r.nick}\n` : ""}${r.who_key}`;
+  const notes = `Ответственный менеджер: ${u.full_name || u.email}\n${r.messages}\n${r.nick ? `Ник: @${r.nick}\n` : ""}${r.profile_url ? `Профиль: ${r.profile_url}\n` : ""}${r.about ? `О себе (из профиля): ${r.about}\n` : ""}${r.who_key}`;
   const { data: nl, error } = await db.from("leads").insert({ agency_id: AG, name: r.name || (r.nick ? `@${r.nick}` : "Без имени"), phone: r.phone, source: r.source, stage: "Новый Лид", notes,
     manager_id: u.id, manager_name: u.full_name || null, manager_email: u.email, created_at: new Date().toISOString() }).select("id").maybeSingle();
   if (error || !nl) return { ok: false, error: error?.message || "Лид не создан" };
@@ -67,7 +67,9 @@ async function handle(m: any, accs: Map<string, any>) {
 
   if (nick && account && nick.toLowerCase() === account.toLowerCase()) return fin({ result: "skipped", why: "свой ответ" });
   if (!/[\p{L}\d]/u.test(text)) return fin({ result: "skipped", why: "пусто/эмодзи" });
-  const phone = phoneOf(text) || (m.phone ? phoneOf(String(m.phone)) : null);
+  // телефон: из текста, из профиля (Telegram отдаёт номер, если клиент его не скрыл), из «О себе»
+  const phone = phoneOf(text) || (m.phone ? phoneOf(String(m.phone)) : null) || (m.about ? phoneOf(String(m.about)) : null);
+  const about = String(m.about || "").trim() || null;
   const who = nick || (m.from_id ? `id${m.from_id}` : "");
   if (!phone && !who) return fin({ result: "skipped", why: "нет телефона и ника" });
 
@@ -76,6 +78,9 @@ async function handle(m: any, accs: Map<string, any>) {
   if (!acc) { acc = (await db.from("lead_inbox_accounts").upsert({ agency_id: AG, platform, account: account || "-", source: P.src }, { onConflict: "agency_id,platform,account" }).select("*").maybeSingle()).data || { source: P.src }; accs.set(ak, acc); }
 
   const marker = `[inbox:${platform}:${who.toLowerCase()}]`;
+  // ссылка на профиль клиента (нет ника — ID, по нему клиента можно найти)
+  const profile = nick ? (platform === "telegram" ? `https://t.me/${nick}` : platform === "instagram" ? `https://instagram.com/${nick}` : platform === "tiktok" ? `https://www.tiktok.com/@${nick}` : null)
+    : m.profile_url || (m.from_id ? `${P.label} ID ${m.from_id}` : null);
   const where = m.kind === "comment" ? `комментарий${m.post_url ? ` под постом ${m.post_url}` : " под постом"}` : "личные сообщения";
   const block = `Запрос (${P.label}${account ? ` @${account}` : ""} · ${where} · ${when(m.at)}):\n${text}`;
 
@@ -94,12 +99,12 @@ async function handle(m: any, accs: Map<string, any>) {
   if (!open && phone) open = ((await db.from("inbox_leads").select("*").eq("agency_id", AG).eq("status", "new").not("phone", "is", null).order("id", { ascending: false }).limit(200)).data || []).find((x: any) => last9(x.phone) === last9(phone)) || null;
   if (open) {
     await db.from("inbox_leads").update({ messages: `${open.messages}\n\n${block}`, msg_count: (open.msg_count || 1) + 1, last_at: new Date().toISOString(), ...(phone && !open.phone ? { phone } : {}),
-      ...(!open.existing_lead_id && byPhone ? { existing_lead_id: byPhone.id } : {}), ...(!open.name && m.name ? { name: m.name } : {}) }).eq("id", open.id);
+      ...(!open.existing_lead_id && byPhone ? { existing_lead_id: byPhone.id } : {}), ...(!open.name && m.name ? { name: m.name } : {}), ...(!open.profile_url && profile ? { profile_url: profile } : {}), ...(!open.about && about ? { about } : {}) }).eq("id", open.id);
     return fin({ result: "inbox_appended", phone });
   }
   // 3) новое обращение
   const { data: row } = await db.from("inbox_leads").insert({ agency_id: AG, platform, account, source: acc.source, who_key: marker, nick: nick || null, name: String(m.name || "").trim() || null, phone,
-    messages: block, existing_lead_id: byPhone?.id ?? null }).select("id").maybeSingle();
+    messages: block, existing_lead_id: byPhone?.id ?? null, profile_url: profile, about }).select("id").maybeSingle();
   if (acc.manager_email && row) { const a = await assign(row.id, acc.manager_email, "авто: аккаунт " + (account || platform)); if (a.ok) return fin({ result: "created", lead_id: a.lead_id, phone }); }
   return fin({ result: "inbox_new", phone });
 }
