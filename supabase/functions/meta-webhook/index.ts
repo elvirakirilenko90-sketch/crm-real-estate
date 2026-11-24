@@ -1,10 +1,10 @@
-// meta-webhook v1 (24.11.2026) — личные сообщения Instagram Direct и Facebook Messenger → lead-inbox → «Нераспределённые лиды».
+// meta-webhook v2 (25.11.2026) — личные сообщения Instagram Direct и Facebook Messenger → lead-inbox → «Нераспределённые лиды».
 // Подключение в кабинете Meta (developers.facebook.com → приложение → Webhooks):
 //   Callback URL = https://<проект>.supabase.co/functions/v1/meta-webhook
 //   Verify token = crm_private_settings.meta_verify_token
 //   Подписка: Instagram → messages; Page → messages.
 // GET  — проверка Meta (hub.mode=subscribe, hub.verify_token, hub.challenge).
-// POST — события: entry[].messaging[] (и Instagram, и Page). Свои исходящие (is_echo) и пустые пропускаются.
+// POST — события: entry[].messaging[] и entry[].changes[] (messages / comments). Свои исходящие (is_echo) и пустые пропускаются.
 //   Если задан crm_private_settings.meta_app_secret — проверяется подпись X-Hub-Signature-256.
 //   Если задан crm_private_settings.meta_page_token — подтягиваются ник / имя отправителя (необязательно).
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -37,7 +37,18 @@ Deno.serve(async (req) => {
   const token = await setting(ig ? "meta_ig_token" : "meta_page_token");
   const names: Record<string, string> = JSON.parse((await setting("meta_account_names")) || "{}"); // id аккаунта → ник для «Запроса»
   const items: any[] = [];
-  for (const e of body.entry || []) for (const m of e.messaging || []) {
+  const entries = (body.entry || []).filter((e: any) => String(e.id) !== "0"); // тест-кнопка Meta шлёт id "0" — в лиды не пускаем
+  for (const e of entries) {
+    // Комментарии (field "comments"): value = {id, text, from:{id,username}, media:{id}}
+    for (const c of e.changes || []) {
+      const v = c.value || {}; if (c.field !== "comments" || !v.text) continue;
+      const from = v.from || {}; if (!from.id || String(from.id) === String(e.id)) continue;
+      items.push({ platform: ig ? "instagram" : "facebook", account: names[String(e.id)] || String(e.id), kind: "comment", external_id: `meta:c:${v.id}`,
+        from_id: String(from.id), nick: from.username || "", name: "", text: v.text, post_url: v.media?.id ? `media ${v.media.id}` : null, at: new Date().toISOString() });
+    }
+  }
+  // Директ: новый формат приходит в entry.changes[field=messages].value, старый — в entry.messaging[]
+  for (const e of entries) for (const m of [...(e.messaging || []), ...(e.changes || []).filter((c: any) => c.field === "messages").map((c: any) => c.value || {})]) {
     const msg = m.message; if (!msg || msg.is_echo || msg.is_deleted) continue;
     const sender = String(m.sender?.id || ""); if (!sender || sender === String(e.id)) continue;
     const text = msg.text || (msg.attachments?.length ? `[вложение: ${msg.attachments.map((a: any) => a.type).join(", ")}]` : "");
