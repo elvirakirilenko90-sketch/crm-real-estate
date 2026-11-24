@@ -1,4 +1,4 @@
-// meta-webhook v2 (25.11.2026) — личные сообщения Instagram Direct и Facebook Messenger → lead-inbox → «Нераспределённые лиды».
+// meta-webhook v3 (25.11.2026) — личные сообщения Instagram Direct и Facebook Messenger → lead-inbox → «Нераспределённые лиды».
 // Подключение в кабинете Meta (developers.facebook.com → приложение → Webhooks):
 //   Callback URL = https://<проект>.supabase.co/functions/v1/meta-webhook
 //   Verify token = crm_private_settings.meta_verify_token
@@ -51,6 +51,7 @@ Deno.serve(async (req) => {
   for (const e of entries) for (const m of [...(e.messaging || []), ...(e.changes || []).filter((c: any) => c.field === "messages").map((c: any) => c.value || {})]) {
     const msg = m.message; if (!msg || msg.is_echo || msg.is_deleted) continue;
     const sender = String(m.sender?.id || ""); if (!sender || sender === String(e.id)) continue;
+    if (!msg.text && msg.attachments?.every((a: any) => a.type === "template" || a.type === "fallback")) continue; // автоответы/шаблоны — не лиды
     const text = msg.text || (msg.attachments?.length ? `[вложение: ${msg.attachments.map((a: any) => a.type).join(", ")}]` : "");
     if (!text) continue;
     const p: any = await profile(sender, ig, token);
