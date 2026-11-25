@@ -7921,7 +7921,7 @@ function HelpCard({h, lead, lang, currentProfile, onOpen, onAnswered}){
 // «Нераспределённые лиды»: обращения из Telegram / Instagram / Facebook / TikTok (таблица inbox_leads, пишет lead-inbox).
 // Директор и тех. отдел видят весь текст клиента и отдают обращение менеджеру — тогда в «Клиентах» появляется «Новый Лид».
 // Ничего не удаляется: «Отклонить» только переносит обращение во вкладку «Отклонённые».
-const INBOX_ICON = {telegram:"✈️", instagram:"📸", facebook:"📘", tiktok:"🎵"};
+const INBOX_ICON = {telegram:"✈️", instagram:"📸", facebook:"📘", tiktok:"🎵", site:"🌐"};
 function UnassignedLeads({users, lang="ru", onOpenLead, onChanged}){
   const [rows,setRows] = useState([]);
   const [filter,setFilter] = useState("new");
@@ -10968,6 +10968,32 @@ const MARKET_SOURCE_TYPES=["API","XML","RSS","WEB","CSV"];
 function marketMoney(v,c="USD"){const n=Number(v);if(!Number.isFinite(n))return"—";try{return new Intl.NumberFormat("ru-RU",{style:"currency",currency:c,maximumFractionDigits:0}).format(n)}catch{return`${n.toLocaleString("ru-RU")} ${c}`}}
 
 
+// Действия на сайте pride-agency.com.ua по ЖК: просмотры, нажатия «Позвонить» и Telegram, открытия формы, заявки (site_events → site_stats).
+function SiteStats(){
+  const [per,setPer]=useState(7); const [rows,setRows]=useState(null); const [err,setErr]=useState("");
+  useEffect(()=>{ let on=true; const to=new Date(Date.now()+60000); const from=per? new Date(Date.now()-per*864e5) : new Date("2020-01-01");
+    if(per===1){ from.setHours(0,0,0,0); }
+    supabase.rpc("site_stats",{p_from:from.toISOString(),p_to:to.toISOString()}).then(({data,error})=>{ if(!on) return; if(error) setErr(error.message); setRows(data||[]); });
+    return ()=>{on=false}; },[per]);
+  const sum=(k)=>(rows||[]).reduce((a,r)=>a+Number(r[k]||0),0);
+  const name=(r)=>r.name || (r.complex_slug==="—" ? "Без ЖК (главная, каталог)" : r.complex_slug);
+  return <div className="card" style={{padding:20,borderRadius:20,display:"flex",flexDirection:"column",gap:16}}>
+    <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+      <div><h3 style={{margin:0}}>Действия на сайте по ЖК</h3><div style={{opacity:.7,fontSize:13}}>pride-agency.com.ua · данные обновляются сразу</div></div>
+      <div className="row" style={{gap:6,flexWrap:"wrap"}}>{[[1,"Сегодня"],[7,"7 дней"],[30,"30 дней"],[0,"Всё время"]].map(([v,l])=><Button key={v} variant={per===v?"primary":"soft"} onClick={()=>setPer(v)}>{l}</Button>)}</div>
+    </div>
+    {err&&<div style={{color:"#b91c1c"}}>{err}</div>}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+      {[["phone","📞 Позвонить"],["telegram","✈️ Telegram"],["form_submit","📝 Заявки"],["views","👁 Просмотры"]].map(([k,l])=><div key={k} className="card" style={{padding:14,borderRadius:14}}><div style={{opacity:.7,fontSize:13}}>{l}</div><div style={{fontSize:28,fontWeight:900}}>{rows?sum(k):"…"}</div></div>)}
+    </div>
+    <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:14,minWidth:640}}>
+      <thead><tr style={{textAlign:"left",opacity:.7}}><th style={{padding:"10px 8px"}}>ЖК</th>{["Просмотры","Телефон","Telegram","Открыли форму","Заявки"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"right"}}>{h}</th>)}</tr></thead>
+      <tbody>{(rows||[]).map(r=><tr key={r.complex_slug} style={{borderTop:"1px solid rgba(127,127,127,.2)"}}><td style={{padding:"10px 8px",fontWeight:700}}>{name(r)}</td>{["views","phone","telegram","form_open","form_submit"].map(k=><td key={k} style={{padding:"10px 8px",textAlign:"right",fontWeight:k==="phone"?900:500}}>{r[k]}</td>)}</tr>)}
+      {rows&&!rows.length&&<tr><td colSpan={6} style={{padding:16,opacity:.7}}>За этот период действий на сайте нет.</td></tr>}</tbody>
+    </table></div>
+  </div>;
+}
+
 function AnalyticsWorkspace({lang,currentProfile,properties=[],leads=[],onOpenProperty,agencyName,theme}){
   const [section,setSection]=useState("market");
 
@@ -10982,6 +11008,7 @@ function AnalyticsWorkspace({lang,currentProfile,properties=[],leads=[],onOpenPr
         <div className="row" style={{justifyContent:"flex-start",gap:10,flexWrap:"wrap"}}>
           <Button variant={section==="market"?"primary":"soft"} onClick={()=>setSection("market")}>📊 Аналитика рынка</Button>
           <Button variant={section==="sources"?"primary":"soft"} onClick={()=>setSection("sources")}>🔌 Источники и подключения</Button>
+          <Button variant={section==="site"?"primary":"soft"} onClick={()=>setSection("site")}>🌐 Сайт</Button>
         </div>
       </div>
     </div>
@@ -10997,6 +11024,8 @@ function AnalyticsWorkspace({lang,currentProfile,properties=[],leads=[],onOpenPr
         lang={lang}
       />
     }
+
+    {section==="site"&&<SiteStats/>}
 
     {section==="sources"&&
       <MarketTools

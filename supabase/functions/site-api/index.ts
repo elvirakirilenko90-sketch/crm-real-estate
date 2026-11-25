@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     if (digits.length < 9 || digits.length > 13) return json({ ok: false, error: "phone" }, 400);
     const name = String(b.name || "").trim().slice(0, 80);
     const complex = String(b.complex || "").trim().slice(0, 80);
-    const text = `Заявка з сайту: ${complex ? `ЖК ${complex}` : "загальна"}. Хоче отримати презентацію та прорахунки.\nІм'я: ${name || "—"}\nТелефон: ${b.phone}${b.note ? `\nКоментар: ${String(b.note).slice(0, 500)}` : ""}`;
+    const text = `Заявка з сайту: ${complex ? (/^ЖК/i.test(complex) ? complex : `ЖК ${complex}`) : "загальна"}. Хоче отримати презентацію та прорахунки.\nІм'я: ${name || "—"}\nТелефон: ${b.phone}${b.note ? `\nКоментар: ${String(b.note).slice(0, 500)}` : ""}`;
     const r = await fetch(`${URL_}/functions/v1/lead-inbox`, { method: "POST", headers: { "Content-Type": "application/json", "x-inbox-key": await setting("lead_inbox_key") },
       body: JSON.stringify({ platform: "site", account: "pride-agency.com.ua", kind: "form", external_id: `site:${digits}:${Date.now()}`, from_id: digits.slice(-9), name, phone: String(b.phone), text, post_url: cut(b.page, 200), at: new Date().toISOString() }) })
       .then((x) => x.json()).catch(() => null);
