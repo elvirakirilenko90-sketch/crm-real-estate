@@ -1,0 +1,908 @@
+[
+ {
+  "slug": "tairovski-sady",
+  "nb": 2,
+  "name": "Таїровські Сади",
+  "address": "Одеса, вул. Спортивна",
+  "sort": 10,
+  "i18n": {
+   "uk": {
+    "district": "Лиманка, біля ТЦ «Панорама»",
+    "klass": "Комфорт-клас · мікрорайон",
+    "about": "Великий мікрорайон комфорт-класу біля Таїрова, де частина будинків уже здана й заселена. У проєкті 14 будинків на 15–17 та 24 поверхи. Монолітно-каркасна технологія, стіни з газоблоку й утеплення мінеральною ватою.\n\nКожен будинок має власну дахову газову котельню та швидкісні ліфти, а стелі сягають 2,85 м. І головне: тут найдовша розстрочка серед наших ЖК, до 5 років.",
+    "plus": [
+     "Розстрочка до 60 місяців",
+     "Старт від $790 за м²",
+     "Власна дахова котельня в кожному будинку",
+     "Високі стелі 2,85 м",
+     "Уся інфраструктура Таїрова поруч"
+    ],
+    "specs": [
+     [
+      "Клас",
+      "комфорт"
+     ],
+     [
+      "Будинків",
+      "14"
+     ],
+     [
+      "Поверховість",
+      "15–17, 24"
+     ],
+     [
+      "Технологія",
+      "монолітно-каркасна"
+     ],
+     [
+      "Стіни",
+      "газоблок"
+     ],
+     [
+      "Опалення",
+      "автономне"
+     ],
+     [
+      "Стеля",
+      "2,85 м"
+     ]
+    ]
+   },
+   "ru": {
+    "district": "Лиманка, возле ТЦ «Панорама»",
+    "klass": "Комфорт-класс · микрорайон",
+    "about": "Большой микрорайон комфорт-класса возле Таирова, где часть домов уже сдана и заселена. В проекте 14 домов на 15–17 и 24 этажа. Монолитно-каркасная технология, стены из газоблока и утепление минеральной ватой.\n\nУ каждого дома своя крышная газовая котельная и скоростные лифты, а потолки достигают 2,85 м. И главное: здесь самая длинная рассрочка среди наших ЖК, до 5 лет.",
+    "plus": [
+     "Рассрочка до 60 месяцев",
+     "Старт от $790 за м²",
+     "Своя крышная котельная в каждом доме",
+     "Высокие потолки 2,85 м",
+     "Вся инфраструктура Таирова рядом"
+    ],
+    "specs": [
+     [
+      "Класс",
+      "комфорт"
+     ],
+     [
+      "Домов",
+      "14"
+     ],
+     [
+      "Этажность",
+      "15–17, 24"
+     ],
+     [
+      "Технология",
+      "монолитно-каркасная"
+     ],
+     [
+      "Стены",
+      "газоблок"
+     ],
+     [
+      "Отопление",
+      "автономное"
+     ],
+     [
+      "Потолки",
+      "2,85 м"
+     ]
+    ]
+   },
+   "en": {
+    "district": "Lymanka, near Panorama mall",
+    "klass": "Comfort class · neighbourhood",
+    "about": "A large comfort-class neighbourhood next to Tairova, with some buildings already completed and lived in. The project has 14 buildings of 15–17 and 24 floors, built with monolithic frame technology, aerated concrete walls and mineral wool insulation.\n\nEvery building has its own rooftop gas boiler house and fast lifts, and ceilings reach 2.85 m. Best of all, it offers the longest instalment plan among our complexes: up to 5 years.",
+    "plus": [
+     "Instalments up to 60 months",
+     "From $790 per m²",
+     "Own rooftop boiler house in every building",
+     "High 2.85 m ceilings",
+     "All of Tairova’s amenities nearby"
+    ],
+    "specs": [
+     [
+      "Class",
+      "comfort"
+     ],
+     [
+      "Buildings",
+      "14"
+     ],
+     [
+      "Floors",
+      "15–17, 24"
+     ],
+     [
+      "Technology",
+      "monolithic frame"
+     ],
+     [
+      "Walls",
+      "aerated concrete"
+     ],
+     [
+      "Heating",
+      "autonomous"
+     ],
+     [
+      "Ceilings",
+      "2,85 м"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "slug": "odesa-city",
+  "nb": 3,
+  "name": "Одеса Сіті",
+  "address": "Одеса, вул. Михайла Грушевського, 49",
+  "sort": 20,
+  "i18n": {
+   "uk": {
+    "district": "Хаджибейський р-н",
+    "klass": "Комфорт-клас · Platinumbud",
+    "about": "Масштабний квартал від Platinumbud на Грушевського: 15 будинків на 10, 16 та 24 поверхи для понад 8 000 мешканців, із великим парком усередині. Двори тут належать людям, а не машинам: для авто передбачено підземний паркінг на 1 300 місць, а наземні стоянки винесено за межі дворів.\n\nОпалення й гаряча вода в кожній квартирі від індивідуального котла. У кожній секції два ліфти вантажопідйомністю по 1 000 кг, а на території заплановані школа й дитячі садки.",
+    "plus": [
+     "Двори без машин і підземний паркінг на 1 300 місць",
+     "Індивідуальне опалення й гаряча вода",
+     "Великий парк усередині кварталу",
+     "Школа й садочки на території",
+     "Розстрочка до 48 місяців"
+    ],
+    "specs": [
+     [
+      "Забудовник",
+      "Platinumbud"
+     ],
+     [
+      "Будинків",
+      "15"
+     ],
+     [
+      "Поверховість",
+      "10, 16, 24"
+     ],
+     [
+      "Паркінг",
+      "підземний, 1 300 місць"
+     ],
+     [
+      "Опалення",
+      "індивідуальні котли"
+     ],
+     [
+      "Територія",
+      "закрита"
+     ]
+    ]
+   },
+   "ru": {
+    "district": "Хаджибейский р-н",
+    "klass": "Комфорт-класс · Platinumbud",
+    "about": "Масштабный квартал от Platinumbud на Грушевского: 15 домов на 10, 16 и 24 этажа для более чем 8 000 жителей, с большим парком внутри. Дворы здесь принадлежат людям, а не машинам: для авто предусмотрен подземный паркинг на 1 300 мест, а наземные стоянки вынесены за пределы дворов.\n\nОтопление и горячая вода в каждой квартире от индивидуального котла. В каждой секции два лифта грузоподъёмностью по 1 000 кг, а на территории запланированы школа и детские сады.",
+    "plus": [
+     "Дворы без машин и подземный паркинг на 1 300 мест",
+     "Индивидуальное отопление и горячая вода",
+     "Большой парк внутри квартала",
+     "Школа и детсады на территории",
+     "Рассрочка до 48 месяцев"
+    ],
+    "specs": [
+     [
+      "Застройщик",
+      "Platinumbud"
+     ],
+     [
+      "Домов",
+      "15"
+     ],
+     [
+      "Этажность",
+      "10, 16, 24"
+     ],
+     [
+      "Паркинг",
+      "подземный, 1 300 мест"
+     ],
+     [
+      "Отопление",
+      "индивидуальные котлы"
+     ],
+     [
+      "Территория",
+      "закрытая"
+     ]
+    ]
+   },
+   "en": {
+    "district": "Khadzhybeiskyi district",
+    "klass": "Comfort class · Platinumbud",
+    "about": "A large district by Platinumbud on Hrushevskoho Street: 15 buildings of 10, 16 and 24 floors for more than 8,000 residents, with a big park inside. Courtyards belong to people, not cars: there is an underground car park for 1,300 vehicles, and surface parking is kept outside the yards.\n\nEvery flat has its own boiler for heating and hot water. Each section has two lifts rated at 1,000 kg, and a school and kindergartens are planned on site.",
+    "plus": [
+     "Car-free courtyards and a 1,300-space underground car park",
+     "Individual heating and hot water",
+     "A big park inside the district",
+     "School and kindergartens on site",
+     "Instalments up to 48 months"
+    ],
+    "specs": [
+     [
+      "Developer",
+      "Platinumbud"
+     ],
+     [
+      "Buildings",
+      "15"
+     ],
+     [
+      "Floors",
+      "10, 16, 24"
+     ],
+     [
+      "Parking",
+      "underground, 1,300 spaces"
+     ],
+     [
+      "Heating",
+      "individual boilers"
+     ],
+     [
+      "Grounds",
+      "gated"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "slug": "platinum-city",
+  "nb": 1,
+  "name": "Платінум Сіті",
+  "address": "Одеса, Таїрова",
+  "sort": 30,
+  "i18n": {
+   "uk": {
+    "district": "Київський р-н",
+    "klass": "Новобудова з розстрочкою",
+    "about": "Новобудова в Київському районі, яку обирають за гнучкі умови оплати: перший внесок від 10% і розстрочка до 4 років. У продажу студії, одно-, дво- та трикімнатні квартири площею від 33 до 80 м².\n\nМи надішлемо планування, актуальні ціни й точний розрахунок щомісячного платежу під ваш внесок.",
+    "plus": [
+     "Перший внесок від 10%",
+     "Розстрочка до 48 місяців",
+     "Студії та квартири від 33 м²",
+     "Київський район"
+    ],
+    "specs": []
+   },
+   "ru": {
+    "district": "Киевский р-н",
+    "klass": "Новостройка с рассрочкой",
+    "about": "Новостройка в Киевском районе, которую выбирают за гибкие условия оплаты: первый взнос от 10% и рассрочка до 4 лет. В продаже студии, одно-, двух- и трёхкомнатные квартиры площадью от 33 до 80 м².\n\nМы пришлём планировки, актуальные цены и точный расчёт ежемесячного платежа под ваш взнос.",
+    "plus": [
+     "Первый взнос от 10%",
+     "Рассрочка до 48 месяцев",
+     "Студии и квартиры от 33 м²",
+     "Киевский район"
+    ],
+    "specs": []
+   },
+   "en": {
+    "district": "Kyivskyi district",
+    "klass": "New build with instalments",
+    "about": "A new build in Kyivskyi district chosen for its flexible payment terms: a 10% down payment and instalments of up to 4 years. Studios, one-, two- and three-bedroom flats from 33 to 80 m² are available.\n\nWe will send floor plans, current prices and an exact monthly payment calculation for your down payment.",
+    "plus": [
+     "Down payment from 10%",
+     "Instalments up to 48 months",
+     "Studios and flats from 33 m²",
+     "Kyivskyi district"
+    ],
+    "specs": []
+   }
+  }
+ },
+ {
+  "slug": "akvarel-10",
+  "nb": 5,
+  "name": "Акварель-10",
+  "address": "Одеса, вул. Академіка Сахарова",
+  "sort": 40,
+  "i18n": {
+   "uk": {
+    "district": "вул. Академіка Сахарова",
+    "klass": "Місто в місті · Akvarel Group",
+    "about": "Новий житловий масив від Akvarel Group за концепцією «місто в місті». Закрита від сторонніх територія, паркова алея з місцями для відпочинку та комерція на перших поверхах, щоб усе потрібне було поруч.\n\nБудинки зводять за монолітно-каркасною технологією зі стінами з газоблоку та утепленням мінераловатною плитою. Квартири здаються без оздоблення, тож інтер’єр буде саме таким, як ви мрієте. До моря близько 10 хвилин автомобілем.",
+    "plus": [
+     "Найдоступніший вхід: від $740 за м²",
+     "Закрита територія та паркова алея",
+     "Студії, ідеальні для інвестиції та оренди",
+     "Розстрочка до 36 місяців",
+     "Близько 10 хвилин автомобілем до моря"
+    ],
+    "specs": [
+     [
+      "Забудовник",
+      "Akvarel Group"
+     ],
+     [
+      "Технологія",
+      "монолітно-каркасна"
+     ],
+     [
+      "Стіни",
+      "газоблок"
+     ],
+     [
+      "Утеплення",
+      "мінеральна вата"
+     ],
+     [
+      "Стан",
+      "без оздоблення"
+     ]
+    ]
+   },
+   "ru": {
+    "district": "ул. Академика Сахарова",
+    "klass": "Город в городе · Akvarel Group",
+    "about": "Новый жилой массив от Akvarel Group по концепции «город в городе». Закрытая от посторонних территория, парковая аллея с местами для отдыха и коммерция на первых этажах, чтобы всё нужное было рядом.\n\nДома строят по монолитно-каркасной технологии со стенами из газоблока и утеплением минераловатной плитой. Квартиры сдаются без отделки, так что интерьер будет именно таким, как вы мечтаете. До моря около 10 минут на машине.",
+    "plus": [
+     "Самый доступный вход: от $740 за м²",
+     "Закрытая территория и парковая аллея",
+     "Студии, идеальные для инвестиций и аренды",
+     "Рассрочка до 36 месяцев",
+     "Около 10 минут на машине до моря"
+    ],
+    "specs": [
+     [
+      "Застройщик",
+      "Akvarel Group"
+     ],
+     [
+      "Технология",
+      "монолитно-каркасная"
+     ],
+     [
+      "Стены",
+      "газоблок"
+     ],
+     [
+      "Утепление",
+      "минеральная вата"
+     ],
+     [
+      "Состояние",
+      "без отделки"
+     ]
+    ]
+   },
+   "en": {
+    "district": "Akademika Sakharova St",
+    "klass": "City within a city · Akvarel Group",
+    "about": "A new residential area by Akvarel Group built on the “city within a city” idea: gated grounds, a park alley with places to relax and shops on the ground floors so everything you need is close by.\n\nBuildings use monolithic frame technology with aerated concrete walls and mineral wool insulation. Flats are handed over without finishing, so the interior is entirely yours. The sea is about 10 minutes away by car.",
+    "plus": [
+     "Most affordable entry: from $740 per m²",
+     "Gated grounds and a park alley",
+     "Studios ideal for investment and renting out",
+     "Instalments up to 36 months",
+     "About 10 minutes by car to the sea"
+    ],
+    "specs": [
+     [
+      "Developer",
+      "Akvarel Group"
+     ],
+     [
+      "Technology",
+      "monolithic frame"
+     ],
+     [
+      "Walls",
+      "aerated concrete"
+     ],
+     [
+      "Insulation",
+      "mineral wool"
+     ],
+     [
+      "Finish",
+      "shell condition"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "slug": "akvarel-7",
+  "nb": 4,
+  "name": "Акварель-7",
+  "address": "Одеса, вул. Слобідська, 56",
+  "sort": 50,
+  "i18n": {
+   "uk": {
+    "district": "Пересипський р-н, Слобідка",
+    "klass": "Малоповерховий комфорт · Akvarel Group",
+    "about": "Камерний малоповерховий комплекс європейського типу на Слобідці. Закрита охоронювана територія, двір без машин, дитячі майданчики та зелені зони для сімейного відпочинку. Автостоянку винесено за периметр.\n\nБудинки монолітно-каркасні, з автономним опаленням і стелями 2,7 м. А для прогулянок поруч Дюковський сад.",
+    "plus": [
+     "Малоповерховий формат: тиша й приватність",
+     "Охоронювана територія і двір без авто",
+     "Автономне опалення",
+     "Дюковський сад поруч",
+     "Розстрочка до 48 місяців"
+    ],
+    "specs": [
+     [
+      "Забудовник",
+      "Akvarel Group"
+     ],
+     [
+      "Клас",
+      "комфорт"
+     ],
+     [
+      "Формат",
+      "малоповерховий"
+     ],
+     [
+      "Опалення",
+      "автономне"
+     ],
+     [
+      "Стеля",
+      "2,7 м"
+     ]
+    ]
+   },
+   "ru": {
+    "district": "Пересыпский р-н, Слободка",
+    "klass": "Малоэтажный комфорт · Akvarel Group",
+    "about": "Камерный малоэтажный комплекс европейского типа на Слободке. Закрытая охраняемая территория, двор без машин, детские площадки и зелёные зоны для семейного отдыха. Автостоянка вынесена за периметр.\n\nДома монолитно-каркасные, с автономным отоплением и потолками 2,7 м. А для прогулок рядом Дюковский сад.",
+    "plus": [
+     "Малоэтажный формат: тишина и приватность",
+     "Охраняемая территория и двор без авто",
+     "Автономное отопление",
+     "Дюковский сад рядом",
+     "Рассрочка до 48 месяцев"
+    ],
+    "specs": [
+     [
+      "Застройщик",
+      "Akvarel Group"
+     ],
+     [
+      "Класс",
+      "комфорт"
+     ],
+     [
+      "Формат",
+      "малоэтажный"
+     ],
+     [
+      "Отопление",
+      "автономное"
+     ],
+     [
+      "Потолки",
+      "2,7 м"
+     ]
+    ]
+   },
+   "en": {
+    "district": "Peresypskyi district, Slobidka",
+    "klass": "Low-rise comfort · Akvarel Group",
+    "about": "An intimate low-rise European-style complex in Slobidka: gated and guarded grounds, a car-free courtyard, playgrounds and green spaces for family time. Parking is kept around the perimeter.\n\nBuildings are monolithic frame with autonomous heating and 2.7 m ceilings, and Diukivskyi Garden is close by for walks.",
+    "plus": [
+     "Low-rise: quiet and private",
+     "Guarded grounds, car-free courtyard",
+     "Autonomous heating",
+     "Diukivskyi Garden nearby",
+     "Instalments up to 48 months"
+    ],
+    "specs": [
+     [
+      "Developer",
+      "Akvarel Group"
+     ],
+     [
+      "Class",
+      "comfort"
+     ],
+     [
+      "Format",
+      "low-rise"
+     ],
+     [
+      "Heating",
+      "autonomous"
+     ],
+     [
+      "Ceilings",
+      "2,7 м"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "slug": "udobnyi",
+  "nb": 10,
+  "name": "ЖК Удобний",
+  "address": "Одеса, Середньофонтанський провулок",
+  "sort": 60,
+  "i18n": {
+   "uk": {
+    "district": "Приморський р-н, Середній Фонтан",
+    "klass": "Бізнес-клас",
+    "about": "Висотний будинок бізнес-класу на Середньому Фонтані, у районі з однією з найзручніших транспортних розв’язок міста. Три секції на 22 та 24 поверхи зведені за монолітно-каркасною технологією: стіни з газоблоку, утеплення базальтовою плитою.\n\nУ кожній квартирі автономне опалення, тож ви самі керуєте теплом і рахунками. У будинку є паркінг, а поруч супермаркети, торгові центри, кафе та школи. До моря близько 10 хвилин автомобілем.",
+    "plus": [
+     "Бізнес-клас від $990 за м²",
+     "До моря приблизно 10 хвилин автомобілем",
+     "Автономне опалення в кожній квартирі",
+     "Власний паркінг у будинку",
+     "Ліквідні площі для життя або здачі в оренду"
+    ],
+    "specs": [
+     [
+      "Клас",
+      "бізнес"
+     ],
+     [
+      "Секцій",
+      "3"
+     ],
+     [
+      "Поверховість",
+      "22, 24"
+     ],
+     [
+      "Технологія",
+      "монолітно-каркасна"
+     ],
+     [
+      "Утеплення",
+      "базальтова плита"
+     ],
+     [
+      "Опалення",
+      "автономне"
+     ]
+    ]
+   },
+   "ru": {
+    "district": "Приморский р-н, Средний Фонтан",
+    "klass": "Бизнес-класс",
+    "about": "Высотный дом бизнес-класса на Среднем Фонтане, в районе с одной из самых удобных транспортных развязок города. Три секции на 22 и 24 этажа построены по монолитно-каркасной технологии: стены из газоблока, утепление базальтовой плитой.\n\nВ каждой квартире автономное отопление, так что вы сами управляете теплом и счетами. В доме есть паркинг, а рядом супермаркеты, торговые центры, кафе и школы. До моря около 10 минут на машине.",
+    "plus": [
+     "Бизнес-класс от $990 за м²",
+     "До моря примерно 10 минут на машине",
+     "Автономное отопление в каждой квартире",
+     "Свой паркинг в доме",
+     "Ликвидные площади для жизни или сдачи в аренду"
+    ],
+    "specs": [
+     [
+      "Класс",
+      "бизнес"
+     ],
+     [
+      "Секций",
+      "3"
+     ],
+     [
+      "Этажность",
+      "22, 24"
+     ],
+     [
+      "Технология",
+      "монолитно-каркасная"
+     ],
+     [
+      "Утепление",
+      "базальтовая плита"
+     ],
+     [
+      "Отопление",
+      "автономное"
+     ]
+    ]
+   },
+   "en": {
+    "district": "Prymorskyi district, Serednii Fontan",
+    "klass": "Business class",
+    "about": "A business-class high-rise in Serednii Fontan, an area with some of the most convenient transport links in the city. Three sections of 22 and 24 floors use monolithic frame technology with aerated concrete walls and basalt insulation.\n\nEvery flat has autonomous heating, so you control warmth and bills. The building has parking, with supermarkets, malls, cafés and schools nearby, and the sea about 10 minutes away by car.",
+    "plus": [
+     "Business class from $990 per m²",
+     "About 10 minutes by car to the sea",
+     "Autonomous heating in every flat",
+     "On-site parking",
+     "Liquid layouts to live in or rent out"
+    ],
+    "specs": [
+     [
+      "Class",
+      "business"
+     ],
+     [
+      "Sections",
+      "3"
+     ],
+     [
+      "Floors",
+      "22, 24"
+     ],
+     [
+      "Technology",
+      "monolithic frame"
+     ],
+     [
+      "Insulation",
+      "basalt slab"
+     ],
+     [
+      "Heating",
+      "autonomous"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "slug": "odeski-tradytsii-starosinna",
+  "nb": 12,
+  "name": "Одеські Традиції Старосінна",
+  "address": "Одеса, Старосінна площа",
+  "sort": 70,
+  "i18n": {
+   "uk": {
+    "district": "Приморський р-н",
+    "klass": "Новобудова біля центру",
+    "about": "Новий проєкт від команди «Одеських Традицій», чиї комплекси одесити знають за закритими дворами та обжитою інфраструктурою. У продажу одно-, дво- та трикімнатні квартири площею від 38 до 76 м² з розстрочкою до 46 місяців.\n\nНадішлемо планування, ціни та розрахунок платежів, а також розповімо про все, що варто знати перед покупкою.",
+    "plus": [
+     "Розстрочка до 46 місяців",
+     "Квартири від 38 до 76 м²",
+     "Перевірена команда забудовника"
+    ],
+    "specs": []
+   },
+   "ru": {
+    "district": "Приморский р-н",
+    "klass": "Новостройка возле центра",
+    "about": "Новый проект от команды «Одесских Традиций», чьи комплексы одесситы знают по закрытым дворам и обжитой инфраструктуре. В продаже одно-, двух- и трёхкомнатные квартиры площадью от 38 до 76 м² с рассрочкой до 46 месяцев.\n\nПришлём планировки, цены и расчёт платежей, а также расскажем обо всём, что стоит знать перед покупкой.",
+    "plus": [
+     "Рассрочка до 46 месяцев",
+     "Квартиры от 38 до 76 м²",
+     "Проверенная команда застройщика"
+    ],
+    "specs": []
+   },
+   "en": {
+    "district": "Prymorskyi district",
+    "klass": "New build near the centre",
+    "about": "A new project from the team behind Odeski Tradytsii, known in Odesa for gated courtyards and well-established amenities. One-, two- and three-bedroom flats from 38 to 76 m² are available with instalments of up to 46 months.\n\nWe will send plans, prices and a payment schedule, and tell you everything worth knowing before you buy.",
+    "plus": [
+     "Instalments up to 46 months",
+     "Flats from 38 to 76 m²",
+     "Proven developer team"
+    ],
+    "specs": []
+   }
+  }
+ },
+ {
+  "slug": "odeski-tradytsii-hlushko",
+  "nb": 13,
+  "name": "Одеські Традиції на Глушко",
+  "address": "Одеса, просп. Академіка Глушка",
+  "sort": 80,
+  "i18n": {
+   "uk": {
+    "district": "Київський р-н, Таїрова",
+    "klass": "Зданий будинок",
+    "about": "Будинок уже зданий і введений в експлуатацію: можна наживо оглянути квартиру та одразу починати ремонт. Він стоїть у самому серці Таїрова, де вся інфраструктура в пішій доступності.\n\nЗакрита територія, підземний паркінг, а щоб відключення світла не порушували ваш комфорт, у будинку працює генератор.",
+    "plus": [
+     "Будинок зданий, жодних ризиків будівництва",
+     "Серце Таїрова, усе поруч",
+     "Підземний паркінг і генератор",
+     "Розстрочка до 19 місяців навіть на готове житло"
+    ],
+    "specs": [
+     [
+      "Статус",
+      "збудовано"
+     ],
+     [
+      "Поверховість",
+      "17"
+     ],
+     [
+      "Паркінг",
+      "підземний"
+     ],
+     [
+      "Резервне живлення",
+      "генератор"
+     ]
+    ]
+   },
+   "ru": {
+    "district": "Киевский р-н, Таирова",
+    "klass": "Сданный дом",
+    "about": "Дом уже сдан и введён в эксплуатацию: можно вживую осмотреть квартиру и сразу начинать ремонт. Он стоит в самом сердце Таирова, где вся инфраструктура в пешей доступности.\n\nЗакрытая территория, подземный паркинг, а чтобы отключения света не нарушали ваш комфорт, в доме работает генератор.",
+    "plus": [
+     "Дом сдан, никаких рисков стройки",
+     "Сердце Таирова, всё рядом",
+     "Подземный паркинг и генератор",
+     "Рассрочка до 19 месяцев даже на готовое жильё"
+    ],
+    "specs": [
+     [
+      "Статус",
+      "построен"
+     ],
+     [
+      "Этажность",
+      "17"
+     ],
+     [
+      "Паркинг",
+      "подземный"
+     ],
+     [
+      "Резервное питание",
+      "генератор"
+     ]
+    ]
+   },
+   "en": {
+    "district": "Kyivskyi district, Tairova",
+    "klass": "Completed building",
+    "about": "The building is already completed and commissioned, so you can view the flat in person and start renovating right away. It sits in the heart of Tairova, with all amenities within walking distance.\n\nGated grounds, underground parking and a generator to keep you comfortable during power cuts.",
+    "plus": [
+     "Completed, no construction risk",
+     "Heart of Tairova, everything nearby",
+     "Underground parking and generator",
+     "Instalments up to 19 months even on a finished home"
+    ],
+    "specs": [
+     [
+      "Status",
+      "completed"
+     ],
+     [
+      "Floors",
+      "17"
+     ],
+     [
+      "Parking",
+      "underground"
+     ],
+     [
+      "Backup power",
+      "generator"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "slug": "ellada-7",
+  "nb": 7,
+  "name": "ЖК Еллада-7",
+  "address": "Одеса, вул. Генуезька, 1",
+  "sort": 90,
+  "i18n": {
+   "uk": {
+    "district": "Приморський р-н, Аркадія",
+    "klass": "Комфорт-клас · Гефест",
+    "about": "Нова черга відомого комплексу «Еллада» від «Гефесту» поруч з Аркадією. Комплекс із шести 26-поверхових будинків, три з яких уже здані та заселені, тож ви бачите результат ще до покупки.\n\nМонолітно-каркасна технологія, стіни з газоблоку, утеплення мінеральною ватою, автономне опалення та стелі 2,87 м. До моря й набережної Аркадії рукою подати.",
+    "plus": [
+     "Поруч Аркадія та море",
+     "Три будинки комплексу вже здані",
+     "Стелі 2,87 м",
+     "Автономне опалення"
+    ],
+    "specs": [
+     [
+      "Забудовник",
+      "Гефест"
+     ],
+     [
+      "Клас",
+      "комфорт"
+     ],
+     [
+      "Будинків",
+      "6"
+     ],
+     [
+      "Поверховість",
+      "26"
+     ],
+     [
+      "Опалення",
+      "автономне"
+     ],
+     [
+      "Стеля",
+      "2,87 м"
+     ]
+    ]
+   },
+   "ru": {
+    "district": "Приморский р-н, Аркадия",
+    "klass": "Комфорт-класс · Гефест",
+    "about": "Новая очередь известного комплекса «Эллада» от «Гефеста» рядом с Аркадией. Комплекс из шести 26-этажных домов, три из которых уже сданы и заселены, так что вы видите результат ещё до покупки.\n\nМонолитно-каркасная технология, стены из газоблока, утепление минеральной ватой, автономное отопление и потолки 2,87 м. До моря и набережной Аркадии рукой подать.",
+    "plus": [
+     "Рядом Аркадия и море",
+     "Три дома комплекса уже сданы",
+     "Потолки 2,87 м",
+     "Автономное отопление"
+    ],
+    "specs": [
+     [
+      "Застройщик",
+      "Гефест"
+     ],
+     [
+      "Класс",
+      "комфорт"
+     ],
+     [
+      "Домов",
+      "6"
+     ],
+     [
+      "Этажность",
+      "26"
+     ],
+     [
+      "Отопление",
+      "автономное"
+     ],
+     [
+      "Потолки",
+      "2,87 м"
+     ]
+    ]
+   },
+   "en": {
+    "district": "Prymorskyi district, Arkadia",
+    "klass": "Comfort class · Hefest",
+    "about": "A new phase of the well-known Ellada complex by Hefest next to Arkadia. Six 26-storey buildings, three already completed and lived in, so you can see the result before you buy.\n\nMonolithic frame, aerated concrete walls, mineral wool insulation, autonomous heating and 2.87 m ceilings. The sea and the Arkadia promenade are a short walk away.",
+    "plus": [
+     "Next to Arkadia and the sea",
+     "Three buildings already completed",
+     "2.87 m ceilings",
+     "Autonomous heating"
+    ],
+    "specs": [
+     [
+      "Developer",
+      "Hefest"
+     ],
+     [
+      "Class",
+      "comfort"
+     ],
+     [
+      "Buildings",
+      "6"
+     ],
+     [
+      "Floors",
+      "26"
+     ],
+     [
+      "Heating",
+      "autonomous"
+     ],
+     [
+      "Ceilings",
+      "2,87 м"
+     ]
+    ]
+   }
+  }
+ }
+]

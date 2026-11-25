@@ -1,4 +1,4 @@
-// lead-inbox v4 (23.11.2026; v3: телефон из профиля / «О себе», ссылка на профиль; v4: сотрудники агентства — не лиды) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
+// lead-inbox v6 (25.11.2026; v6: заявки с сайта platform site, kind form; v3: телефон из профиля / «О себе», ссылка на профиль; v4: сотрудники агентства — не лиды; v5: приём формы из Make) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
 // Кто шлёт: Make (Instagram / Facebook / TikTok, несколько аккаунтов) и telegram-private (личка и комментарии каналов).
 // Приём: заголовок x-inbox-key (или ?key=) = crm_private_settings.lead_inbox_key.
 //   Тело: { platform, account, kind: "dm"|"comment", external_id, from_id?, nick?, name?, phone?, text, post_url?, at? } или массив.
@@ -23,6 +23,7 @@ const PL: Record<string, { label: string; src: string }> = {
   facebook: { label: "Фейсбук", src: "Фейсбук рабочий" },
   tiktok: { label: "Тик-Ток", src: "Тик-Ток рабочий" },
   telegram: { label: "Телеграм", src: "Телеграмм-канал рабочий" },
+  site: { label: "Сайт", src: "Сайт pride-agency.com.ua" },
 };
 
 // телефон из текста: +380…, 380…, 0XX…, а также иностранный +XX… (10–13 цифр)
@@ -86,7 +87,7 @@ async function handle(m: any, accs: Map<string, any>) {
   // ссылка на профиль клиента (нет ника — ID, по нему клиента можно найти)
   const profile = nick ? (platform === "telegram" ? `https://t.me/${nick}` : platform === "instagram" ? `https://instagram.com/${nick}` : platform === "tiktok" ? `https://www.tiktok.com/@${nick}` : null)
     : m.profile_url || (m.from_id ? `${P.label} ID ${m.from_id}` : null);
-  const where = m.kind === "comment" ? `комментарий${m.post_url ? ` под постом ${m.post_url}` : " под постом"}` : "личные сообщения";
+  const where = m.kind === "form" ? `заявка с сайта${m.post_url ? ` (${m.post_url})` : ""}` : m.kind === "comment" ? `комментарий${m.post_url ? ` под постом ${m.post_url}` : " под постом"}` : "личные сообщения";
   const block = `Запрос (${P.label}${account ? ` @${account}` : ""} · ${where} · ${when(m.at)}):\n${text}`;
 
   // 1) уже отдан менеджеру → дописываем в карточку
@@ -116,7 +117,10 @@ async function handle(m: any, accs: Map<string, any>) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  const b = await req.json().catch(() => null); if (!b) return json({ error: "нужен JSON" }, 400);
+  // JSON (telegram-private) или форма x-www-form-urlencoded (Make: безопасно для любых кавычек/переносов в тексте клиента)
+  const ct = req.headers.get("content-type") || "";
+  const b = ct.includes("form") ? Object.fromEntries(new URLSearchParams(await req.text())) : await req.json().catch(() => null);
+  if (!b) return json({ error: "нужен JSON или форма" }, 400);
 
   // администратор из CRM: отдать / отклонить
   if (b.action === "assign" || b.action === "reject") {
