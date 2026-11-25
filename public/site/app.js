@@ -207,7 +207,7 @@
     curSlug = slug; const p = P(c), i = I(c);
     document.title = c.name + ' · Pride';
     app.innerHTML = `<div class="wrap"><div class="crumbs"><a href="/" data-nav>${t('home')}</a> / <a href="/novobudovy" data-nav>${t('list')}</a> / ${esc(c.name)}</div>
-      <div class="zh"><div class="gal">${c.photo ? `<img src="${esc(c.photo)}" alt="${esc(c.name)}">` : ''}</div>
+      <div class="zh"><div class="gal">${c.photo ? `<img id="gi" src="${esc(c.photo)}" alt="${esc(c.name)}">` : ''}${(c.photos || []).length > 1 ? `<button class="gb" type="button" data-g="-1" aria-label="‹">‹</button><button class="gb r" type="button" data-g="1" aria-label="›">›</button><span class="gc" id="gc">1 / ${c.photos.length}</span>` : ''}</div>
       <div class="zi"><span class="kick">${esc(typo(i.klass, L))}</span><h1 style="font-size:clamp(32px,4vw,44px)">${esc(c.name)}</h1><span style="color:var(--mut)">${esc(typo(i.district, L))}</span>
         <div class="pbox"><div class="card"><span>${t('p_m2')}</span><b>${p.m2}</b></div><div class="card"><span>${t('p_area')}</span><b>${p.area}</b></div><div class="card"><span>${t('p_rooms')}</span><b>${esc(p.rooms)}</b></div><div class="card"><span>${t('p_inst')}</span><b style="color:var(--y)">${p.inst}</b></div></div>
         <button class="btn" type="button" data-open="${c.slug}">${t('cta')}</button>
@@ -216,6 +216,7 @@
         ${i.plus && i.plus.length ? `<h2 style="font-size:26px;margin-top:12px">${t('why')}</h2>${i.plus.map((x) => `<div class="plus"><i>✓</i><span>${esc(typo(x, L))}</span></div>`).join('')}` : ''}</div>
         <aside class="card spec"><h3>${t('specs')}</h3>${[[T[L].p_m2, p.m2], [T[L].p_area, p.area], [T[L].p_rooms, p.rooms], [T[L].p_inst, p.inst], ...(i.specs || [])].map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(typo(String(v), L))}</b></div>`).join('')}
           <p class="note" style="margin:12px 0 0">${t('spec_note')}</p></aside></div></div>`;
+    let gi = 0; app.querySelectorAll('[data-g]').forEach((b) => b.onclick = () => { const n = c.photos.length; gi = (gi + +b.dataset.g + n) % n; document.getElementById('gi').src = c.photos[gi]; document.getElementById('gc').textContent = (gi + 1) + ' / ' + n; });
     track('view', slug);
   }
   // ---------- роутинг ----------
