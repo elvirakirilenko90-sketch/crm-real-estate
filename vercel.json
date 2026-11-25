@@ -1,8 +1,11 @@
 {
+  "redirects": [
+    { "source": "/", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/ua", "permanent": false }
+  ],
   "rewrites": [
-    { "source": "/", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/site/index.html" },
-    { "source": "/novobudovy", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/site/index.html" },
-    { "source": "/zhk/:slug", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/site/index.html" },
+    { "source": "/ua", "destination": "/site/index.html" },
+    { "source": "/ru", "destination": "/site/index.html" },
+    { "source": "/en", "destination": "/site/index.html" },
     { "source": "/site-preview", "destination": "/site/index.html" },
     { "source": "/novobudovy", "destination": "/site/index.html" },
     { "source": "/zhk/:slug", "destination": "/site/index.html" }

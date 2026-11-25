@@ -82,7 +82,7 @@
   }
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // ---------- состояние ----------
-  let L = (new URLSearchParams(location.search).get('lang') || localStorage.getItem('lang') || 'uk'); if (!T[L]) L = 'uk';
+  const P0 = location.pathname.replace(/\/+$/, ''); let L = ({ '/ua': 'uk', '/ru': 'ru', '/en': 'en' })[P0] || new URLSearchParams(location.search).get('lang') || (() => { try { return localStorage.getItem('lang'); } catch { return null; } })() || 'uk'; if (!T[L]) L = 'uk';
   const t = (k) => typo(T[L][k] ?? T.uk[k] ?? k, L);
   let DATA = [], STATS = {}, GEO = {};
   const sid = (() => { try { let s = sessionStorage.getItem('sid'); if (!s) { s = Math.random().toString(36).slice(2, 12); sessionStorage.setItem('sid', s); } return s; } catch { return ''; } })();
@@ -239,7 +239,7 @@
     document.documentElement.lang = L === 'uk' ? 'uk' : L;
     document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t); });
     document.getElementById('lang').innerHTML = ['uk', 'ru', 'en'].map((x) => `<button type="button" data-l="${x}" class="${x === L ? 'on' : ''}">${x === 'uk' ? 'UA' : x.toUpperCase()}</button>`).join('');
-    document.querySelectorAll('#lang button').forEach((b) => b.onclick = () => { L = b.dataset.l; try { localStorage.setItem('lang', L); } catch {} route(); });
+    document.querySelectorAll('#lang button').forEach((b) => b.onclick = () => { L = b.dataset.l; try { localStorage.setItem('lang', L); } catch {} const hp = location.pathname.replace(/\/+$/, ''); if (['', '/ua', '/ru', '/en'].includes(hp)) history.replaceState(null, '', L === 'uk' ? '/ua' : '/' + L); route(); });
     const p = location.pathname; document.querySelectorAll('nav.m a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p + location.search || (a.getAttribute('href') === '/novobudovy' && p === '/novobudovy' && !location.search.includes('view=map'))));
   }
   // ---------- форма ----------
