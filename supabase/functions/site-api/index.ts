@@ -46,10 +46,12 @@ async function lunList() {
   const res = [];
   for (const c of data || []) {
     const rows = (c.rows || []) as any[]; const rate = Number(c.rate) || 0;
-    if (OURS.has(c.slug) || !rows.length || !rate || /продано|не ведеться/i.test(c.status || "")) continue;
-    const p = rows.flatMap((r) => [r.p1, r.p2]).filter((x) => x > 1000), a = rows.flatMap((r) => [r.a1, r.a2]).filter((x) => x > 5);
+    // продано / продаж не ведётся → не показываем; без цен на ЛУН → показываем «за запитом»
+    if (OURS.has(c.slug) || /продано|не ведеться/i.test(c.status || "")) continue;
+    const p = rate ? rows.flatMap((r) => [r.p1, r.p2]).filter((x) => x > 1000) : [], a = rows.flatMap((r) => [r.a1, r.a2]).filter((x) => x > 5);
     res.push({ slug: c.slug, name: c.name, district: c.district, dev: c.developer, klass: c.props?.["Клас"] || "", lat: c.lat, lng: c.lng,
-      m2_min: Math.round(Math.min(...p) / rate), m2_max: Math.round(Math.max(...p) / rate), area_min: Math.floor(Math.min(...a)), area_max: Math.ceil(Math.max(...a)),
+      m2_min: p.length ? Math.round(Math.min(...p) / rate) : null, m2_max: p.length ? Math.round(Math.max(...p) / rate) : null,
+      area_min: a.length ? Math.floor(Math.min(...a)) : null, area_max: a.length ? Math.ceil(Math.max(...a)) : null,
       rooms: [...new Set(rows.map((r) => ROOM[r.k]).filter((x) => x != null))].sort((x, y) => x - y), inst: c.inst_months || null, photo: (c.photos || [])[0] || null });
   }
   return res;
