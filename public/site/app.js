@@ -188,7 +188,7 @@
       if (!$('#map')) { $('#out').innerHTML = '<div id="map"></div>'; if (map) { map.remove(); map = null; } }
       if (!window.L) return;
       if (!map) { map = window.L.map('map', { scrollWheelZoom: false }).setView([46.45, 30.72], 12);
-        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map); map._pl = window.L.layerGroup().addTo(map); }
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map); map._pl = (window.L.markerClusterGroup ? window.L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 50, iconCreateFunction: (cl) => window.L.divIcon({ className: '', html: `<div class="clu">${cl.getChildCount()}</div>`, iconSize: [44, 44] }) }) : window.L.layerGroup()).addTo(map); }
       map._pl.clearLayers(); const pts = [];
       L2.forEach((c) => { const g = GEO[c.slug]; if (!g || g.lat == null) return; const p = P(c);
         const icon = window.L.divIcon({ className: '', html: `<div class="pin">${p.m2min ? '$' + fmt(p.m2min) + '/м²' : esc(c.name)}</div>`, iconSize: null });
@@ -202,8 +202,9 @@
     }
     draw();
   }
-  function zhk(slug) {
+  function zhk(slug, again) {
     const c = DATA.find((x) => x.slug === slug); if (!c) return go('/novobudovy', true);
+    if (c.lun && !c.det) fetch(API + '?a=lun&slug=' + encodeURIComponent(slug)).then((r) => r.json()).then((d) => { window.LUN.detail(c, d || {}); if (curSlug === slug) zhk(slug, true); }).catch(() => {});
     curSlug = slug; const p = P(c), i = I(c);
     document.title = c.name + ' · Pride';
     app.innerHTML = `<div class="wrap"><div class="crumbs"><a href="/" data-nav>${t('home')}</a> / <a href="/novobudovy" data-nav>${t('list')}</a> / ${esc(c.name)}</div>
@@ -217,7 +218,7 @@
         <aside class="card spec"><h3>${t('specs')}</h3>${[[T[L].p_m2, p.m2], [T[L].p_area, p.area], [T[L].p_rooms, p.rooms], [T[L].p_inst, p.inst], ...(i.specs || [])].map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(typo(String(v), L))}</b></div>`).join('')}
           <p class="note" style="margin:12px 0 0">${t('spec_note')}</p></aside></div></div>`;
     let gi = 0; app.querySelectorAll('[data-g]').forEach((b) => b.onclick = () => { const n = c.photos.length; gi = (gi + +b.dataset.g + n) % n; document.getElementById('gi').src = c.photos[gi]; document.getElementById('gc').textContent = (gi + 1) + ' / ' + n; });
-    track('view', slug);
+    if (!again) track('view', slug);
   }
   // ---------- роутинг ----------
   function route() {
@@ -270,6 +271,10 @@
   Promise.all([fetch('/site/content.json').then((r) => r.json()), fetch(API + '?a=stats').then((r) => r.json()).catch(() => ({ stats: {}, geo: {} }))]).then(([content, s]) => {
     STATS = s.stats || {}; GEO = s.geo || {};
     DATA = content.filter((c) => (GEO[c.slug]?.visible ?? true) && STATS[c.nb]?.has !== false).sort((a, b) => a.sort - b.sort);
+    // ЖК Одессы с ЛУН (без наших): параметры и координаты в те же STATS/GEO, что и у наших
+    if (window.LUN) (s.lun || []).forEach((x, i) => { const c = window.LUN.item(x, i);
+      STATS[c.nb] = { m2_min: x.m2_min, m2_max: x.m2_max, area_min: x.area_min, area_max: x.area_max, rooms: x.rooms, inst: x.inst, has: true };
+      if (x.lat != null) GEO[c.slug] = { lat: x.lat, lng: x.lng }; DATA.push(c); });
     route(); if (!location.pathname.startsWith('/zhk/')) track('view', null);
   });
 })();

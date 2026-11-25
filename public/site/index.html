@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="">
 <style>
 :root{--bg:#0B0B0C;--card:#18181B;--line:#27272A;--line2:#3F3F46;--tx:#F4F4F5;--mut:#A1A1AA;--dim:#71717A;--y:#F5C518;--y2:#FFD84D}
 *{box-sizing:border-box}html{scroll-behavior:smooth}
@@ -60,6 +61,7 @@ footer{border-top:1px solid var(--line);color:var(--mut);font-size:14px;line-hei
 .flt{flex:1 1 260px;max-width:300px;padding:22px;display:flex;flex-direction:column;gap:18px;position:sticky;top:90px}
 .res{flex:999 1 560px;min-width:0}
 #map{position:relative;z-index:0;isolation:isolate;height:640px;border-radius:16px;border:1px solid var(--line);background:#e9e6df}
+.clu{width:44px;height:44px;border-radius:999px;background:#0B0B0C;color:var(--y);border:3px solid var(--y);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;font-family:Manrope,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .pin{background:var(--y);color:#0B0B0C;font-weight:800;font-size:13px;padding:5px 10px;border-radius:999px;border:2px solid #0B0B0C;white-space:nowrap;font-family:Manrope,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .leaflet-popup-content-wrapper{background:var(--bg);color:var(--tx);border-radius:14px;border:1px solid var(--line2)}.leaflet-popup-tip{background:var(--bg)}.leaflet-popup-content a{color:var(--y)}.leaflet-container a.leaflet-popup-close-button{color:var(--mut)}.leaflet-popup-content{margin:14px;width:250px!important;font-family:Manrope,sans-serif}
 .zh{display:flex;flex-wrap:wrap;gap:32px;align-items:stretch;padding:24px 0 8px}
@@ -125,6 +127,8 @@ body{padding-bottom:76px}.flt.col{display:none}.fbtn{display:inline-flex!importa
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+<script src="/site/lun.js"></script>
 <script src="/site/app.js"></script>
 </body>
 </html>

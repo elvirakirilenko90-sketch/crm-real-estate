@@ -1,6 +1,8 @@
-// site-api v1 (25.11.2026) — публичный API сайта pride-agency.com.ua.
+// site-api v3 (26.11.2026) — публичный API сайта pride-agency.com.ua.
 // GET  ?a=stats  → по каждому ЖК (nb_source_id): цена за м² от–до, площадь от–до, комнаты, рассрочка (свободные квартиры) + координаты.
 //                  Только безопасные поля: без цен квартир, контактов, комиссий.
+// GET  ?a=stats также отдаёт lun: краткий список ЖК Одессы с ЛУН (site_lun_complexes), без дублей наших ЖК.
+// GET  ?a=lun&slug=… → подробности ЖК с ЛУН: адрес, характеристики, фото.
 // POST {a:"event", event, slug, page, device, lang, ref, utm, sid} → site_events (view|phone|telegram|form_open|form_submit).
 // POST {a:"lead", name, phone, slug, complex, page, lang, website(honeypot)} → lead-inbox (platform site) → «Нераспределённые лиды».
 // POST {a:"geocode"} + x-cron-secret → координаты ЖК по адресам из /site/content.json (Nominatim) → site_complexes.
@@ -32,7 +34,29 @@ async function stats() {
       rooms: [...s.rooms].sort((a, b) => a - b), inst: s.inst || null, has: s.free > 0 };
   }
   const { data: geo } = await db.from("site_complexes").select("slug,lat,lng,visible");
-  return { stats: out, geo: Object.fromEntries((geo || []).map((g: any) => [g.slug, { lat: g.lat, lng: g.lng, visible: g.visible }])) };
+  return { stats: out, geo: Object.fromEntries((geo || []).map((g: any) => [g.slug, { lat: g.lat, lng: g.lng, visible: g.visible }])), lun: await lunList() };
+}
+
+// ЖК с ЛУН, которые уже есть у нас (данные берём из CRM, с ЛУН не дублируем)
+const OURS = new Set(["lymanka-tairovski-sady", "odesa-city", "platinum-city", "fontanka-akvarel-10", "akvarel-7", "udobnyi", "starosinna-sq-1a", "odeski-tradytsii-na-hlushko", "ellada"]);
+// Тип квартиры с ЛУН → число комнат (0 = студия)
+const ROOM: Record<string, number> = { "Студії": 0, "Смарт-квартири": 0, "1-кімнатні": 1, "2-кімнатні": 2, "3-кімнатні": 3, "4-кімнатні": 4, "5-кімнатні": 5, "Багатокімнатні": 4, "Пентхауси": 4, "Дворівневі": 3 };
+async function lunList() {
+  const { data } = await db.from("site_lun_complexes").select("slug,name,district,developer,status,lat,lng,rate,rows,inst_months,props,photos").eq("visible", true).limit(1000);
+  const res = [];
+  for (const c of data || []) {
+    const rows = (c.rows || []) as any[]; const rate = Number(c.rate) || 0;
+    if (OURS.has(c.slug) || !rows.length || !rate || /продано|не ведеться/i.test(c.status || "")) continue;
+    const p = rows.flatMap((r) => [r.p1, r.p2]).filter((x) => x > 1000), a = rows.flatMap((r) => [r.a1, r.a2]).filter((x) => x > 5);
+    res.push({ slug: c.slug, name: c.name, district: c.district, dev: c.developer, klass: c.props?.["Клас"] || "", lat: c.lat, lng: c.lng,
+      m2_min: Math.round(Math.min(...p) / rate), m2_max: Math.round(Math.max(...p) / rate), area_min: Math.floor(Math.min(...a)), area_max: Math.ceil(Math.max(...a)),
+      rooms: [...new Set(rows.map((r) => ROOM[r.k]).filter((x) => x != null))].sort((x, y) => x - y), inst: c.inst_months || null, photo: (c.photos || [])[0] || null });
+  }
+  return res;
+}
+async function lunOne(slug: string) {
+  const { data } = await db.from("site_lun_complexes").select("slug,address,props,photos,developer,status").eq("slug", slug).eq("visible", true).maybeSingle();
+  return data || null;
 }
 
 async function geocode() {
@@ -59,6 +83,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const u = new URL(req.url);
   if (req.method === "GET" && u.searchParams.get("a") === "stats") return json(await stats(), 200, { "Cache-Control": "public, max-age=600" });
+  if (req.method === "GET" && u.searchParams.get("a") === "lun") return json(await lunOne(String(u.searchParams.get("slug") || "")), 200, { "Cache-Control": "public, max-age=3600" });
   const b = await req.json().catch(() => null);
   if (!b) return json({ error: "bad request" }, 400);
 
