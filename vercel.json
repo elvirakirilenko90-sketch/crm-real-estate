@@ -1,5 +1,10 @@
 {
   "rewrites": [
-    { "source": "/", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/about.html" }
+    { "source": "/", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/site/index.html" },
+    { "source": "/novobudovy", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/site/index.html" },
+    { "source": "/zhk/:slug", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/site/index.html" },
+    { "source": "/site-preview", "destination": "/site/index.html" },
+    { "source": "/novobudovy", "destination": "/site/index.html" },
+    { "source": "/zhk/:slug", "destination": "/site/index.html" }
   ]
 }
