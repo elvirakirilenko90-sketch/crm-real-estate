@@ -644,6 +644,25 @@ function playReminderSound(type="classic"){
   }catch{}
 }
 
+// Сжатие фото перед загрузкой (26.11.2026): экономит место в Supabase Storage.
+// Фото больше 500 КБ уменьшается до 2000 px по длинной стороне и сохраняется в JPEG (качество 0,82).
+// HEIC переводится в JPEG, если браузер умеет его открыть (iPhone/Safari). Видео, PDF и маленькие фото не трогаем.
+// Если сжать не получилось или файл стал не меньше, загружается оригинал.
+async function shrinkImage(file, maxSide = 2000, quality = 0.82){
+  try{
+    const isImg = /^image\/(jpeg|jpg|png|webp|heic|heif)$/i.test(file?.type || "") || /\.(heic|heif)$/i.test(file?.name || "");
+    if(!isImg || file.size < 500 * 1024) return file;
+    const url = URL.createObjectURL(file);
+    const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+    const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", quality));
+    if(!blob || blob.size >= file.size) return file;
+    return new File([blob], (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  }catch{ return file; }
+}
+
 async function uploadToFirstAvailableBucket(bucketNames, path, file, options={}){
   let lastError = null;
   for (const bucket of bucketNames){
@@ -5157,9 +5176,11 @@ function PropertyModal({property,setProperties,onClose,users,currentProfile,role
     const propertyId = await saveObject(false);
     if (!propertyId) return;
 
-    const detectedKind = mediaFile.type?.startsWith("video") ? "Видео" : mediaKind;
+    const mediaFileRaw = mediaFile;
+    const detectedKind = mediaFileRaw.type?.startsWith("video") ? "Видео" : mediaKind;
+    const upFile = await shrinkImage(mediaFileRaw); // сжатие фото перед загрузкой
 
-    const originalName = mediaFile.name || "upload";
+    const originalName = upFile.name || "upload";
     const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
     const ext = rawExt.toLowerCase().replace(/[^a-z0-9]/g, "") || "file";
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
@@ -5168,9 +5189,9 @@ function PropertyModal({property,setProperties,onClose,users,currentProfile,role
     const { error: uploadError } = await supabase
       .storage
       .from("property-media")
-      .upload(path, mediaFile, {
+      .upload(path, upFile, {
         upsert: true,
-        contentType: mediaFile.type || undefined
+        contentType: upFile.type || undefined
       });
 
     if (uploadError) {
@@ -5254,7 +5275,8 @@ function PropertyModal({property,setProperties,onClose,users,currentProfile,role
     if (!propertyId) return;
 
     const uploadedItems = [];
-    for (const f of files) {
+    for (const f0 of files) {
+      const f = await shrinkImage(f0); // сжатие фото перед загрузкой
       const detectedKind = f.type?.startsWith("video") ? "Видео" : "Фото";
       const originalName = f.name || "upload";
       const rawExt = originalName.includes(".") ? originalName.split(".").pop() : "file";
@@ -10754,7 +10776,7 @@ function MyContactsCard({currentProfile, lang="ru"}){
   if(!f) return null;
   const save = async (patch = {}) => { setBusy(true); const row = {...f, ...patch}; const {error} = await supabase.from("users").update({position:row.position||null, phone:row.phone||"", telegram:row.telegram||null, viber:row.viber||null, whatsapp:row.whatsapp||null, avatar_url:row.avatar_url||null}).eq("id", currentProfile.id);
     setBusy(false); if(error) return alert(error.message); setF(row); setOk(true); setTimeout(()=>setOk(false), 2500); };
-  const upload = async file => { if(!file) return; if(file.size > 4*1024*1024) return alert(tr(lang,"Фото должно быть меньше 4 МБ"));
+  const upload = async file0 => { if(!file0) return; const file = await shrinkImage(file0, 800); if(file.size > 4*1024*1024) return alert(tr(lang,"Фото должно быть меньше 4 МБ"));
     setBusy(true); const ext = (file.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"") || "jpg"; const path = `manager-photos/${currentProfile.id}-${Date.now()}.${ext}`;
     const up = await supabase.storage.from("property-media").upload(path, file, {upsert:true, contentType:file.type||undefined}); setBusy(false);
     if(up.error) return alert(up.error.message); await save({avatar_url: supabase.storage.from("property-media").getPublicUrl(path).data.publicUrl}); };
