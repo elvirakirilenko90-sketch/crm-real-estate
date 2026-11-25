@@ -25,7 +25,7 @@
       spec_note: 'Планування, точні ціни й графік платежів ви отримаєте в презентації.', write_tg: 'Написати в Telegram', call: 'Подзвонити: 067 109 52 22',
       m_title: 'Презентація та прорахунки', m_sub: 'Надішлемо в Telegram планування, актуальні ціни та розрахунок розстрочки. Це безкоштовно й ні до чого не зобов’язує.',
       fl_name: "Ім'я", fl_phone: 'Телефон', send: 'Отримати', sending: 'Надсилаємо…', thanks: 'Дякуємо! Менеджер зв’яжеться з вами найближчим часом.', err_phone: 'Вкажіть, будь ласка, номер телефону', err: 'Не вдалося надіслати. Напишіть нам у Telegram, і ми відповімо одразу.',
-      m_note: 'Натискаючи кнопку, ви погоджуєтесь з політикою конфіденційності.', by_req: 'за запитом', upto: 'до', mo: 'міс.', rm: 'кімн.', studios: 'студії', from: 'від', general: 'Підбір квартири' },
+      m_note: 'Натискаючи кнопку, ви погоджуєтесь з політикою конфіденційності.', by_req: 'за запитом', k_cottage: 'Котедж', k_town: 'Таунхаус', upto: 'до', mo: 'міс.', rm: 'кімн.', studios: 'студії', from: 'від', general: 'Підбір квартири' },
     ru: { tag: 'недвижимость · Одесса', nav_all: 'Все новостройки', nav_map: 'На карте', nav_svc: 'Услуги', nav_cont: 'Контакты',
       kick: 'Агентство недвижимости в Одессе', h1: 'Ваша квартира в новостройке Одессы с рассрочкой до 5 лет',
       lead: 'Подбираем квартиры в лучших ЖК Одессы и договариваемся с застройщиком о выгодных условиях. Цены и наличие обновляем ежедневно, а для покупателя наши услуги бесплатны.',
@@ -47,7 +47,7 @@
       spec_note: 'Планировки, точные цены и график платежей вы получите в презентации.', write_tg: 'Написать в Telegram', call: 'Позвонить: 067 109 52 22',
       m_title: 'Презентация и расчёты', m_sub: 'Пришлём в Telegram планировки, актуальные цены и расчёт рассрочки. Это бесплатно и ни к чему не обязывает.',
       fl_name: 'Имя', fl_phone: 'Телефон', send: 'Получить', sending: 'Отправляем…', thanks: 'Спасибо! Менеджер свяжется с вами в ближайшее время.', err_phone: 'Укажите, пожалуйста, номер телефона', err: 'Не удалось отправить. Напишите нам в Telegram, и мы ответим сразу.',
-      m_note: 'Нажимая кнопку, вы соглашаетесь с политикой конфиденциальности.', by_req: 'по запросу', upto: 'до', mo: 'мес.', rm: 'комн.', studios: 'студии', from: 'от', general: 'Подбор квартиры' },
+      m_note: 'Нажимая кнопку, вы соглашаетесь с политикой конфиденциальности.', by_req: 'по запросу', k_cottage: 'Коттедж', k_town: 'Таунхаус', upto: 'до', mo: 'мес.', rm: 'комн.', studios: 'студии', from: 'от', general: 'Подбор квартиры' },
     en: { tag: 'real estate · Odesa', nav_all: 'All new builds', nav_map: 'Map', nav_svc: 'Services', nav_cont: 'Contacts',
       kick: 'Real estate agency in Odesa', h1: 'Your new-build flat in Odesa with up to 5 years of instalments',
       lead: 'We find flats in the best residential complexes in Odesa and negotiate favourable terms with developers. Prices and availability are updated daily, and our service is free for buyers.',
@@ -69,7 +69,7 @@
       spec_note: 'Floor plans, exact prices and the payment schedule come with the brochure.', write_tg: 'Message on Telegram', call: 'Call: +380 67 109 52 22',
       m_title: 'Brochure and payment plan', m_sub: 'We will send floor plans, current prices and an instalment plan on Telegram. Free and with no obligation.',
       fl_name: 'Name', fl_phone: 'Phone', send: 'Send', sending: 'Sending…', thanks: 'Thank you! A manager will contact you shortly.', err_phone: 'Please enter your phone number', err: 'Could not send. Message us on Telegram and we will reply right away.',
-      m_note: 'By pressing the button you agree to our privacy policy.', by_req: 'on request', upto: 'up to', mo: 'mo.', rm: 'bed', studios: 'studios', from: 'from', general: 'Flat search' }
+      m_note: 'By pressing the button you agree to our privacy policy.', by_req: 'on request', k_cottage: 'House', k_town: 'Townhouse', upto: 'up to', mo: 'mo.', rm: 'bed', studios: 'studios', from: 'from', general: 'Flat search' }
   };
   // ---------- типографика: неразрывный пробел после коротких слов, перед единицами ----------
   const SHORT = { uk: 'в|у|з|із|зі|до|на|по|від|за|і|й|та|а|але|не|ні|що|як|о|об|про|під|над|при|для|без|це|ми|ви|чи|ж|б|ЖК|вже|ще|усе|все', ru: 'в|во|у|с|со|к|ко|о|об|от|до|на|по|за|из|и|а|но|не|ни|что|как|для|при|без|под|над|про|это|мы|вы|ли|же|бы|ЖК|уже|ещё|всё|все', en: 'a|an|the|in|on|at|of|to|by|for|and|or|no|up|is|it|we|our|your|with|from' };
@@ -98,7 +98,7 @@
   const fmt = (n) => Math.round(n).toLocaleString('uk-UA').replace(/\s/g, NB);
   function P(c) {
     const s = STATS[c.nb] || {}; const r = s.rooms || [];
-    const rooms = (() => { const n = r.filter((x) => x > 0); const st = r.includes(0); if (!r.length) return t('by_req');
+    const rooms = (() => { const n = r.filter((x) => x > 0); const st = r.includes(0); if (!r.length) return s.kind ? T[L]['k_' + s.kind] || t('by_req') : t('by_req');
       const rng = n.length ? (n[0] === n[n.length - 1] ? n[0] : n[0] + '–' + n[n.length - 1]) + NB + T[L].rm : ''; return [st ? T[L].studios : '', rng].filter(Boolean).join(', '); })();
     return { m2: s.m2_min ? '$' + fmt(s.m2_min) + (s.m2_max && s.m2_max !== s.m2_min ? '–' + fmt(s.m2_max) : '') : t('by_req'),
       area: s.area_min ? s.area_min + (s.area_max !== s.area_min ? '–' + s.area_max : '') + NB + 'м²' : t('by_req'), rooms,
@@ -275,7 +275,7 @@
     DATA = content.filter((c) => (GEO[c.slug]?.visible ?? true) && STATS[c.nb]?.has !== false).sort((a, b) => a.sort - b.sort);
     // ЖК Одессы с ЛУН (без наших): параметры и координаты в те же STATS/GEO, что и у наших
     if (window.LUN) (s.lun || []).forEach((x, i) => { const c = window.LUN.item(x, i);
-      STATS[c.nb] = { m2_min: x.m2_min, m2_max: x.m2_max, area_min: x.area_min, area_max: x.area_max, rooms: x.rooms, inst: x.inst, has: true };
+      STATS[c.nb] = { m2_min: x.m2_min, m2_max: x.m2_max, area_min: x.area_min, area_max: x.area_max, rooms: x.rooms, inst: x.inst, has: true, kind: x.kind };
       if (x.lat != null) GEO[c.slug] = { lat: x.lat, lng: x.lng }; DATA.push(c); });
     route(); if (!location.pathname.startsWith('/zhk/')) track('view', null);
   });

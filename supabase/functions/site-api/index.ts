@@ -1,4 +1,4 @@
-// site-api v3 (26.11.2026) — публичный API сайта pride-agency.com.ua.
+// site-api v5 (26.11.2026) — публичный API сайта pride-agency.com.ua.
 // GET  ?a=stats  → по каждому ЖК (nb_source_id): цена за м² от–до, площадь от–до, комнаты, рассрочка (свободные квартиры) + координаты.
 //                  Только безопасные поля: без цен квартир, контактов, комиссий.
 // GET  ?a=stats также отдаёт lun: краткий список ЖК Одессы с ЛУН (site_lun_complexes), без дублей наших ЖК.
@@ -52,7 +52,8 @@ async function lunList() {
     res.push({ slug: c.slug, name: c.name, district: c.district, dev: c.developer, klass: c.props?.["Клас"] || "", lat: c.lat, lng: c.lng,
       m2_min: p.length ? Math.round(Math.min(...p) / rate) : null, m2_max: p.length ? Math.round(Math.max(...p) / rate) : null,
       area_min: a.length ? Math.floor(Math.min(...a)) : null, area_max: a.length ? Math.ceil(Math.max(...a)) : null,
-      rooms: [...new Set(rows.map((r) => ROOM[r.k]).filter((x) => x != null))].sort((x, y) => x - y), inst: c.inst_months || null, photo: (c.photos || [])[0] || null });
+      rooms: [...new Set(rows.map((r) => ROOM[r.k]).filter((x) => x != null))].sort((x, y) => x - y), inst: c.inst_months || null, photo: (c.photos || [])[0] || null,
+      kind: /townhouse/.test(c.slug) ? "town" : /cottages/.test(c.slug) ? "cottage" : null }); // котеджі / таунхауси
   }
   return res;
 }
