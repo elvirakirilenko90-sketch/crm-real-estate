@@ -197,7 +197,9 @@
           <div class="par" style="margin:0 0 10px"><div><span>${t('p_m2')}</span><b>${p.m2}</b></div><div><span>${t('p_area')}</span><b>${p.area}</b></div><div><span>${t('p_rooms')}</span><b>${esc(p.rooms)}</b></div><div><span>${t('p_inst')}</span><b class="y">${p.inst}</b></div></div>
           <button class="btn" type="button" data-open="${c.slug}" style="width:100%;padding:12px;font-size:14px">${t('cta')}</button>
           <a href="/zhk/${c.slug}" data-nav style="display:block;text-align:center;margin-top:10px;font-weight:700;font-size:13px">${esc(c.name)} →</a>`); });
-      if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
+      // карта по Одессе и пригородам; дальние ЖК (Измаил, Черноморск) видны при отдалении
+      const near = pts.filter(([la, lo]) => la > 46.25 && la < 46.7 && lo > 30.5 && lo < 31);
+      if (pts.length) map.fitBounds(near.length ? near : pts, { padding: [40, 40], maxZoom: 14 });
       setTimeout(() => map && map.invalidateSize(), 50);
     }
     draw();
