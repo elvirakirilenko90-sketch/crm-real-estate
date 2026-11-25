@@ -141,7 +141,7 @@
     <section class="wrap"><div class="sec-h"><h2>${t('pop')}</h2><a href="/novobudovy" data-nav style="font-weight:700">${t('allc')}</a></div><div class="grid">${DATA.slice(0, 6).map(card).join('')}</div></section>
     <section id="services" style="background:#111113;border-top:1px solid var(--line)"><div class="wrap"><h2 style="margin-bottom:28px">${t('svc')}</h2><div class="svc">
       ${[1, 2, 3, 4].map((i) => `<div class="card"><strong>${t('s' + i + 'h')}</strong><span>${t('s' + i)}</span></div>`).join('')}</div></div></section>
-    <section class="wrap" id="lead"><div class="hero" style="padding:0"><div style="display:flex;flex-direction:column;gap:16px"><h2>${t('lh')}</h2><p class="lead">${t('lp')} <a href="${TG}" data-ev="telegram">@Pride_RealEstate</a></p></div>
+    <section class="wrap" id="lead"><div class="hero" style="padding-top:0;padding-bottom:0"><div style="display:flex;flex-direction:column;gap:16px"><h2>${t('lh')}</h2><p class="lead">${t('lp')} <a href="${TG}" data-ev="telegram">@Pride_RealEstate</a></p></div>
       <div class="card" style="padding:28px;display:flex;flex-direction:column;gap:14px"><button class="btn" type="button" data-open="">${t('get')}</button><a class="btn g" href="${TG}" data-ev="telegram">${icTg}${t('write_tg')}</a><a class="btn g" href="tel:+380671095222" data-ev="phone">${icPh}${t('call')}</a></div></div></section>`;
     let room = null;
     app.querySelectorAll('#qr button').forEach((b) => b.onclick = () => { room = room === b.dataset.v ? null : b.dataset.v; app.querySelectorAll('#qr button').forEach((x) => x.classList.toggle('on', x.dataset.v === room)); });
