@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/about.html" }
+  ]
+}
