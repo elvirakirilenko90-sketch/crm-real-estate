@@ -254,7 +254,8 @@
     document.getElementById('mt').textContent = c ? t('m_title') + ': ' + c.name : t('general');
     document.getElementById('msub').textContent = t('m_sub'); document.getElementById('msend').textContent = t('send');
     document.getElementById('mnote').textContent = t('m_note'); document.getElementById('mtg').innerHTML = icTg + t('write_tg');
-    document.getElementById('mok').style.display = 'none'; lf.querySelectorAll('.in,#msend').forEach((x) => x.style.display = '');
+    // после успешной отправки поля скрыты (label.f) — возвращаем всё, иначе повторная форма открывается пустой
+    document.getElementById('mok').style.display = 'none'; lf.querySelectorAll('label.f,.in,#msend').forEach((x) => x.style.display = '');
     modal.classList.add('on'); setTimeout(() => lf.elements.name.focus(), 50); track('form_open', formSlug || curSlug);
   }
   const close = () => modal.classList.remove('on');
