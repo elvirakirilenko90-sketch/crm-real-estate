@@ -1,4 +1,4 @@
-// tiktok-screens-bot v1 (28.11.2026) — Telegram-бот: менеджер присылает скриншот переписки / комментария TikTok
+// tiktok-screens-bot v2 (28.11.2026) — Telegram-бот: менеджер присылает скриншот переписки / комментария TikTok
 // (или текст) → бесплатное распознавание (Vercel /api/ocr, Tesseract) → если есть телефон или Telegram-@ник →
 // лид в lead-inbox (platform "tiktok") → «Нераспределённые лиды». Без платного ИИ.
 // Секреты: TIKTOK_BOT_TOKEN — Supabase → Edge Functions → Secrets (ставит владелец, в код и БД не попадает).
@@ -88,12 +88,18 @@ Deno.serve(async (req) => {
   }
   text = fixOcr(text);
   const ph = phones(text), nick = tgNick(text);
-  if (!ph.length && !nick) { await say(chat, "Номера телефону чи Telegram-@ніка не знайшов — лід не створено.", mid); return new Response("ok"); }
+  if (!ph.length && !nick) {
+    // показываем, что удалось прочитать, — чтобы было видно, где OCR ошибся (номер можно дописать в підпис)
+    const seen = clean(text).slice(0, 700);
+    await say(chat, "Номера телефону чи Telegram-@ніка не знайшов — лід не створено." + (seen ? `\n\nЩо я прочитав:\n<code>${esc(seen)}</code>\n\nМожна надіслати скриншот ще раз із номером у підписі.` : ""), mid);
+    return new Response("ok");
+  }
 
   const caption = String(msg.caption || "").match(/@([\w.]{3,40})/)?.[1] || "";
   const body = clean(text);
   // имя из шапки чата: первая строка из 1–2 слов с заглавной буквы, без цифр (у скриншота — над перепиской)
-  const nameLine = photo ? body.split("\n").slice(0, 4).find((s) => /^[A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20}( [A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20})?$/u.test(s)) || "" : "";
+  // имя — из шапки чата (1-я/2-я строка): «< Влад 78 ту об» → «Влад» (стрелка «назад» и мусор OCR отбрасываются)
+  const nameLine = photo ? (body.split("\n").slice(0, 2).map((s) => s.match(/^[<‹←«\s]*([A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20}(?: [A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20})?)(?![\p{L}])/u)?.[1]).find(Boolean) || "") : "";
   const item = { platform: "tiktok", account: caption || "TikTok (скриншот)", kind: "dm", external_id: `tgshot:${chat}:${mid}`,
     from_id: ph[0] ? ph[0].replace(/\D/g, "").slice(-9) : null, nick: ph.length ? "" : nick, name: nameLine, phone: ph[0] || null,
     text: `${body}\n— надіслав: ${staff.full_name || staff.email} (скриншот з TikTok)`, at: new Date((msg.date || Date.now() / 1000) * 1000).toISOString() };
