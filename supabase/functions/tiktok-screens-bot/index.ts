@@ -1,4 +1,4 @@
-// tiktok-screens-bot v2 (28.11.2026) — Telegram-бот: менеджер присылает скриншот переписки / комментария TikTok
+// tiktok-screens-bot v3 (28.11.2026; v3: дата лида задним числом — в подписи «12.10» / «12.10.2025», в тексте «дата 12.10.2025») — Telegram-бот: менеджер присылает скриншот переписки / комментария TikTok
 // (или текст) → бесплатное распознавание (Vercel /api/ocr, Tesseract) → если есть телефон или Telegram-@ник →
 // лид в lead-inbox (platform "tiktok") → «Нераспределённые лиды». Без платного ИИ.
 // Секреты: TIKTOK_BOT_TOKEN — Supabase → Edge Functions → Secrets (ставит владелец, в код и БД не попадает).
@@ -38,6 +38,22 @@ const fixOcr = (t: string) => t.replace(/(?<![\p{L}])[+\dOoОо][\dOoОоlI|\s\-
 const JUNK = /^(\d{1,2}[:.]\d{2}.*|lte|4g|5g|wi-?fi|\d{1,3}%|повідомлення|сообщение|message|надіслати|отправить|send|активн.*|online|в мережі|в сети)$/i;
 const clean = (t: string) => t.split("\n").map((s) => s.trim()).filter((s) => s.length > 1 && !JUNK.test(s)).join("\n").slice(0, 1500);
 
+// дата лида задним числом. В подписи к скриншоту — просто «12.10» или «12.10.2025»; в обычном тексте — «дата 12.10.2025»
+// (без слова «дата» цифры в тексте клиента не трогаем). Год не указан → текущий (если получилось будущее — прошлый).
+const DATE_RE = /(?:^|[^\d.])(\d{1,2})[./](\d{1,2})(?:[./](\d{4}|\d{2}))?(?![\d.])/;
+function pickDate(s: string, needWord: boolean): { date: string | null; rest: string } {
+  const re = needWord ? new RegExp("дата[:\\s]*" + DATE_RE.source.replace("(?:^|[^\\d.])", ""), "i") : DATE_RE;
+  const m = s.match(re); if (!m) return { date: null, rest: s };
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Kiev" });
+  const d = +m[1], mo = +m[2]; let y = m[3] ? +m[3] : +today.slice(0, 4); if (y < 100) y += 2000;
+  if (d < 1 || d > 31 || mo < 1 || mo > 12) return { date: null, rest: s };
+  let iso = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (!m[3] && iso > today) iso = `${y - 1}${iso.slice(4)}`;
+  if (isNaN(Date.parse(iso)) || iso > today || iso < "2015-01-01") return { date: null, rest: s };
+  return { date: iso, rest: s.replace(m[0], " ").trim() };
+}
+const ua = (iso: string) => iso.split("-").reverse().join(".");
+
 async function ocr(fileId: string) {
   const f: any = await tg("getFile", { file_id: fileId });
   const path = f?.result?.file_path; if (!path) throw new Error("Telegram не отдал файл");
@@ -76,12 +92,14 @@ Deno.serve(async (req) => {
   if (!staff) { await say(chat, "Цей бот — для співробітників Pride. Додайте свій Telegram-нік у профіль CRM і напишіть ще раз.", mid); return new Response("ok"); }
 
   if (msg.text?.startsWith("/start")) {
-    await say(chat, "Надішліть сюди <b>скриншот</b> переписки або коментаря з TikTok (можна кілька) — я знайду номер телефону чи Telegram-@нік і створю лід у CRM («Нераспределённые лиды», джерело «Тик-Ток»).\n\nБез номера чи @ніка лід не створюю. Можна надіслати й просто текст.\nУ підписі до скриншоту можна вказати акаунт TikTok, напр. <code>@pride_tt</code>.");
+    await say(chat, "Надішліть сюди <b>скриншот</b> переписки або коментаря з TikTok (можна кілька) — я знайду номер телефону чи Telegram-@нік і створю лід у CRM («Нераспределённые лиды», джерело «Тик-Ток»).\n\nБез номера чи @ніка лід не створюю. Можна надіслати й просто текст.\nУ підписі до скриншоту можна вказати акаунт TikTok, напр. <code>@pride_tt</code>.\n\n📅 <b>Старий лід?</b> Напишіть дату в підписі до скриншоту: <code>12.10</code> або <code>12.10.2025</code> (у тексті — <code>дата 12.10.2025</code>). Без дати — сьогоднішня.");
     return new Response("ok");
   }
 
-  let text = String(msg.text || msg.caption || "");
   const photo = msg.photo?.length ? msg.photo[msg.photo.length - 1].file_id : (msg.document?.mime_type?.startsWith("image/") ? msg.document.file_id : null);
+  // дату вырезаем из подписи/текста, чтобы её цифры не склеились с номером телефона
+  const dt = pickDate(String(msg.text || msg.caption || ""), !photo);
+  let text = dt.rest;
   if (photo) {
     try { text = (await ocr(photo)) + "\n" + text; }
     catch (e) { await say(chat, `⚠️ Не вдалося прочитати скриншот (${esc((e as Error).message)}). Спробуйте ще раз або надішліть текстом.`, mid); return new Response("ok"); }
@@ -107,7 +125,8 @@ Deno.serve(async (req) => {
   const nameLine = (photo && realName) || (login ? "@" + login : "Клієнт TikTok");
   const item = { platform: "tiktok", account: caption || "TikTok (скриншот)", kind: "dm", external_id: `tgshot:${chat}:${mid}`,
     from_id: ph[0] ? ph[0].replace(/\D/g, "").slice(-9) : null, nick: ph.length ? "" : nick, name: nameLine, phone: ph[0] || null,
-    text: `${body}\n— надіслав: ${staff.full_name || staff.email} (скриншот з TikTok)`, at: new Date((msg.date || Date.now() / 1000) * 1000).toISOString() };
+    text: `${body}\n— надіслав: ${staff.full_name || staff.email} (скриншот з TikTok)`,
+    at: dt.date ? `${dt.date}T12:00:00+02:00` : new Date((msg.date || Date.now() / 1000) * 1000).toISOString(), ...(dt.date ? { lead_date: dt.date } : {}) };
   const r = await fetch(`${URL_}/functions/v1/lead-inbox`, { method: "POST", headers: { "Content-Type": "application/json", "x-inbox-key": await setting("lead_inbox_key") }, body: JSON.stringify(item) }).then((x) => x.json()).catch(() => null);
   const res = r?.results?.[0] || {};
   const who = (nameLine ? nameLine + ", " : "") + (ph[0] || "@" + nick);
@@ -118,6 +137,6 @@ Deno.serve(async (req) => {
     created: `✅ Лід створено і відразу призначено менеджеру: <b>${esc(who)}</b>.`,
     repeat: "Цей скриншот уже оброблено.",
   };
-  await say(chat, (msgs[res.result] || `⚠️ CRM відповіла: ${esc(res.result || "помилка")} ${esc(res.why || "")}`) + (ph.length > 1 ? `\nІнші номери на скриншоті: ${esc(ph.slice(1).join(", "))}` : ""), mid);
+  await say(chat, (msgs[res.result] || `⚠️ CRM відповіла: ${esc(res.result || "помилка")} ${esc(res.why || "")}`) + (dt.date ? `\n📅 Дата ліда: ${ua(dt.date)}` : "") + (ph.length > 1 ? `\nІнші номери на скриншоті: ${esc(ph.slice(1).join(", "))}` : ""), mid);
   return new Response("ok");
 });

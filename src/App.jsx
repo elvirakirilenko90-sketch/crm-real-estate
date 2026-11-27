@@ -7966,6 +7966,16 @@ function UnassignedLeads({users, lang="ru", onOpenLead, onChanged}){
     setMsg(action === "assign" ? `✓ ${tr(lang,"Лид отдан")}: ${data.manager}` : tr(lang,"Обращение отклонено"));
     await load(); onChanged && onChanged();
   };
+  // дата лида задним числом (старые лиды): лид у менеджера будет создан этой датой; пусто — день, когда отдаёте
+  const today = new Date().toLocaleDateString("sv-SE");
+  const setDate = async (r, v) => {
+    setBusy(r.id); setMsg("");
+    const {data,error} = await supabase.functions.invoke("lead-inbox", {body: {action:"set_date", id:r.id, lead_date: v || null}});
+    setBusy(0);
+    if(error || !data?.ok) { setMsg((data && data.error) || error?.message || tr(lang,"Не получилось")); return; }
+    setRows(rs => rs.map(x => x.id === r.id ? {...x, lead_date: data.lead_date} : x));
+  };
+  const dmy = v => v ? String(v).split("-").reverse().join(".") : "";
   const n = k => rows.filter(r => r.status === k).length;
   const list = rows.filter(r => r.status === filter);
   const when = v => v ? new Date(v).toLocaleString(lang==="en"?"en-GB":lang==="uk"?"uk-UA":"ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
@@ -7987,6 +7997,10 @@ function UnassignedLeads({users, lang="ru", onOpenLead, onChanged}){
         {r.phone ? <p>📞 <a href={`tel:${String(r.phone).replace(/[^\d+]/g,"")}`}>{r.phone}</a></p> : <p className="muted">{tr(lang,"Телефона нет — только ник")}</p>}
         {r.profile_url && <p>🔗 {/^https?:/.test(r.profile_url) ? <a href={r.profile_url} target="_blank" rel="noreferrer">{tr(lang,"Профиль клиента")}</a> : r.profile_url}</p>}
         {r.about && <p className="muted">{tr(lang,"О себе")}: {r.about}</p>}
+        {r.status === "new" ? <p className="muted" style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>📅 {tr(lang,"Дата лида")}:
+          <input type="date" className="input" style={{width:"auto", padding:"4px 8px", margin:0}} max={today} value={r.lead_date || ""} disabled={busy === r.id} onChange={e => setDate(r, e.target.value)} />
+          {!r.lead_date && <span>{tr(lang,"сегодня (день, когда отдадите менеджеру)")}</span>}</p>
+          : r.lead_date ? <p className="muted">📅 {tr(lang,"Дата лида")}: {dmy(r.lead_date)}</p> : null}
       </section></div>
       {r.existing_lead_id && <p className="muted">⚠️ {tr(lang,"Этот номер уже есть в CRM")} · <a href="#" onClick={e => { e.preventDefault(); onOpenLead && onOpenLead(r.existing_lead_id); }}>{tr(lang,"открыть карточку")}</a></p>}
       <div style={{whiteSpace:"pre-wrap", wordBreak:"break-word", fontSize:14, margin:"8px 0", padding:"10px 12px", borderRadius:12, background:"rgba(127,127,127,.08)"}}>{r.messages}</div>

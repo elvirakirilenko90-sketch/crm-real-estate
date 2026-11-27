@@ -1,4 +1,4 @@
-// lead-inbox v6 (25.11.2026; v6: заявки с сайта platform site, kind form; v3: телефон из профиля / «О себе», ссылка на профиль; v4: сотрудники агентства — не лиды; v5: приём формы из Make) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
+// lead-inbox v7 (28.11.2026; v7: дата лида задним числом — lead_date из бота/CRM, action set_date; v6: заявки с сайта platform site, kind form; v3: телефон из профиля / «О себе», ссылка на профиль; v4: сотрудники агентства — не лиды; v5: приём формы из Make) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
 // Кто шлёт: Make (Instagram / Facebook / TikTok, несколько аккаунтов) и telegram-private (личка и комментарии каналов).
 // Приём: заголовок x-inbox-key (или ?key=) = crm_private_settings.lead_inbox_key.
 //   Тело: { platform, account, kind: "dm"|"comment", external_id, from_id?, nick?, name?, phone?, text, post_url?, at? } или массив.
@@ -10,6 +10,7 @@
 //  • иначе — новая строка в inbox_leads (status new); если телефон уже есть у клиента CRM — помечается existing_lead_id;
 //  • у аккаунта задан менеджер (lead_inbox_accounts.manager_email) → лид сразу ему, минуя «Нераспределённые».
 // Действия администратора (вход в CRM, директор / тех. отдел): { action: "assign", id, manager_email } | { action: "reject", id }.
+//   { action: "set_date", id, lead_date: "YYYY-MM-DD" | null } — дата лида задним числом (только «Новые»).
 //   assign создаёт лид «Новый Лид» на менеджера со всем текстом клиента; карточки существующих клиентов не меняются
 //   (новый лид связывается с ними через lead_duplicates, status added).
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -40,6 +41,9 @@ function phoneOf(t: string) {
 const last9 = (p?: string | null) => String(p || "").replace(/\D/g, "").slice(-9);
 const when = (iso?: string) => new Date(iso || Date.now()).toLocaleString("uk-UA", { timeZone: "Europe/Kiev", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const esc = (s: string) => s.replace(/[_%]/g, "\\$&");
+// дата лида задним числом: только YYYY-MM-DD, не в будущем и не раньше 2015 года
+const kyivToday = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Kiev" });
+const validDate = (v: unknown) => { const d = String(v || "").trim(); return /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d)) && d >= "2015-01-01" && d <= kyivToday() ? d : null; };
 
 // Отдать обращение менеджеру: новый лид со всем текстом клиента
 async function assign(id: number, email: string, by: string) {
@@ -50,7 +54,7 @@ async function assign(id: number, email: string, by: string) {
   if (!u) return { ok: false, error: "Менеджер не найден" };
   const notes = `Ответственный менеджер: ${u.full_name || u.email}\n${r.messages}\n${r.nick ? `Ник: @${r.nick}\n` : ""}${r.profile_url ? `Профиль: ${r.profile_url}\n` : ""}${r.about ? `О себе (из профиля): ${r.about}\n` : ""}${r.who_key}`;
   const { data: nl, error } = await db.from("leads").insert({ agency_id: AG, name: r.name || (r.nick ? `@${r.nick}` : "Без имени"), phone: r.phone, source: r.source, stage: "Новый Лид", notes,
-    manager_id: u.id, manager_name: u.full_name || null, manager_email: u.email, created_at: new Date().toISOString() }).select("id").maybeSingle();
+    manager_id: u.id, manager_name: u.full_name || null, manager_email: u.email, created_at: r.lead_date ? `${r.lead_date}T12:00:00+02:00` : new Date().toISOString() }).select("id").maybeSingle();
   if (error || !nl) return { ok: false, error: error?.message || "Лид не создан" };
   if (r.existing_lead_id) await db.from("lead_duplicates").insert({ agency_id: AG, lead_id: nl.id, duplicate_of: r.existing_lead_id, status: "added", uploaded_by: "Входящие соцсети", decided_by: by, decided_at: new Date().toISOString() });
   await db.from("inbox_leads").update({ status: "assigned", lead_id: nl.id, assigned_to: u.email, assigned_by: by, decided_at: new Date().toISOString() }).eq("id", id);
@@ -71,6 +75,7 @@ async function handle(m: any, accs: Map<string, any>) {
   // телефон: из текста, из профиля (Telegram отдаёт номер, если клиент его не скрыл), из «О себе»
   const phone = phoneOf(text) || (m.phone ? phoneOf(String(m.phone)) : null) || (m.about ? phoneOf(String(m.about)) : null);
   const about = String(m.about || "").trim() || null;
+  const leadDate = validDate(m.lead_date);
   const who = nick || (m.from_id ? `id${m.from_id}` : "");
   if (!phone && !who) return fin({ result: "skipped", why: "нет телефона и ника" });
   // сотрудники агентства (телефон или Telegram-ник из users) — не лиды
@@ -105,12 +110,12 @@ async function handle(m: any, accs: Map<string, any>) {
   if (!open && phone) open = ((await db.from("inbox_leads").select("*").eq("agency_id", AG).eq("status", "new").not("phone", "is", null).order("id", { ascending: false }).limit(200)).data || []).find((x: any) => last9(x.phone) === last9(phone)) || null;
   if (open) {
     await db.from("inbox_leads").update({ messages: `${open.messages}\n\n${block}`, msg_count: (open.msg_count || 1) + 1, last_at: new Date().toISOString(), ...(phone && !open.phone ? { phone } : {}),
-      ...(!open.existing_lead_id && byPhone ? { existing_lead_id: byPhone.id } : {}), ...(!open.name && m.name ? { name: m.name } : {}), ...(!open.profile_url && profile ? { profile_url: profile } : {}), ...(!open.about && about ? { about } : {}) }).eq("id", open.id);
+      ...(!open.existing_lead_id && byPhone ? { existing_lead_id: byPhone.id } : {}), ...(!open.name && m.name ? { name: m.name } : {}), ...(!open.profile_url && profile ? { profile_url: profile } : {}), ...(!open.about && about ? { about } : {}), ...(leadDate ? { lead_date: leadDate } : {}) }).eq("id", open.id);
     return fin({ result: "inbox_appended", phone });
   }
   // 3) новое обращение
   const { data: row } = await db.from("inbox_leads").insert({ agency_id: AG, platform, account, source: acc.source, who_key: marker, nick: nick || null, name: String(m.name || "").trim() || null, phone,
-    messages: block, existing_lead_id: byPhone?.id ?? null, profile_url: profile, about }).select("id").maybeSingle();
+    messages: block, existing_lead_id: byPhone?.id ?? null, profile_url: profile, about, lead_date: leadDate }).select("id").maybeSingle();
   if (acc.manager_email && row) { const a = await assign(row.id, acc.manager_email, "авто: аккаунт " + (account || platform)); if (a.ok) return fin({ result: "created", lead_id: a.lead_id, phone }); }
   return fin({ result: "inbox_new", phone });
 }
@@ -123,12 +128,18 @@ Deno.serve(async (req) => {
   if (!b) return json({ error: "нужен JSON или форма" }, 400);
 
   // администратор из CRM: отдать / отклонить
-  if (b.action === "assign" || b.action === "reject") {
+  if (b.action === "assign" || b.action === "reject" || b.action === "set_date") {
     const auth = req.headers.get("Authorization") || "";
     const user = createClient(URL_, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
     const [{ data: isTech }, { data: isDir }, { data: me }] = await Promise.all([user.rpc("crm_is_tech"), user.rpc("crm_is_director"), user.rpc("crm_my_email")]);
     if (!me || (!isTech && !isDir)) return json({ ok: false, error: "Только для директора и тех. отдела" }, 403);
     if (b.action === "assign") return json(await assign(Number(b.id), String(b.manager_email || ""), String(me)));
+    if (b.action === "set_date") {
+      const d = b.lead_date ? validDate(b.lead_date) : null;
+      if (b.lead_date && !d) return json({ ok: false, error: "Дата не может быть в будущем" });
+      const { data, error } = await db.from("inbox_leads").update({ lead_date: d }).eq("id", Number(b.id)).eq("agency_id", AG).eq("status", "new").select("id").maybeSingle();
+      return json({ ok: !error && !!data, lead_date: d, error: error?.message || (!data ? "Дату можно менять только у новых обращений" : undefined) });
+    }
     const { error } = await db.from("inbox_leads").update({ status: "rejected", assigned_by: String(me), decided_at: new Date().toISOString() }).eq("id", Number(b.id)).eq("status", "new");
     return json({ ok: !error, error: error?.message });
   }
