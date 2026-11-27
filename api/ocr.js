@@ -1,10 +1,10 @@
 // /api/ocr — бесплатное распознавание текста со скриншота (Tesseract, без внешних ИИ-сервисов).
 // Вызывает Supabase-функция tiktok-screens-bot: POST { image: "<base64 jpeg/png>" } → { ok, text, ms }.
 // Языки: украинский + русский + английский. Модели качаются один раз в /tmp тёплого инстанса.
-// v2: предобработка (sharp) — увеличение ×2, ч/б, контраст — и два прохода: обычный и инвертированный.
+// v2: предобработка (sharp) — увеличение ×2, ч/б, контраст — и два прохода: обычный и «только светлый текст».
 // Tesseract плохо читает светлый текст на тёмном/цветном фоне (тёмная тема TikTok, цветные «пузыри»),
-// инвертированный проход это закрывает. Основной текст — проход с большей уверенностью; из второго
-// добавляются строки с цифрами/@, которых нет в основном (чтобы не потерять номер).
+// второй проход это закрывает. Основной текст — проход с большей уверенностью; из второго
+// добавляются строки, которых нет в основном.
 import { createWorker } from "tesseract.js";
 
 let workerP = null;
@@ -19,7 +19,8 @@ async function variants(buf) {
   const meta = await sharp(buf).metadata();
   const w = Math.min(2400, Math.round((meta.width || 1000) * 2));
   const base = () => sharp(buf).resize({ width: w }).grayscale().normalize();
-  return [await base().png().toBuffer(), await base().negate().png().toBuffer()];
+  // 1) как есть (тёмный текст на светлом); 2) только светлый текст (белое на тёмном/цветном «пузыре») → чёрным по белому
+  return [await base().png().toBuffer(), await sharp(buf).resize({ width: w }).grayscale().threshold(185).negate().png().toBuffer()];
 }
 
 const key = (s) => s.replace(/\s+/g, "").toLowerCase();
@@ -41,8 +42,9 @@ export default async function handler(req, res) {
     runs.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
     let text = runs[0].text || "";
     const seen = new Set(text.split("\n").map(key));
+    const all = key(text);
     const extra = runs.slice(1).flatMap((r) => (r.text || "").split("\n"))
-      .filter((s) => /\d{3}|@\w/.test(s) && !seen.has(key(s)));
+      .filter((s) => key(s).length > 2 && !seen.has(key(s)) && !all.includes(key(s)));
     if (extra.length) text += "\n" + extra.join("\n");
     return res.status(200).json({ ok: true, text, ms: Date.now() - t0, passes: runs.length });
   } catch (e) {
