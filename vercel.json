@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "api/ocr.js": { "maxDuration": 60, "memory": 1024, "includeFiles": "node_modules/{tesseract.js-core,tesseract.js/src}/**" }
+  },
   "redirects": [
     { "source": "/", "has": [{ "type": "host", "value": "pride-agency.com.ua" }], "destination": "/ua", "permanent": false }
   ],
