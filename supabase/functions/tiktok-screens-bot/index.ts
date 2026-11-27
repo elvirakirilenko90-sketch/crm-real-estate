@@ -33,7 +33,7 @@ function tgNick(t: string) {
   return null;
 }
 // OCR путает: O→0 в номерах, «l»→1 и т.п. Чиним только внутри похожих на номер кусков.
-const fixOcr = (t: string) => t.replace(/[+\d][\dOoОоlI|\s\-().]{8,20}\d/g, (s) => s.replace(/[OoОо]/g, "0").replace(/[lI|]/g, "1"));
+const fixOcr = (t: string) => t.replace(/(?<![\p{L}])[+\dOoОо][\dOoОоlI|\s\-().]{8,20}\d/gu, (s) => s.replace(/[OoОо]/g, "0").replace(/[lI|]/g, "1"));
 // служебные строки скриншота (время, батарея, «Повідомлення», «Надіслати»…) — убираем из текста заявки
 const JUNK = /^(\d{1,2}[:.]\d{2}.*|lte|4g|5g|wi-?fi|\d{1,3}%|повідомлення|сообщение|message|надіслати|отправить|send|активн.*|online|в мережі|в сети)$/i;
 const clean = (t: string) => t.split("\n").map((s) => s.trim()).filter((s) => s.length > 1 && !JUNK.test(s)).join("\n").slice(0, 1500);
@@ -92,12 +92,14 @@ Deno.serve(async (req) => {
 
   const caption = String(msg.caption || "").match(/@([\w.]{3,40})/)?.[1] || "";
   const body = clean(text);
+  // имя из шапки чата: первая строка из 1–2 слов с заглавной буквы, без цифр (у скриншота — над перепиской)
+  const nameLine = photo ? body.split("\n").slice(0, 4).find((s) => /^[A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20}( [A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20})?$/u.test(s)) || "" : "";
   const item = { platform: "tiktok", account: caption || "TikTok (скриншот)", kind: "dm", external_id: `tgshot:${chat}:${mid}`,
-    from_id: ph[0] ? ph[0].replace(/\D/g, "").slice(-9) : null, nick: ph.length ? "" : nick, name: "", phone: ph[0] || null,
+    from_id: ph[0] ? ph[0].replace(/\D/g, "").slice(-9) : null, nick: ph.length ? "" : nick, name: nameLine, phone: ph[0] || null,
     text: `${body}\n— надіслав: ${staff.full_name || staff.email} (скриншот з TikTok)`, at: new Date((msg.date || Date.now() / 1000) * 1000).toISOString() };
   const r = await fetch(`${URL_}/functions/v1/lead-inbox`, { method: "POST", headers: { "Content-Type": "application/json", "x-inbox-key": await setting("lead_inbox_key") }, body: JSON.stringify(item) }).then((x) => x.json()).catch(() => null);
   const res = r?.results?.[0] || {};
-  const who = ph[0] || "@" + nick;
+  const who = (nameLine ? nameLine + ", " : "") + (ph[0] || "@" + nick);
   const msgs: Record<string, string> = {
     inbox_new: `✅ Лід створено: <b>${esc(who)}</b>\nДжерело: Тик-Ток → «Нераспределённые лиды».`,
     inbox_appended: `➕ Цей клієнт уже чекає в «Нераспределённых» — дописав повідомлення до нього (<b>${esc(who)}</b>).`,
