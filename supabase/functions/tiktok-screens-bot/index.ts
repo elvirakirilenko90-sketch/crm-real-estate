@@ -99,7 +99,8 @@ Deno.serve(async (req) => {
   const photo = msg.photo?.length ? msg.photo[msg.photo.length - 1].file_id : (msg.document?.mime_type?.startsWith("image/") ? msg.document.file_id : null);
   // дату вырезаем из подписи/текста, чтобы её цифры не склеились с номером телефона
   const dt = pickDate(String(msg.text || msg.caption || ""), !photo);
-  let text = dt.rest;
+  // @аккаунт TikTok из подписи — наш, а не ник клиента: из текста убираем
+  let text = photo ? dt.rest.replace(/@[\w.]{3,40}/g, " ").trim() : dt.rest;
   if (photo) {
     try { text = (await ocr(photo)) + "\n" + text; }
     catch (e) { await say(chat, `⚠️ Не вдалося прочитати скриншот (${esc((e as Error).message)}). Спробуйте ще раз або надішліть текстом.`, mid); return new Response("ok"); }

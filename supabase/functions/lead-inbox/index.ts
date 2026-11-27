@@ -1,7 +1,7 @@
 // lead-inbox v7 (28.11.2026; v7: дата лида задним числом — lead_date из бота/CRM, action set_date; v6: заявки с сайта platform site, kind form; v3: телефон из профиля / «О себе», ссылка на профиль; v4: сотрудники агентства — не лиды; v5: приём формы из Make) — входящие из соцсетей → «Нераспределённые лиды» → лид менеджеру.
-// Кто шлёт: Make (Instagram / Facebook / TikTok, несколько аккаунтов) и telegram-private (личка и комментарии каналов).
+// Кто шлёт: Make (Instagram / Facebook / TikTok, несколько аккаунтов), telegram-private (личка и комментарии каналов), meta-webhook, site-api (форма сайта), tiktok-screens-bot.
 // Приём: заголовок x-inbox-key (или ?key=) = crm_private_settings.lead_inbox_key.
-//   Тело: { platform, account, kind: "dm"|"comment", external_id, from_id?, nick?, name?, phone?, text, post_url?, at? } или массив.
+//   Тело: { platform, account, kind: "dm"|"comment"|"form", external_id, from_id?, nick?, name?, phone?, text, post_url?, at?, lead_date? } или массив.
 // Правила приёма:
 //  • берём, если есть телефон ИЛИ ник; весь текст клиента сохраняется (блок «Запрос (площадка · где · когда): текст»);
 //  • повтор того же сообщения (external_id) не обрабатывается; свои ответы и только-эмодзи — пропуск; всё — в журнал lead_inbox;
@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
   const b = ct.includes("form") ? Object.fromEntries(new URLSearchParams(await req.text())) : await req.json().catch(() => null);
   if (!b) return json({ error: "нужен JSON или форма" }, 400);
 
-  // администратор из CRM: отдать / отклонить
+  // администратор из CRM: отдать / отклонить / дата лида
   if (b.action === "assign" || b.action === "reject" || b.action === "set_date") {
     const auth = req.headers.get("Authorization") || "";
     const user = createClient(URL_, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
