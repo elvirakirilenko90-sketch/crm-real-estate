@@ -98,7 +98,13 @@ Deno.serve(async (req) => {
   const caption = String(msg.caption || "").match(/@([\w.]{3,40})/)?.[1] || "";
   const body = clean(text);
   // имя — из шапки чата (1-я/2-я строка): «< Влад 78 ту об» → «Влад» (стрелка «назад» и мусор OCR отбрасываются)
-  const nameLine = photo ? (body.split("\n").slice(0, 2).map((s) => s.match(/^[<‹←«\s]*([A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20}(?: [A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20})?)(?![\p{L}])/u)?.[1]).find(Boolean) || "") : "";
+  // слова, которые OCR берёт из шапки/первого сообщения, но это не имя
+  const NOT_NAME = /^(capcut|tiktok|instagram|safari|привіт|привет|вітаю|здравствуйте|добрий|добрый|доброго|доброе|hello|hi|повідомлення|сообщения|переглянути|стежить)(?!\p{L})/iu;
+  const head = body.split("\n").slice(0, 4);
+  const realName = head.slice(0, 2).map((s) => s.match(/^[<‹←«\s]*([A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20}(?: [A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20})?)(?![\p{L}])/u)?.[1]).find((s) => s && !NOT_NAME.test(s)) || "";
+  // нет имени (у клиента в TikTok вместо имени «.», эмодзи и т.п.) → берём его логин из шапки: «< olga.k_23 …» → «@olga.k_23»
+  const login = head.map((s) => s.match(/^[<‹←«\s@]*([a-z0-9][a-z0-9._]{2,23})(?![\w.])/)?.[1]).find((s) => s && /[a-z]/.test(s) && !/pride|capcut/i.test(s)) || "";
+  const nameLine = (photo && realName) || (login ? "@" + login : "Клієнт TikTok");
   const item = { platform: "tiktok", account: caption || "TikTok (скриншот)", kind: "dm", external_id: `tgshot:${chat}:${mid}`,
     from_id: ph[0] ? ph[0].replace(/\D/g, "").slice(-9) : null, nick: ph.length ? "" : nick, name: nameLine, phone: ph[0] || null,
     text: `${body}\n— надіслав: ${staff.full_name || staff.email} (скриншот з TikTok)`, at: new Date((msg.date || Date.now() / 1000) * 1000).toISOString() };
