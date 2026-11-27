@@ -97,7 +97,6 @@ Deno.serve(async (req) => {
 
   const caption = String(msg.caption || "").match(/@([\w.]{3,40})/)?.[1] || "";
   const body = clean(text);
-  // имя из шапки чата: первая строка из 1–2 слов с заглавной буквы, без цифр (у скриншота — над перепиской)
   // имя — из шапки чата (1-я/2-я строка): «< Влад 78 ту об» → «Влад» (стрелка «назад» и мусор OCR отбрасываются)
   const nameLine = photo ? (body.split("\n").slice(0, 2).map((s) => s.match(/^[<‹←«\s]*([A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20}(?: [A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20})?)(?![\p{L}])/u)?.[1]).find(Boolean) || "") : "";
   const item = { platform: "tiktok", account: caption || "TikTok (скриншот)", kind: "dm", external_id: `tgshot:${chat}:${mid}`,
