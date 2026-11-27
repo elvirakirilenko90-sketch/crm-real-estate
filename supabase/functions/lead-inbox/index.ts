@@ -39,7 +39,9 @@ function phoneOf(t: string) {
   return null;
 }
 const last9 = (p?: string | null) => String(p || "").replace(/\D/g, "").slice(-9);
-const when = (iso?: string) => new Date(iso || Date.now()).toLocaleString("uk-UA", { timeZone: "Europe/Kiev", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+// дата в блоке «Запрос (…)»: год показываем, только если он не текущий (старые лиды)
+const when = (iso?: string) => { const d = new Date(iso || Date.now()); const y = d.getFullYear() !== new Date().getFullYear();
+  return d.toLocaleString("uk-UA", { timeZone: "Europe/Kiev", day: "2-digit", month: "2-digit", ...(y ? { year: "numeric" } : {}), hour: "2-digit", minute: "2-digit" }); };
 const esc = (s: string) => s.replace(/[_%]/g, "\\$&");
 // дата лида задним числом: только YYYY-MM-DD, не в будущем и не раньше 2015 года
 const kyivToday = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Kiev" });
@@ -110,7 +112,7 @@ async function handle(m: any, accs: Map<string, any>) {
   if (!open && phone) open = ((await db.from("inbox_leads").select("*").eq("agency_id", AG).eq("status", "new").not("phone", "is", null).order("id", { ascending: false }).limit(200)).data || []).find((x: any) => last9(x.phone) === last9(phone)) || null;
   if (open) {
     await db.from("inbox_leads").update({ messages: `${open.messages}\n\n${block}`, msg_count: (open.msg_count || 1) + 1, last_at: new Date().toISOString(), ...(phone && !open.phone ? { phone } : {}),
-      ...(!open.existing_lead_id && byPhone ? { existing_lead_id: byPhone.id } : {}), ...(!open.name && m.name ? { name: m.name } : {}), ...(!open.profile_url && profile ? { profile_url: profile } : {}), ...(!open.about && about ? { about } : {}), ...(leadDate ? { lead_date: leadDate } : {}) }).eq("id", open.id);
+      ...(!open.existing_lead_id && byPhone ? { existing_lead_id: byPhone.id } : {}), ...(!open.name && m.name ? { name: m.name } : {}), ...(!open.profile_url && profile ? { profile_url: profile } : {}), ...(!open.about && about ? { about } : {}), ...(leadDate && (!open.lead_date || leadDate < open.lead_date) ? { lead_date: leadDate } : {}) }).eq("id", open.id);
     return fin({ result: "inbox_appended", phone });
   }
   // 3) новое обращение

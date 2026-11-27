@@ -1,4 +1,4 @@
-// tiktok-screens-bot v3 (28.11.2026; v3: дата лида задним числом — в подписи «12.10» / «12.10.2025», в тексте «дата 12.10.2025») — Telegram-бот: менеджер присылает скриншот переписки / комментария TikTok
+// tiktok-screens-bot v4 (28.11.2026; v4: со скриншота — только имя, логин и сообщения клиента, служебное выбрасывается (extract.ts); дата по умолчанию — сегодня; v3: дата лида задним числом — в подписи «12.10» / «12.10.2025», в тексте «дата 12.10.2025») — Telegram-бот: менеджер присылает скриншот переписки / комментария TikTok
 // (или текст) → бесплатное распознавание (Vercel /api/ocr, Tesseract) → если есть телефон или Telegram-@ник →
 // лид в lead-inbox (platform "tiktok") → «Нераспределённые лиды». Без платного ИИ.
 // Секреты: TIKTOK_BOT_TOKEN — Supabase → Edge Functions → Secrets (ставит владелец, в код и БД не попадает).
@@ -6,6 +6,7 @@
 //                       tg_leads_setup_key — разовый ключ для ?a=setup (удаляется после установки вебхука).
 // Доступ: только сотрудники из users (поле telegram = @ник отправителя).
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { extract, type Line } from "./extract.ts";
 const URL_ = Deno.env.get("SUPABASE_URL")!;
 const db = createClient(URL_, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const TOKEN = Deno.env.get("TIKTOK_BOT_TOKEN") || "";
@@ -62,7 +63,7 @@ async function ocr(fileId: string) {
   const r = await fetch(OCR_URL, { method: "POST", headers: { "Content-Type": "application/json", "x-ocr-client": "pride-crm" }, body: JSON.stringify({ image: btoa(b) }) });
   const j: any = await r.json().catch(() => ({}));
   if (!j.ok) throw new Error(j.error || `OCR ${r.status}`);
-  return String(j.text || "");
+  return { text: String(j.text || ""), lines: (Array.isArray(j.lines) ? j.lines : []) as Line[] };
 }
 
 Deno.serve(async (req) => {
@@ -100,34 +101,36 @@ Deno.serve(async (req) => {
   // дату вырезаем из подписи/текста, чтобы её цифры не склеились с номером телефона
   const dt = pickDate(String(msg.text || msg.caption || ""), !photo);
   // @аккаунт TikTok из подписи — наш, а не ник клиента: из текста убираем
-  let text = photo ? dt.rest.replace(/@[\w.]{3,40}/g, " ").trim() : dt.rest;
+  const extraText = photo ? dt.rest.replace(/@[\w.]{3,40}/g, " ").trim() : dt.rest;
+  let ex: ReturnType<typeof extract> | null = null, raw = "";
   if (photo) {
-    try { text = (await ocr(photo)) + "\n" + text; }
+    try { const o = await ocr(photo); raw = o.text; if (o.lines.length) ex = extract(o.lines); }
     catch (e) { await say(chat, `⚠️ Не вдалося прочитати скриншот (${esc((e as Error).message)}). Спробуйте ще раз або надішліть текстом.`, mid); return new Response("ok"); }
   }
-  text = fixOcr(text);
-  const ph = phones(text), nick = tgNick(text);
+  // где искать телефон / Telegram-ник: сообщения клиента → всё, кроме наших ответов → (старый OCR) весь текст
+  const msgText = ex ? fixOcr(ex.searchText) : "";
+  const tries = ex ? [msgText + "\n" + extraText, fixOcr(ex.fallbackText) + "\n" + extraText] : [fixOcr(raw + "\n" + extraText)];
+  let ph: string[] = [], nick: string | null = null;
+  for (const t of tries) { ph = phones(t); nick = tgNick(t); if (ph.length || nick) break; }
+  // текст заявки: только сообщения клиента (+ то, что дописали в подписи)
+  const body = ex ? [msgText, extraText].filter(Boolean).join("\n").slice(0, 1500) : clean(fixOcr(raw + "\n" + extraText));
   if (!ph.length && !nick) {
-    // показываем, что удалось прочитать, — чтобы было видно, где OCR ошибся (номер можно дописать в підпис)
-    const seen = clean(text).slice(0, 700);
+    const seen = body.slice(0, 700);
     await say(chat, "Номера телефону чи Telegram-@ніка не знайшов — лід не створено." + (seen ? `\n\nЩо я прочитав:\n<code>${esc(seen)}</code>\n\nМожна надіслати скриншот ще раз із номером у підписі.` : ""), mid);
     return new Response("ok");
   }
 
   const caption = String(msg.caption || "").match(/@([\w.]{3,40})/)?.[1] || "";
-  const body = clean(text);
-  // имя — из шапки чата (1-я/2-я строка): «< Влад 78 ту об» → «Влад» (стрелка «назад» и мусор OCR отбрасываются)
-  // слова, которые OCR берёт из шапки/первого сообщения, но это не имя
-  const NOT_NAME = /^(capcut|tiktok|instagram|safari|привіт|привет|вітаю|здравствуйте|добрий|добрый|доброго|доброе|hello|hi|повідомлення|сообщения|переглянути|стежить)(?!\p{L})/iu;
-  const head = body.split("\n").slice(0, 4);
-  const realName = head.slice(0, 2).map((s) => s.match(/^[<‹←«\s]*([A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20}(?: [A-ZА-ЯІЇЄҐ][\p{L}'’-]{1,20})?)(?![\p{L}])/u)?.[1]).find((s) => s && !NOT_NAME.test(s)) || "";
-  // нет имени (у клиента в TikTok вместо имени «.», эмодзи и т.п.) → берём его логин из шапки: «< olga.k_23 …» → «@olga.k_23»
-  const login = head.map((s) => s.match(/^[<‹←«\s@]*([a-z0-9][a-z0-9._]{2,23})(?![\w.])/)?.[1]).find((s) => s && /[a-z]/.test(s) && !/pride|capcut/i.test(s)) || "";
-  const nameLine = (photo && realName) || (login ? "@" + login : "Клієнт TikTok");
+  // имя — как подписан клиент в TikTok; нет имени (точка, эмодзи) — его логин; нет и логина — «Клієнт TikTok»
+  const login = ex?.login || "";
+  const nameLine = ex?.name || (login ? "@" + login : "Клієнт TikTok");
+  // дата лида: из подписи, иначе сегодня (Киев)
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Kiev" });
+  const leadDate = dt.date || today;
   const item = { platform: "tiktok", account: caption || "TikTok (скриншот)", kind: "dm", external_id: `tgshot:${chat}:${mid}`,
-    from_id: ph[0] ? ph[0].replace(/\D/g, "").slice(-9) : null, nick: ph.length ? "" : nick, name: nameLine, phone: ph[0] || null,
-    text: `${body}\n— надіслав: ${staff.full_name || staff.email} (скриншот з TikTok)`,
-    at: dt.date ? `${dt.date}T12:00:00+02:00` : new Date((msg.date || Date.now() / 1000) * 1000).toISOString(), ...(dt.date ? { lead_date: dt.date } : {}) };
+    from_id: ph[0] ? ph[0].replace(/\D/g, "").slice(-9) : null, nick: login || (ph.length ? "" : nick), name: nameLine, phone: ph[0] || null,
+    text: `${body}${nick && login ? `\nTelegram: @${nick}` : ""}\n— надіслав: ${staff.full_name || staff.email} (скриншот з TikTok)`,
+    at: dt.date ? `${dt.date}T12:00:00+02:00` : new Date((msg.date || Date.now() / 1000) * 1000).toISOString(), lead_date: leadDate };
   const r = await fetch(`${URL_}/functions/v1/lead-inbox`, { method: "POST", headers: { "Content-Type": "application/json", "x-inbox-key": await setting("lead_inbox_key") }, body: JSON.stringify(item) }).then((x) => x.json()).catch(() => null);
   const res = r?.results?.[0] || {};
   const who = (nameLine ? nameLine + ", " : "") + (ph[0] || "@" + nick);
@@ -138,6 +141,6 @@ Deno.serve(async (req) => {
     created: `✅ Лід створено і відразу призначено менеджеру: <b>${esc(who)}</b>.`,
     repeat: "Цей скриншот уже оброблено.",
   };
-  await say(chat, (msgs[res.result] || `⚠️ CRM відповіла: ${esc(res.result || "помилка")} ${esc(res.why || "")}`) + (dt.date ? `\n📅 Дата ліда: ${ua(dt.date)}` : "") + (ph.length > 1 ? `\nІнші номери на скриншоті: ${esc(ph.slice(1).join(", "))}` : ""), mid);
+  await say(chat, (msgs[res.result] || `⚠️ CRM відповіла: ${esc(res.result || "помилка")} ${esc(res.why || "")}`) + `\n📅 Дата ліда: ${ua(leadDate)}` + (body ? `\n💬 ${esc(body.split("\n").slice(0, 3).join(" / ").slice(0, 220))}` : "") + (ph.length > 1 ? `\nІнші номери на скриншоті: ${esc(ph.slice(1).join(", "))}` : ""), mid);
   return new Response("ok");
 });
